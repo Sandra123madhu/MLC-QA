@@ -14,7 +14,7 @@ async function uploadFile() {
 
     try {
         // REPLACE with your actual Render Backend URL
-        const response = await fetch("https://your-backend-url.onrender.com/analyze", {
+        const response = await fetch("https://mlc-qa.onrender.com", {
             method: 'POST',
             body: formData
         });
