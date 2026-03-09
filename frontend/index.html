@@ -2,20 +2,25 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>MLC QA Analyzer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aster MIMS - MLC QA Dashboard</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
         <h1>LINAC MLC QA Dashboard</h1>
+        
         <div class="upload-section">
-            <p>Upload DICOM image for Picket Fence Analysis</p>
-            <input type="file" id="dicomFile">
+            <p>Upload DICOM image (.dcm) for Picket Fence Analysis</p>
+            <input type="file" id="dicomFile" accept=".dcm">
             <button onclick="uploadFile()">Analyze MLC</button>
         </div>
-        <div id="results">
-            </div>
+
+        <div id="results" class="results-box">
+            <p>Upload a file to see results here.</p>
+        </div>
     </div>
+    
     <script src="script.js"></script>
 </body>
 </html>
