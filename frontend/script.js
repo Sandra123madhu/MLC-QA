@@ -3,18 +3,20 @@ async function uploadFile() {
     const statusDiv = document.getElementById('results');
     
     if (fileInput.files.length === 0) {
-        alert("Please select a DICOM file!");
+        alert("Please select a .dcm file first!");
         return;
     }
 
     const formData = new FormData();
     formData.append("file", fileInput.files[0]);
 
-    statusDiv.innerHTML = "Analyzing MLC leaves... please wait.";
+    statusDiv.innerHTML = "<p>Sending to physics engine... please wait.</p>";
 
     try {
-        // REPLACE with your actual Render Backend URL
-        const response = await fetch("https://mlc-qa.onrender.com", {
+        // EXACT URL WITH /analyze AT THE END
+        const backendUrl = "https://mlc-qa-1.onrender.com/analyze"; 
+        
+        const response = await fetch(backendUrl, {
             method: 'POST',
             body: formData
         });
@@ -22,15 +24,18 @@ async function uploadFile() {
         const data = await response.json();
         
         if (data.status === "Success") {
+            const resultColor = data.passed ? 'green' : 'red';
+            const resultText = data.passed ? 'PASS' : 'FAIL';
+            
             statusDiv.innerHTML = `
-                <h2 style="color: ${data.passed ? 'green' : 'red'}">
-                    RESULT: ${data.passed ? 'PASS' : 'FAIL'}
-                </h2>
-                <pre>${data.analysis_summary}</pre>`;
+                <h2 style="color: ${resultColor}">Analysis Result: ${resultText}</h2>
+                <pre style="white-space: pre-wrap;">${data.analysis_summary}</pre>
+            `;
         } else {
-            statusDiv.innerHTML = "Analysis Error: " + data.message;
+            statusDiv.innerHTML = `<p style="color: red;">Analysis Error: ${data.message}</p>`;
         }
     } catch (error) {
-        statusDiv.innerHTML = "Could not connect to the backend.";
+        statusDiv.innerHTML = `<p style="color: red;">Network Error: Could not connect to backend.</p>`;
+        console.error("Fetch error details:", error);
     }
 }
