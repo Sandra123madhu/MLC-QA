@@ -13,7 +13,6 @@ async function uploadFile() {
     statusDiv.innerHTML = "<p>Sending to physics engine... please wait.</p>";
 
     try {
-        // EXACT URL WITH /analyze AT THE END
         const backendUrl = "https://mlc-qa-1.onrender.com/analyze"; 
         
         const response = await fetch(backendUrl, {
@@ -21,6 +20,13 @@ async function uploadFile() {
             body: formData
         });
         
+        // CHECK 1: Did the server return an error page instead of data?
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Server returned Status ${response.status}. Details: ${errorText}`);
+        }
+
+        // CHECK 2: Try to parse the JSON
         const data = await response.json();
         
         if (data.status === "Success") {
@@ -35,7 +41,7 @@ async function uploadFile() {
             statusDiv.innerHTML = `<p style="color: red;">Analysis Error: ${data.message}</p>`;
         }
     } catch (error) {
-        statusDiv.innerHTML = `<p style="color: red;">Network Error: Could not connect to backend.</p>`;
-        console.error("Fetch error details:", error);
+        statusDiv.innerHTML = `<p style="color: red;">Connection or Server Error. Check the console for details.</p>`;
+        console.error("Exact Error:", error);
     }
 }
