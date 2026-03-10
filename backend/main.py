@@ -5,7 +5,6 @@ import os
 import shutil
 import tempfile
 import uuid
-import asyncio
 
 app = FastAPI()
 
@@ -17,10 +16,21 @@ app.add_middleware(
 )
 
 # In-memory store for job results
+# FIX: Added job cleanup to prevent memory growing unboundedly on Render's free tier
 jobs = {}
+MAX_JOBS = 50  # Keep only the last 50 jobs in memory
+
+def cleanup_old_jobs():
+    """Remove oldest jobs if we exceed MAX_JOBS to prevent memory issues on free tier."""
+    if len(jobs) > MAX_JOBS:
+        oldest_keys = list(jobs.keys())[:len(jobs) - MAX_JOBS]
+        for k in oldest_keys:
+            del jobs[k]
+
 
 @app.get("/")
 def home():
+    """Health check endpoint — also used by frontend to detect cold start."""
     return {"status": "MLC QA Backend is Live and listening."}
 
 
@@ -42,15 +52,27 @@ def run_analysis(job_id: str, temp_path: str):
             "message": f"Python Engine Error: {str(e)}"
         }
     finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        # FIX: Always clean up the temp file even if analysis crashes
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except Exception:
+            pass
+        cleanup_old_jobs()
 
 
 @app.post("/analyze")
 async def analyze_mlc(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     """Accepts the file, starts background analysis, returns a job_id immediately."""
+
+    # FIX: Validate file type on the backend too (defence in depth)
+    if not file.filename.lower().endswith(".dcm"):
+        return {"status": "Error", "message": "Only DICOM (.dcm) files are supported."}
+
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".dcm") as temp_file:
+        # FIX: Use a named temp file in /tmp with proper suffix
+        suffix = ".dcm"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir="/tmp") as temp_file:
             shutil.copyfileobj(file.file, temp_file)
             temp_path = temp_file.name
 
