@@ -1,4 +1,4 @@
-const BACKEND_URL = "https://mlc-qa-1.onrender.com";
+const BACKEND_URL = "https://mlc-qa.onrender.com";
 
 // Ping the backend on page load to wake it up
 window.addEventListener('load', () => {
