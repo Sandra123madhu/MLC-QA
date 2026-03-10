@@ -29,8 +29,10 @@ def cleanup_old_jobs():
 
 
 @app.get("/")
+@app.head("/")
 def home():
-    """Health check endpoint — also used by frontend to detect cold start."""
+    """Health check endpoint — also used by frontend and Render's health checker.
+    Must support both GET and HEAD methods to prevent Render redeploy loops."""
     return {"status": "MLC QA Backend is Live and listening."}
 
 
