@@ -1,9 +1,9 @@
 fastapi
-uvicorn
+uvicorn[standard]
 pylinac
 pydicom
 python-multipart
 sqlalchemy
-passlib
-python-jose
-pydantic
+passlib[bcrypt]
+python-jose[cryptography]
+pydantic[email]
