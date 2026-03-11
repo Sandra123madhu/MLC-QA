@@ -1,11 +1,87 @@
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, EmailStr
+from sqlalchemy import create_engine, Column, Integer, String, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
+from passlib.context import CryptContext
+from jose import JWTError, jwt
+from datetime import datetime, timedelta
 from pylinac import PicketFence
-import os
-import shutil
-import tempfile
-import uuid
+import os, shutil, tempfile, uuid
 
+# ─── Config ───────────────────────────────────────────────────────────────────
+SECRET_KEY = os.environ.get("SECRET_KEY", "mlcqa-change-this-in-production-secret")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_HOURS = 24
+
+DATABASE_URL = "sqlite:////tmp/mlcqa.db"
+
+# ─── Database ─────────────────────────────────────────────────────────────────
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+class UserModel(Base):
+    __tablename__ = "users"
+    id            = Column(Integer, primary_key=True, index=True)
+    name          = Column(String, nullable=False)
+    email         = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    created_at    = Column(DateTime, default=datetime.utcnow)
+
+Base.metadata.create_all(bind=engine)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# ─── Auth Helpers ─────────────────────────────────────────────────────────────
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+bearer_scheme = HTTPBearer()
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return pwd_context.verify(plain, hashed)
+
+def create_token(data: dict) -> str:
+    payload = data.copy()
+    payload["exp"] = datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db)
+):
+    try:
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if not email:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    user = db.query(UserModel).filter(UserModel.email == email).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
+
+# ─── Pydantic Schemas ─────────────────────────────────────────────────────────
+class SignupRequest(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+# ─── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI()
 
 app.add_middleware(
@@ -15,46 +91,62 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory store for job results
-# FIX: Added job cleanup to prevent memory growing unboundedly on Render's free tier
+# In-memory job store
 jobs = {}
-MAX_JOBS = 50  # Keep only the last 50 jobs in memory
+MAX_JOBS = 50
 
 def cleanup_old_jobs():
-    """Remove oldest jobs if we exceed MAX_JOBS to prevent memory issues on free tier."""
     if len(jobs) > MAX_JOBS:
-        oldest_keys = list(jobs.keys())[:len(jobs) - MAX_JOBS]
-        for k in oldest_keys:
+        for k in list(jobs.keys())[:len(jobs) - MAX_JOBS]:
             del jobs[k]
 
-
+# ─── Health Check ─────────────────────────────────────────────────────────────
 @app.get("/")
 @app.head("/")
 def home():
-    """Health check endpoint — also used by frontend and Render's health checker.
-    Must support both GET and HEAD methods to prevent Render redeploy loops."""
     return {"status": "MLC QA Backend is Live and listening."}
 
+# ─── Auth Routes ──────────────────────────────────────────────────────────────
+@app.post("/auth/signup")
+def signup(req: SignupRequest, db: Session = Depends(get_db)):
+    if db.query(UserModel).filter(UserModel.email == req.email).first():
+        raise HTTPException(status_code=400, detail="Email already registered.")
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+    user = UserModel(
+        name=req.name,
+        email=req.email,
+        hashed_password=hash_password(req.password)
+    )
+    db.add(user)
+    db.commit()
+    return {"message": "Account created successfully."}
 
+@app.post("/auth/login")
+def login(req: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(UserModel).filter(UserModel.email == req.email).first()
+    if not user or not verify_password(req.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+    token = create_token({"sub": user.email, "name": user.name})
+    return {"access_token": token, "token_type": "bearer", "name": user.name}
+
+@app.get("/auth/me")
+def get_me(current_user: UserModel = Depends(get_current_user)):
+    return {"id": current_user.id, "name": current_user.name, "email": current_user.email}
+
+# ─── Analysis Routes ──────────────────────────────────────────────────────────
 def run_analysis(job_id: str, temp_path: str):
-    """Runs Pylinac analysis in the background and stores result."""
     try:
         pf = PicketFence(temp_path)
         pf.analyze(tolerance=0.5, action_tolerance=0.25)
-        results_text = pf.results()
-
         jobs[job_id] = {
             "status": "Success",
             "passed": pf.passed,
-            "analysis_summary": results_text
+            "analysis_summary": pf.results()
         }
     except Exception as e:
-        jobs[job_id] = {
-            "status": "Error",
-            "message": f"Python Engine Error: {str(e)}"
-        }
+        jobs[job_id] = {"status": "Error", "message": f"Python Engine Error: {str(e)}"}
     finally:
-        # FIX: Always clean up the temp file even if analysis crashes
         try:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
@@ -62,36 +154,27 @@ def run_analysis(job_id: str, temp_path: str):
             pass
         cleanup_old_jobs()
 
-
 @app.post("/analyze")
-async def analyze_mlc(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
-    """Accepts the file, starts background analysis, returns a job_id immediately."""
-
-    # FIX: Validate file type on the backend too (defence in depth)
+async def analyze_mlc(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    current_user: UserModel = Depends(get_current_user)
+):
     if not file.filename.lower().endswith(".dcm"):
         return {"status": "Error", "message": "Only DICOM (.dcm) files are supported."}
-
     try:
-        # FIX: Use a named temp file in /tmp with proper suffix
-        suffix = ".dcm"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir="/tmp") as temp_file:
-            shutil.copyfileobj(file.file, temp_file)
-            temp_path = temp_file.name
-
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".dcm", dir="/tmp") as tmp:
+            shutil.copyfileobj(file.file, tmp)
+            temp_path = tmp.name
         job_id = str(uuid.uuid4())
         jobs[job_id] = {"status": "Processing"}
-
         background_tasks.add_task(run_analysis, job_id, temp_path)
-
         return {"status": "Processing", "job_id": job_id}
-
     except Exception as e:
         return {"status": "Error", "message": f"Upload Error: {str(e)}"}
 
-
 @app.get("/result/{job_id}")
-def get_result(job_id: str):
-    """Frontend polls this endpoint to check if analysis is done."""
+def get_result(job_id: str, current_user: UserModel = Depends(get_current_user)):
     if job_id not in jobs:
         return {"status": "Error", "message": "Job ID not found."}
     return jobs[job_id]
