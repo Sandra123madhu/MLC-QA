@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Picket Fence MLC QA — MLC QA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #040d1a; --surface: #071428; --surface2: #0a1f38;
+      --border: #0e2a4a; --cyan: #00d4ff; --text: #e8f4f8; --muted: #7a9bb5;
+      --success: #00e5a0; --danger: #ff4d6d;
+    }
+    body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; }
+    body::before {
+      content: ''; position: fixed; inset: 0;
+      background-image: linear-gradient(rgba(0,212,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(0,212,255,0.025) 1px, transparent 1px);
+      background-size: 60px 60px; pointer-events: none; z-index: 0;
+    }
+
+    /* Sidebar (same as dashboard) */
+    .sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 240px;
+      background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; z-index: 10; padding: 28px 0;
+    }
+    .sidebar-logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.2rem; padding: 0 28px 28px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+    .sidebar-logo span { color: var(--cyan); }
+    .nav-label { font-size: 0.7rem; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; padding: 0 28px; margin-bottom: 8px; }
+    .nav-item { display: flex; align-items: center; gap: 12px; padding: 11px 28px; color: var(--muted); font-size: 0.9rem; text-decoration: none; transition: all 0.15s; cursor: pointer; border: none; background: none; width: 100%; text-align: left; }
+    .nav-item:hover { color: var(--text); background: var(--surface2); }
+    .nav-item.active { color: var(--cyan); background: rgba(0,212,255,0.06); border-right: 2px solid var(--cyan); }
+    .nav-icon { font-size: 1rem; width: 20px; text-align: center; }
+    .sidebar-footer { margin-top: auto; padding: 24px 28px 0; border-top: 1px solid var(--border); }
+    .user-chip { display: flex; align-items: center; gap: 12px; padding: 12px 0; margin-bottom: 12px; }
+    .avatar { width: 34px; height: 34px; border-radius: 50%; background: rgba(0,212,255,0.15); border: 1px solid rgba(0,212,255,0.3); display: flex; align-items: center; justify-content: center; font-family: 'Syne', sans-serif; font-size: 0.85rem; color: var(--cyan); flex-shrink: 0; }
+    .user-name { font-size: 0.88rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .user-role { font-size: 0.75rem; color: var(--muted); }
+    .logout-btn { width: 100%; background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 9px; border-radius: 7px; font-family: 'DM Sans', sans-serif; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; }
+    .logout-btn:hover { border-color: var(--danger); color: var(--danger); }
+
+    /* Main */
+    .main { margin-left: 240px; padding: 40px 48px; position: relative; z-index: 1; max-width: 1000px; }
+    .page-header { margin-bottom: 36px; }
+    .breadcrumb { font-size: 0.82rem; color: var(--muted); margin-bottom: 12px; }
+    .breadcrumb a { color: var(--muted); text-decoration: none; transition: color 0.2s; }
+    .breadcrumb a:hover { color: var(--cyan); }
+    .page-header h1 { font-family: 'Syne', sans-serif; font-size: 1.7rem; font-weight: 700; margin-bottom: 6px; }
+    .page-header p { color: var(--muted); font-size: 0.9rem; }
+
+    /* Upload box */
+    .upload-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; padding: 36px; margin-bottom: 24px;
+    }
+    .upload-zone {
+      border: 2px dashed var(--border); border-radius: 10px;
+      padding: 48px 24px; text-align: center;
+      transition: all 0.2s; cursor: pointer; position: relative;
+    }
+    .upload-zone:hover, .upload-zone.dragover { border-color: var(--cyan); background: rgba(0,212,255,0.03); }
+    .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .upload-icon { font-size: 2.5rem; margin-bottom: 12px; }
+    .upload-zone h3 { font-family: 'Syne', sans-serif; font-size: 1rem; margin-bottom: 6px; }
+    .upload-zone p { font-size: 0.85rem; color: var(--muted); }
+    .file-selected { font-size: 0.82rem; color: var(--cyan); margin-top: 12px; font-weight: 500; }
+
+    /* Tolerances row */
+    .tolerances {
+      display: flex; gap: 16px; margin-top: 24px; flex-wrap: wrap;
+    }
+    .tol-item {
+      flex: 1; min-width: 160px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 14px 16px;
+    }
+    .tol-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+    .tol-val { font-family: 'Syne', sans-serif; font-size: 1.1rem; color: var(--cyan); }
+
+    .analyze-btn {
+      width: 100%; background: var(--cyan); color: #040d1a;
+      border: none; padding: 15px; border-radius: 9px;
+      font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 1rem;
+      cursor: pointer; margin-top: 20px; transition: all 0.2s;
+    }
+    .analyze-btn:hover:not(:disabled) { background: #33ddff; box-shadow: 0 4px 20px rgba(0,212,255,0.3); transform: translateY(-1px); }
+    .analyze-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Results */
+    .results-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; padding: 36px;
+    }
+    .results-card h2 { font-family: 'Syne', sans-serif; font-size: 1rem; font-weight: 600; margin-bottom: 20px; color: var(--muted); }
+    #resultsBody { color: var(--muted); font-size: 0.9rem; line-height: 1.6; }
+    #resultsBody pre { white-space: pre-wrap; font-family: 'DM Mono', monospace; font-size: 0.85rem; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-top: 12px; line-height: 1.7; }
+    .result-pass { color: var(--success); }
+    .result-fail { color: var(--danger); }
+    .result-heading { font-family: 'Syne', sans-serif; font-size: 1.4rem; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
+    .server-status { font-size: 0.82rem; display: flex; align-items: center; gap: 8px; margin-bottom: 24px; }
+    .status-dot-sm { width: 6px; height: 6px; border-radius: 50%; }
+    .dot-ok { background: var(--success); box-shadow: 0 0 5px var(--success); }
+    .dot-warn { background: #ffd32a; box-shadow: 0 0 5px #ffd32a; }
+
+    @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+    @media(max-width:768px){ .sidebar{display:none;} .main{margin-left:0;padding:24px 20px;} }
+  </style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sidebar-logo">MLC<span>QA</span></div>
+  <div class="nav-label">Menu</div>
+  <a class="nav-item" href="dashboard.html"><span class="nav-icon">⬛</span> Dashboard</a>
+  <a class="nav-item active" href="mlc-qa.html"><span class="nav-icon">⚡</span> MLC QA</a>
+  <div class="sidebar-footer">
+    <div class="user-chip">
+      <div class="avatar" id="avatarInitial">?</div>
+      <div>
+        <div class="user-name" id="sidebarName">Loading...</div>
+        <div class="user-role">Medical Physicist</div>
+      </div>
+    </div>
+    <button class="logout-btn" onclick="logout()">Sign Out</button>
+  </div>
+</aside>
+
+<main class="main">
+  <div class="page-header">
+    <div class="breadcrumb"><a href="dashboard.html">Dashboard</a> / Picket Fence MLC QA</div>
+    <h1>Picket Fence MLC QA</h1>
+    <p>Upload a DICOM image to analyze multi-leaf collimator positioning accuracy</p>
+  </div>
+
+  <!-- Server status -->
+  <div class="server-status" id="serverStatus">
+    <div class="status-dot-sm dot-warn"></div>
+    <span style="color:var(--muted)">Checking server...</span>
+  </div>
+
+  <div class="upload-card">
+    <div class="upload-zone" id="uploadZone">
+      <input type="file" id="dicomFile" accept=".dcm" onchange="onFileSelected(this)"/>
+      <div class="upload-icon">📂</div>
+      <h3>Drop your DICOM file here</h3>
+      <p>or click to browse — .dcm files only</p>
+      <div class="file-selected" id="fileLabel"></div>
+    </div>
+
+    <div class="tolerances">
+      <div class="tol-item">
+        <div class="tol-label">Tolerance</div>
+        <div class="tol-val">0.5 mm</div>
+      </div>
+      <div class="tol-item">
+        <div class="tol-label">Action Tolerance</div>
+        <div class="tol-val">0.25 mm</div>
+      </div>
+      <div class="tol-item">
+        <div class="tol-label">File Format</div>
+        <div class="tol-val">DICOM (.dcm)</div>
+      </div>
+    </div>
+
+    <button class="analyze-btn" id="uploadBtn" onclick="uploadFile()" disabled>
+      Select a file to begin
+    </button>
+  </div>
+
+  <div class="results-card">
+    <h2>ANALYSIS RESULTS</h2>
+    <div id="resultsBody">Upload a DICOM file above to see results here.</div>
+  </div>
+</main>
+
+<script>
+const BACKEND_URL = "https://mlc-qa.onrender.com";
+const token = localStorage.getItem("mlcqa_token");
+const name  = localStorage.getItem("mlcqa_name");
+
+if (!token) { window.location.href = "login.html"; }
+
+if (name) {
+  document.getElementById("sidebarName").textContent = name;
+  document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
+}
+
+function logout() {
+  localStorage.removeItem("mlcqa_token");
+  localStorage.removeItem("mlcqa_name");
+  window.location.href = "index.html";
+}
+
+function onFileSelected(input) {
+  const label = document.getElementById("fileLabel");
+  const btn   = document.getElementById("uploadBtn");
+  if (input.files.length > 0) {
+    label.textContent = "📄 " + input.files[0].name;
+    btn.textContent = "Run Picket Fence Analysis";
+    btn.disabled = false;
+  }
+}
+
+// Drag and drop
+const zone = document.getElementById("uploadZone");
+zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("dragover"); });
+zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+zone.addEventListener("drop", e => {
+  e.preventDefault(); zone.classList.remove("dragover");
+  const f = e.dataTransfer.files[0];
+  if (f) {
+    document.getElementById("dicomFile").files = e.dataTransfer.files;
+    onFileSelected(document.getElementById("dicomFile"));
+  }
+});
+
+// Keep-alive + server status
+function pingServer() {
+  fetch(`${BACKEND_URL}/`).then(res => {
+    const el = document.getElementById("serverStatus");
+    if (res.ok) {
+      el.innerHTML = `<div class="status-dot-sm dot-ok"></div><span style="color:var(--success)">Server ready</span>`;
+    }
+  }).catch(() => {
+    document.getElementById("serverStatus").innerHTML = `<div class="status-dot-sm dot-warn"></div><span style="color:#ffd32a">Server waking up...</span>`;
+  });
+}
+pingServer();
+setInterval(pingServer, 10 * 60 * 1000);
+
+async function uploadFile() {
+  const fileInput = document.getElementById("dicomFile");
+  const resultsDiv = document.getElementById("resultsBody");
+  const btn = document.getElementById("uploadBtn");
+
+  if (fileInput.files.length === 0) { alert("Please select a .dcm file."); return; }
+  if (!fileInput.files[0].name.toLowerCase().endsWith(".dcm")) {
+    resultsDiv.innerHTML = `<p class="result-fail">❌ Please upload a valid DICOM (.dcm) file.</p>`; return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", fileInput.files[0]);
+  btn.disabled = true; btn.textContent = "Uploading...";
+  resultsDiv.innerHTML = `<p>⏳ Uploading file to analysis engine...</p>`;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    let response;
+    try {
+      response = await fetch(`${BACKEND_URL}/analyze`, {
+        method: "POST", body: formData, signal: controller.signal,
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+    } catch(err) {
+      clearTimeout(timeout);
+      if (err.name === "AbortError") {
+        resultsDiv.innerHTML = `<p class="result-fail">⚠️ Upload timed out. Server may be waking up — please wait 30s and try again.</p>`;
+      } else {
+        resultsDiv.innerHTML = `<p class="result-fail">❌ Could not reach server.</p>`;
+      }
+      btn.disabled = false; btn.textContent = "Run Picket Fence Analysis";
+      return;
+    }
+    clearTimeout(timeout);
+
+    if (response.status === 401) {
+      localStorage.removeItem("mlcqa_token");
+      window.location.href = "login.html";
+      return;
+    }
+
+    const rawText = await response.text();
+    if (!rawText || rawText.trim() === "") {
+      resultsDiv.innerHTML = `<p style="color:orange">⚠️ Empty server response. Please try again.</p>`;
+      btn.disabled = false; btn.textContent = "Run Picket Fence Analysis";
+      return;
+    }
+
+    const data = JSON.parse(rawText);
+    if (data.status === "Error") {
+      resultsDiv.innerHTML = `<p class="result-fail">❌ ${data.message}</p>`;
+      btn.disabled = false; btn.textContent = "Run Picket Fence Analysis";
+      return;
+    }
+
+    const jobId = data.job_id;
+    btn.textContent = "Analysing...";
+    resultsDiv.innerHTML = `<p>🔬 Running Picket Fence analysis<span id="dots">.</span></p>`;
+
+    let dotCount = 0;
+    const dotAnim = setInterval(() => {
+      dotCount = (dotCount + 1) % 4;
+      const d = document.getElementById("dots");
+      if (d) d.textContent = ".".repeat(dotCount + 1);
+    }, 500);
+
+    let attempts = 0;
+    const getDelay = a => a < 5 ? 2000 : a < 15 ? 3000 : 5000;
+
+    const poll = async () => {
+      attempts++;
+      if (attempts > 60) {
+        clearInterval(dotAnim);
+        resultsDiv.innerHTML = `<p style="color:orange">⚠️ Analysis is taking longer than expected. Please try again.</p>`;
+        btn.disabled = false; btn.textContent = "Run Picket Fence Analysis";
+        return;
+      }
+      try {
+        const res = await fetch(`${BACKEND_URL}/result/${jobId}`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const result = await res.json();
+        if (result.status === "Processing") {
+          setTimeout(poll, getDelay(attempts));
+        } else if (result.status === "Success") {
+          clearInterval(dotAnim);
+          const pass = result.passed;
+          resultsDiv.innerHTML = `
+            <div class="result-heading ${pass ? 'result-pass' : 'result-fail'}">
+              ${pass ? '✅' : '❌'} ${pass ? 'PASS' : 'FAIL'}
+            </div>
+            <p style="color:var(--muted);font-size:0.85rem;margin-bottom:8px;">MLC positioning is ${pass ? 'within' : 'outside'} clinical tolerance</p>
+            <pre>${result.analysis_summary}</pre>`;
+          btn.disabled = false; btn.textContent = "Analyse Another File";
+        } else {
+          clearInterval(dotAnim);
+          resultsDiv.innerHTML = `<p class="result-fail">❌ ${result.message}</p>`;
+          btn.disabled = false; btn.textContent = "Run Picket Fence Analysis";
+        }
+      } catch {
+        clearInterval(dotAnim);
+        resultsDiv.innerHTML = `<p class="result-fail">❌ Lost connection while waiting for results.</p>`;
+        btn.disabled = false; btn.textContent = "Run Picket Fence Analysis";
+      }
+    };
+    setTimeout(poll, getDelay(0));
+
+  } catch(err) {
+    resultsDiv.innerHTML = `<p class="result-fail">❌ Unexpected error. Please try again.</p>`;
+    btn.disabled = false; btn.textContent = "Run Picket Fence Analysis";
+  }
+}
+</script>
+</body>
+</html>
