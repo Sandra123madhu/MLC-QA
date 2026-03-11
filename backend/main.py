@@ -1,84 +1,67 @@
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks, Depends, HTTPException, status
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, EmailStr
-from sqlalchemy import create_engine, Column, Integer, String, DateTime
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
-from passlib.context import CryptContext
+from pydantic import BaseModel
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from pylinac import PicketFence
-import os, shutil, tempfile, uuid
+import os, shutil, tempfile, uuid, hashlib, hmac, json
 
 # ─── Config ───────────────────────────────────────────────────────────────────
-SECRET_KEY = os.environ.get("SECRET_KEY", "mlcqa-change-this-in-production-secret")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = 24
+SECRET_KEY = os.environ.get("SECRET_KEY", "mlcqa-change-this-secret-key-in-render")
+ALGORITHM  = "HS256"
+TOKEN_HOURS = 24
 
-DATABASE_URL = "sqlite:////tmp/mlcqa.db"
+# ─── Simple file-based user store (no SQLAlchemy needed) ──────────────────────
+USERS_FILE = "/tmp/users.json"
 
-# ─── Database ─────────────────────────────────────────────────────────────────
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+def load_users() -> dict:
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "r") as f:
+            return json.load(f)
+    return {}
 
-class UserModel(Base):
-    __tablename__ = "users"
-    id            = Column(Integer, primary_key=True, index=True)
-    name          = Column(String, nullable=False)
-    email         = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    created_at    = Column(DateTime, default=datetime.utcnow)
-
-Base.metadata.create_all(bind=engine)
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-# ─── Auth Helpers ─────────────────────────────────────────────────────────────
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-bearer_scheme = HTTPBearer()
+def save_users(users: dict):
+    with open(USERS_FILE, "w") as f:
+        json.dump(users, f)
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    """SHA-256 hash with SECRET_KEY as salt — no bcrypt needed."""
+    return hmac.new(SECRET_KEY.encode(), password.encode(), hashlib.sha256).hexdigest()
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    return hmac.compare_digest(hash_password(plain), hashed)
 
-def create_token(data: dict) -> str:
-    payload = data.copy()
-    payload["exp"] = datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+# ─── JWT ──────────────────────────────────────────────────────────────────────
+bearer_scheme = HTTPBearer()
+
+def create_token(email: str, name: str) -> str:
+    payload = {
+        "sub": email,
+        "name": name,
+        "exp": datetime.utcnow() + timedelta(hours=TOKEN_HOURS)
+    }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    db: Session = Depends(get_db)
-):
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
     try:
         payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
+        email = payload.get("sub")
+        name  = payload.get("name")
         if not email:
             raise HTTPException(status_code=401, detail="Invalid token")
+        return {"email": email, "name": name}
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    user = db.query(UserModel).filter(UserModel.email == email).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    return user
 
 # ─── Pydantic Schemas ─────────────────────────────────────────────────────────
 class SignupRequest(BaseModel):
     name: str
-    email: EmailStr
+    email: str
     password: str
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str
 
 # ─── App ──────────────────────────────────────────────────────────────────────
@@ -87,6 +70,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -108,31 +92,34 @@ def home():
 
 # ─── Auth Routes ──────────────────────────────────────────────────────────────
 @app.post("/auth/signup")
-def signup(req: SignupRequest, db: Session = Depends(get_db)):
-    if db.query(UserModel).filter(UserModel.email == req.email).first():
+def signup(req: SignupRequest):
+    users = load_users()
+    if req.email in users:
         raise HTTPException(status_code=400, detail="Email already registered.")
     if len(req.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
-    user = UserModel(
-        name=req.name,
-        email=req.email,
-        hashed_password=hash_password(req.password)
-    )
-    db.add(user)
-    db.commit()
+    if not req.name.strip():
+        raise HTTPException(status_code=400, detail="Name is required.")
+    users[req.email] = {
+        "name": req.name.strip(),
+        "email": req.email,
+        "password": hash_password(req.password)
+    }
+    save_users(users)
     return {"message": "Account created successfully."}
 
 @app.post("/auth/login")
-def login(req: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(UserModel).filter(UserModel.email == req.email).first()
-    if not user or not verify_password(req.password, user.hashed_password):
+def login(req: LoginRequest):
+    users = load_users()
+    user = users.get(req.email)
+    if not user or not verify_password(req.password, user["password"]):
         raise HTTPException(status_code=401, detail="Invalid email or password.")
-    token = create_token({"sub": user.email, "name": user.name})
-    return {"access_token": token, "token_type": "bearer", "name": user.name}
+    token = create_token(req.email, user["name"])
+    return {"access_token": token, "token_type": "bearer", "name": user["name"]}
 
 @app.get("/auth/me")
-def get_me(current_user: UserModel = Depends(get_current_user)):
-    return {"id": current_user.id, "name": current_user.name, "email": current_user.email}
+def get_me(current_user: dict = Depends(get_current_user)):
+    return {"email": current_user["email"], "name": current_user["name"]}
 
 # ─── Analysis Routes ──────────────────────────────────────────────────────────
 def run_analysis(job_id: str, temp_path: str):
@@ -145,7 +132,7 @@ def run_analysis(job_id: str, temp_path: str):
             "analysis_summary": pf.results()
         }
     except Exception as e:
-        jobs[job_id] = {"status": "Error", "message": f"Python Engine Error: {str(e)}"}
+        jobs[job_id] = {"status": "Error", "message": f"Analysis Error: {str(e)}"}
     finally:
         try:
             if os.path.exists(temp_path):
@@ -158,7 +145,7 @@ def run_analysis(job_id: str, temp_path: str):
 async def analyze_mlc(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    current_user: UserModel = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user)
 ):
     if not file.filename.lower().endswith(".dcm"):
         return {"status": "Error", "message": "Only DICOM (.dcm) files are supported."}
@@ -174,7 +161,7 @@ async def analyze_mlc(
         return {"status": "Error", "message": f"Upload Error: {str(e)}"}
 
 @app.get("/result/{job_id}")
-def get_result(job_id: str, current_user: UserModel = Depends(get_current_user)):
+def get_result(job_id: str, current_user: dict = Depends(get_current_user)):
     if job_id not in jobs:
         return {"status": "Error", "message": "Job ID not found."}
     return jobs[job_id]
