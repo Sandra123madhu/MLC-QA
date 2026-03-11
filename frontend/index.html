@@ -1,26 +1,399 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MLC QA Dashboard</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MLC QA — Medical Linac Analysis Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #040d1a;
+      --surface:  #071428;
+      --border:   #0e2a4a;
+      --cyan:     #00d4ff;
+      --cyan-dim: #0099bb;
+      --text:     #e8f4f8;
+      --muted:    #7a9bb5;
+      --danger:   #ff4d6d;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── animated grid background ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── glowing orb ── */
+    body::after {
+      content: '';
+      position: fixed;
+      top: -200px; left: 50%;
+      transform: translateX(-50%);
+      width: 800px; height: 800px;
+      background: radial-gradient(circle, rgba(0,212,255,0.07) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    nav {
+      position: fixed; top: 0; left: 0; right: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 20px 48px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(4,13,26,0.85);
+      backdrop-filter: blur(12px);
+      z-index: 100;
+    }
+
+    .logo {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 1.25rem;
+      letter-spacing: 0.05em;
+      color: var(--text);
+    }
+    .logo span { color: var(--cyan); }
+
+    .nav-btns { display: flex; gap: 12px; }
+
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 9px 24px;
+      border-radius: 6px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+    .btn-ghost:hover { border-color: var(--cyan); color: var(--cyan); }
+
+    .btn-primary {
+      background: var(--cyan);
+      border: none;
+      color: #040d1a;
+      padding: 9px 24px;
+      border-radius: 6px;
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 500;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+    .btn-primary:hover { background: #33ddff; transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,212,255,0.3); }
+
+    /* ── Hero ── */
+    .hero {
+      position: relative; z-index: 1;
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      text-align: center;
+      padding: 120px 24px 80px;
+    }
+
+    .badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      border: 1px solid rgba(0,212,255,0.3);
+      background: rgba(0,212,255,0.05);
+      color: var(--cyan);
+      font-size: 0.8rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 6px 16px;
+      border-radius: 100px;
+      margin-bottom: 32px;
+      animation: fadeUp 0.6s ease both;
+    }
+    .badge::before {
+      content: '';
+      width: 6px; height: 6px;
+      background: var(--cyan);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--cyan);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    h1 {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: clamp(2.8rem, 6vw, 5rem);
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      max-width: 800px;
+      animation: fadeUp 0.6s 0.1s ease both;
+    }
+    h1 .accent { color: var(--cyan); }
+
+    .hero-sub {
+      margin-top: 24px;
+      font-size: 1.1rem;
+      color: var(--muted);
+      max-width: 520px;
+      line-height: 1.7;
+      font-weight: 300;
+      animation: fadeUp 0.6s 0.2s ease both;
+    }
+
+    .hero-btns {
+      display: flex; gap: 16px; margin-top: 48px;
+      flex-wrap: wrap; justify-content: center;
+      animation: fadeUp 0.6s 0.3s ease both;
+    }
+
+    .btn-hero-primary {
+      background: var(--cyan);
+      color: #040d1a;
+      border: none;
+      padding: 14px 36px;
+      border-radius: 8px;
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 1rem;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s;
+      display: inline-block;
+    }
+    .btn-hero-primary:hover { background: #33ddff; transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,212,255,0.35); }
+
+    .btn-hero-ghost {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 14px 36px;
+      border-radius: 8px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 1rem;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s;
+      display: inline-block;
+    }
+    .btn-hero-ghost:hover { border-color: var(--cyan); color: var(--cyan); }
+
+    /* ── Stats bar ── */
+    .stats {
+      position: relative; z-index: 1;
+      display: flex; justify-content: center; gap: 0;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      animation: fadeUp 0.6s 0.4s ease both;
+    }
+    .stat-item {
+      padding: 36px 64px;
+      text-align: center;
+      border-right: 1px solid var(--border);
+    }
+    .stat-item:last-child { border-right: none; }
+    .stat-num {
+      font-family: 'Syne', sans-serif;
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--cyan);
+    }
+    .stat-label { font-size: 0.8rem; color: var(--muted); margin-top: 4px; letter-spacing: 0.05em; text-transform: uppercase; }
+
+    /* ── Features ── */
+    .features {
+      position: relative; z-index: 1;
+      max-width: 1100px; margin: 100px auto;
+      padding: 0 24px;
+    }
+    .section-label {
+      font-size: 0.75rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      margin-bottom: 16px;
+    }
+    .section-title {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(1.8rem, 3vw, 2.5rem);
+      font-weight: 700;
+      margin-bottom: 60px;
+      max-width: 500px;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1px;
+      border: 1px solid var(--border);
+      background: var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .feature-card {
+      background: var(--surface);
+      padding: 36px;
+      transition: background 0.2s;
+    }
+    .feature-card:hover { background: #0a1f38; }
+
+    .feature-icon {
+      width: 44px; height: 44px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.3rem;
+      margin-bottom: 20px;
+      background: rgba(0,212,255,0.05);
+    }
+    .feature-card h3 {
+      font-family: 'Syne', sans-serif;
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+    .feature-card p { font-size: 0.9rem; color: var(--muted); line-height: 1.6; }
+
+    /* ── CTA ── */
+    .cta-section {
+      position: relative; z-index: 1;
+      text-align: center;
+      padding: 100px 24px;
+      border-top: 1px solid var(--border);
+    }
+    .cta-section h2 {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+    .cta-section p { color: var(--muted); margin-bottom: 40px; font-size: 1.05rem; }
+
+    footer {
+      position: relative; z-index: 1;
+      text-align: center;
+      padding: 32px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 640px) {
+      nav { padding: 16px 20px; }
+      .stat-item { padding: 28px 28px; }
+      .stats { flex-wrap: wrap; }
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h1>LINAC MLC QA Dashboard</h1>
-        
-        <div class="upload-section">
-            <p>Upload DICOM image (.dcm) for Picket Fence Analysis</p>
-            <input type="file" id="dicomFile" accept=".dcm">
-            <button onclick="uploadFile()">Analyze MLC</button>
-        </div>
 
-        <div id="results" class="results-box">
-            <p>Upload a file to see results here.</p>
-        </div>
+<nav>
+  <div class="logo">MLC<span>QA</span></div>
+  <div class="nav-btns">
+    <a href="login.html" class="btn-ghost">Log In</a>
+    <a href="signup.html" class="btn-primary">Sign Up</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="badge">Clinical Radiation Physics Platform</div>
+  <h1>Precision <span class="accent">Linac QA</span><br/>for Medical Physicists</h1>
+  <p class="hero-sub">Upload DICOM images and get instant, automated analysis powered by Pylinac — trusted by physicists worldwide.</p>
+  <div class="hero-btns">
+    <a href="signup.html" class="btn-hero-primary">Get Started Free</a>
+    <a href="login.html" class="btn-hero-ghost">Sign In →</a>
+  </div>
+</section>
+
+<div class="stats">
+  <div class="stat-item">
+    <div class="stat-num">0.5mm</div>
+    <div class="stat-label">MLC Tolerance</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-num">DICOM</div>
+    <div class="stat-label">Native Format</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-num">Pylinac</div>
+    <div class="stat-label">Powered By</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-num">100%</div>
+    <div class="stat-label">Web Based</div>
+  </div>
+</div>
+
+<section class="features">
+  <div class="section-label">Capabilities</div>
+  <h2 class="section-title">Everything you need for Linac QA</h2>
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <h3>Picket Fence MLC QA</h3>
+      <p>Automated multi-leaf collimator analysis with pass/fail reporting against clinical tolerances.</p>
     </div>
-    
-    <script src="script.js"></script>
+    <div class="feature-card">
+      <div class="feature-icon">🔒</div>
+      <h3>Secure Accounts</h3>
+      <p>Your data is protected with JWT authentication and bcrypt-hashed passwords.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📊</div>
+      <h3>Instant Reports</h3>
+      <p>Get detailed analysis summaries the moment your DICOM file is processed.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">☁️</div>
+      <h3>Cloud-based</h3>
+      <p>No software installation needed. Access your QA platform from any device, anywhere.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🎯</div>
+      <h3>Clinical Accuracy</h3>
+      <p>Built on Pylinac — the open-source standard for medical physics quality assurance.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🚀</div>
+      <h3>More Tests Coming</h3>
+      <p>Winston-Lutz, Star Shot, VMAT and CatPhan analysis modules are in development.</p>
+    </div>
+  </div>
+</section>
+
+<section class="cta-section">
+  <h2>Ready to streamline your QA workflow?</h2>
+  <p>Create a free account and run your first analysis in minutes.</p>
+  <a href="signup.html" class="btn-hero-primary">Create Free Account</a>
+</section>
+
+<footer>© 2025 MLC QA Platform · Built with Pylinac · For clinical physics use</footer>
+
 </body>
 </html>
