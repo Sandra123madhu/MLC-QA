@@ -3,7 +3,5 @@ uvicorn[standard]
 pylinac
 pydicom
 python-multipart
-sqlalchemy
-passlib[bcrypt]
 python-jose[cryptography]
-pydantic[email]
+pydantic
