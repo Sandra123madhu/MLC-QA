@@ -1,7 +1,8 @@
 fastapi
-uvicorn[standard]
+uvicorn
 pylinac
 pydicom
 python-multipart
-python-jose[cryptography]
+python-jose
+cryptography
 pydantic
