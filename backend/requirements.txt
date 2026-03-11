@@ -3,3 +3,7 @@ uvicorn
 pylinac
 pydicom
 python-multipart
+sqlalchemy
+passlib
+python-jose
+pydantic
