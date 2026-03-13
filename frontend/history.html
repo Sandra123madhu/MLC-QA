@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Analysis History — MLC QA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #040d1a; --surface: #071428; --surface2: #0a1f38;
+      --border: #0e2a4a; --cyan: #00d4ff; --text: #e8f4f8; --muted: #7a9bb5;
+      --success: #00e5a0; --danger: #ff4d6d;
+    }
+    body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; }
+    body::before {
+      content: ''; position: fixed; inset: 0;
+      background-image: linear-gradient(rgba(0,212,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(0,212,255,0.025) 1px, transparent 1px);
+      background-size: 60px 60px; pointer-events: none; z-index: 0;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 240px;
+      background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; z-index: 10; padding: 28px 0;
+    }
+    .sidebar-logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.2rem; padding: 0 28px 28px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+    .sidebar-logo span { color: var(--cyan); }
+    .nav-label { font-size: 0.7rem; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; padding: 0 28px; margin-bottom: 8px; }
+    .nav-item { display: flex; align-items: center; gap: 12px; padding: 11px 28px; color: var(--muted); font-size: 0.9rem; text-decoration: none; transition: all 0.15s; border: none; background: none; width: 100%; text-align: left; cursor: pointer; }
+    .nav-item:hover { color: var(--text); background: var(--surface2); }
+    .nav-item.active { color: var(--cyan); background: rgba(0,212,255,0.06); border-right: 2px solid var(--cyan); }
+    .nav-icon { font-size: 1rem; width: 20px; text-align: center; }
+    .sidebar-footer { margin-top: auto; padding: 24px 28px 0; border-top: 1px solid var(--border); }
+    .user-chip { display: flex; align-items: center; gap: 12px; padding: 12px 0; margin-bottom: 12px; }
+    .avatar { width: 34px; height: 34px; border-radius: 50%; background: rgba(0,212,255,0.15); border: 1px solid rgba(0,212,255,0.3); display: flex; align-items: center; justify-content: center; font-family: 'Syne', sans-serif; font-size: 0.85rem; color: var(--cyan); flex-shrink: 0; }
+    .user-name { font-size: 0.88rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .user-role { font-size: 0.75rem; color: var(--muted); }
+    .logout-btn { width: 100%; background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 9px; border-radius: 7px; font-family: 'DM Sans', sans-serif; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; }
+    .logout-btn:hover { border-color: var(--danger); color: var(--danger); }
+
+    /* ── Main ── */
+    .main { margin-left: 240px; padding: 40px 48px; position: relative; z-index: 1; }
+
+    .page-header { margin-bottom: 36px; }
+    .breadcrumb { font-size: 0.82rem; color: var(--muted); margin-bottom: 12px; }
+    .breadcrumb a { color: var(--muted); text-decoration: none; transition: color 0.2s; }
+    .breadcrumb a:hover { color: var(--cyan); }
+    .page-header h1 { font-family: 'Syne', sans-serif; font-size: 1.7rem; font-weight: 700; margin-bottom: 6px; }
+    .page-header p { color: var(--muted); font-size: 0.9rem; }
+
+    /* ── Filter bar ── */
+    .filter-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 24px; gap: 16px; flex-wrap: wrap;
+    }
+    .filter-left { display: flex; gap: 8px; }
+    .filter-btn {
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--muted); padding: 8px 18px; border-radius: 6px;
+      font-family: 'DM Sans', sans-serif; font-size: 0.82rem;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .filter-btn:hover, .filter-btn.active { border-color: var(--cyan); color: var(--cyan); background: rgba(0,212,255,0.05); }
+    .record-count { font-family: 'DM Mono', monospace; font-size: 0.75rem; color: var(--muted); }
+
+    /* ── Table ── */
+    .table-wrap {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; overflow: hidden;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    thead tr { border-bottom: 1px solid var(--border); }
+    thead th {
+      padding: 14px 20px; text-align: left;
+      font-family: 'DM Mono', monospace; font-size: 0.7rem;
+      letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+      font-weight: 400;
+    }
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s; cursor: pointer;
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--surface2); }
+    tbody td { padding: 16px 20px; font-size: 0.88rem; vertical-align: middle; }
+
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 10px; border-radius: 100px;
+      font-size: 0.75rem; font-weight: 500; letter-spacing: 0.03em;
+    }
+    .badge-pass { background: rgba(0,229,160,0.1); color: var(--success); border: 1px solid rgba(0,229,160,0.25); }
+    .badge-fail { background: rgba(255,77,109,0.1); color: var(--danger); border: 1px solid rgba(255,77,109,0.25); }
+    .badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+    .test-chip {
+      background: rgba(0,212,255,0.07); border: 1px solid rgba(0,212,255,0.15);
+      color: var(--cyan); padding: 3px 10px; border-radius: 4px;
+      font-size: 0.75rem; font-family: 'DM Mono', monospace;
+    }
+    .filename { color: var(--muted); font-family: 'DM Mono', monospace; font-size: 0.78rem; }
+    .date-cell { color: var(--muted); font-size: 0.82rem; }
+
+    /* ── Expanded summary row ── */
+    .summary-row { display: none; }
+    .summary-row.open { display: table-row; }
+    .summary-row td {
+      padding: 0 20px 20px;
+      background: var(--bg);
+    }
+    .summary-box {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 20px;
+    }
+    .summary-box pre {
+      white-space: pre-wrap; font-family: 'DM Mono', monospace;
+      font-size: 0.82rem; color: var(--muted); line-height: 1.7;
+    }
+
+    /* ── Empty state ── */
+    .empty-state {
+      text-align: center; padding: 80px 24px;
+    }
+    .empty-icon { font-size: 3rem; margin-bottom: 16px; opacity: 0.4; }
+    .empty-state h3 { font-family: 'Syne', sans-serif; font-size: 1.1rem; margin-bottom: 8px; color: var(--muted); }
+    .empty-state p { font-size: 0.88rem; color: var(--muted); margin-bottom: 24px; }
+    .btn-cyan {
+      background: var(--cyan); color: #040d1a; border: none;
+      padding: 11px 28px; border-radius: 7px;
+      font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 0.9rem;
+      cursor: pointer; text-decoration: none; display: inline-block; transition: all 0.2s;
+    }
+    .btn-cyan:hover { background: #33ddff; box-shadow: 0 4px 20px rgba(0,212,255,0.3); }
+
+    /* ── Loading skeleton ── */
+    .skeleton-row td { padding: 18px 20px; }
+    .skel {
+      height: 12px; border-radius: 4px;
+      background: linear-gradient(90deg, var(--border) 25%, var(--surface2) 50%, var(--border) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+    }
+    @keyframes shimmer { to { background-position: -200% 0; } }
+
+    @media(max-width:768px) { .sidebar{display:none;} .main{margin-left:0;padding:24px 20px;} }
+  </style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sidebar-logo">MLC<span>QA</span></div>
+  <div class="nav-label">Menu</div>
+  <a class="nav-item" href="dashboard.html"><span class="nav-icon">⬛</span> Dashboard</a>
+  <a class="nav-item" href="mlc-qa.html"><span class="nav-icon">⚡</span> MLC QA</a>
+  <a class="nav-item active" href="history.html"><span class="nav-icon">📋</span> History</a>
+  <div class="sidebar-footer">
+    <div class="user-chip">
+      <div class="avatar" id="avatarInitial">?</div>
+      <div>
+        <div class="user-name" id="sidebarName">Loading...</div>
+        <div class="user-role">Medical Physicist</div>
+      </div>
+    </div>
+    <button class="logout-btn" onclick="logout()">Sign Out</button>
+  </div>
+</aside>
+
+<main class="main">
+  <div class="page-header">
+    <div class="breadcrumb"><a href="dashboard.html">Dashboard</a> / Analysis History</div>
+    <h1>Analysis History</h1>
+    <p>Your last 30 days of QA analyses — auto-cleared after 30 days</p>
+  </div>
+
+  <div class="filter-bar">
+    <div class="filter-left">
+      <button class="filter-btn active" onclick="filterResults('all', this)">All</button>
+      <button class="filter-btn" onclick="filterResults('pass', this)">Pass</button>
+      <button class="filter-btn" onclick="filterResults('fail', this)">Fail</button>
+    </div>
+    <span class="record-count" id="recordCount"></span>
+  </div>
+
+  <div class="table-wrap">
+    <table id="historyTable">
+      <thead>
+        <tr>
+          <th>Result</th>
+          <th>Test Type</th>
+          <th>File</th>
+          <th>Date & Time</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="historyBody">
+        <!-- skeleton loading rows -->
+        <tr class="skeleton-row">
+          <td><div class="skel" style="width:60px"></div></td>
+          <td><div class="skel" style="width:100px"></div></td>
+          <td><div class="skel" style="width:160px"></div></td>
+          <td><div class="skel" style="width:120px"></div></td>
+          <td><div class="skel" style="width:40px"></div></td>
+        </tr>
+        <tr class="skeleton-row">
+          <td><div class="skel" style="width:60px"></div></td>
+          <td><div class="skel" style="width:100px"></div></td>
+          <td><div class="skel" style="width:140px"></div></td>
+          <td><div class="skel" style="width:120px"></div></td>
+          <td><div class="skel" style="width:40px"></div></td>
+        </tr>
+        <tr class="skeleton-row">
+          <td><div class="skel" style="width:60px"></div></td>
+          <td><div class="skel" style="width:100px"></div></td>
+          <td><div class="skel" style="width:180px"></div></td>
+          <td><div class="skel" style="width:120px"></div></td>
+          <td><div class="skel" style="width:40px"></div></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+const BACKEND_URL = "https://mlc-qa.onrender.com";
+const token = localStorage.getItem("mlcqa_token");
+const name  = localStorage.getItem("mlcqa_name");
+
+if (!token) { window.location.href = "login.html"; }
+
+if (name) {
+  document.getElementById("sidebarName").textContent = name;
+  document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
+}
+
+function logout() {
+  localStorage.removeItem("mlcqa_token");
+  localStorage.removeItem("mlcqa_name");
+  window.location.href = "index.html";
+}
+
+function formatDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    + " · " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+}
+
+let allAnalyses = [];
+let openRow = null;
+
+function renderRows(data) {
+  const tbody = document.getElementById("historyBody");
+
+  if (data.length === 0) {
+    tbody.innerHTML = `
+      <tr><td colspan="5">
+        <div class="empty-state">
+          <div class="empty-icon">📂</div>
+          <h3>No analyses found</h3>
+          <p>Run your first QA analysis to see results here</p>
+          <a href="mlc-qa.html" class="btn-cyan">Run Analysis</a>
+        </div>
+      </td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = "";
+  data.forEach((a, i) => {
+    const mainRow = document.createElement("tr");
+    mainRow.id = `row-${i}`;
+    mainRow.innerHTML = `
+      <td><span class="badge ${a.passed ? 'badge-pass' : 'badge-fail'}">${a.passed ? 'Pass' : 'Fail'}</span></td>
+      <td><span class="test-chip">${a.test_type}</span></td>
+      <td class="filename">${a.filename || '—'}</td>
+      <td class="date-cell">${formatDate(a.created_at)}</td>
+      <td style="color:var(--muted);font-size:1rem;" id="arrow-${i}">▸</td>`;
+    mainRow.addEventListener("click", () => toggleSummary(i, a.summary));
+    tbody.appendChild(mainRow);
+
+    const summaryRow = document.createElement("tr");
+    summaryRow.className = "summary-row";
+    summaryRow.id = `summary-${i}`;
+    summaryRow.innerHTML = `
+      <td colspan="5">
+        <div class="summary-box">
+          <pre>${a.summary || 'No summary available.'}</pre>
+        </div>
+      </td>`;
+    tbody.appendChild(summaryRow);
+  });
+}
+
+function toggleSummary(i, summary) {
+  const sRow   = document.getElementById(`summary-${i}`);
+  const arrow  = document.getElementById(`arrow-${i}`);
+  const isOpen = sRow.classList.contains("open");
+
+  // close previously open row
+  if (openRow !== null && openRow !== i) {
+    document.getElementById(`summary-${openRow}`).classList.remove("open");
+    document.getElementById(`arrow-${openRow}`).textContent = "▸";
+  }
+
+  sRow.classList.toggle("open", !isOpen);
+  arrow.textContent = isOpen ? "▸" : "▾";
+  openRow = isOpen ? null : i;
+}
+
+function filterResults(type, btn) {
+  document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  openRow = null;
+
+  let filtered = allAnalyses;
+  if (type === "pass") filtered = allAnalyses.filter(a => a.passed === true);
+  if (type === "fail") filtered = allAnalyses.filter(a => a.passed === false);
+
+  document.getElementById("recordCount").textContent =
+    `${filtered.length} record${filtered.length !== 1 ? "s" : ""}`;
+  renderRows(filtered);
+}
+
+// ── Fetch history ──
+async function loadHistory() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/history`, {
+      headers: { "Authorization": `Bearer ${token}` }
+    });
+    if (res.status === 401) { logout(); return; }
+    const data = await res.json();
+    allAnalyses = data.analyses || [];
+    document.getElementById("recordCount").textContent =
+      `${allAnalyses.length} record${allAnalyses.length !== 1 ? "s" : ""}`;
+    renderRows(allAnalyses);
+  } catch {
+    document.getElementById("historyBody").innerHTML = `
+      <tr><td colspan="5">
+        <div class="empty-state">
+          <div class="empty-icon">⚠️</div>
+          <h3>Could not load history</h3>
+          <p>Server may be waking up. Please refresh in a moment.</p>
+        </div>
+      </td></tr>`;
+  }
+}
+
+loadHistory();
+</script>
+</body>
+</html>
