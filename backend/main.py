@@ -5,7 +5,9 @@ from pydantic import BaseModel
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from pylinac import PicketFence
-import os, shutil, tempfile, uuid, hashlib, hmac
+import os, shutil, tempfile, uuid, hashlib, hmac, matplotlib
+matplotlib.use("Agg")  # non-interactive backend — required on servers
+import matplotlib.pyplot as plt
 import httpx
 
 # ─── Config ───────────────────────────────────────────────────────────────────
@@ -22,6 +24,13 @@ def sb_headers():
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json",
         "Prefer": "return=representation"
+    }
+
+def sb_storage_headers():
+    return {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "image/png"
     }
 
 def get_user_by_email(email: str):
@@ -46,7 +55,25 @@ def create_user(name: str, email: str, hashed_password: str):
         return data[0] if isinstance(data, list) else data
     raise HTTPException(status_code=500, detail=f"Could not create user: {res.text}")
 
-def save_analysis(user_email: str, test_type: str, filename: str, passed: bool, summary: str):
+def upload_plot_to_supabase(image_path: str, plot_filename: str) -> str | None:
+    """Upload PNG to Supabase Storage bucket 'plots', return public URL."""
+    try:
+        with open(image_path, "rb") as f:
+            image_bytes = f.read()
+        with httpx.Client() as client:
+            res = client.post(
+                f"{SUPABASE_URL}/storage/v1/object/plots/{plot_filename}",
+                headers=sb_storage_headers(),
+                content=image_bytes
+            )
+        if res.status_code in (200, 201):
+            return f"{SUPABASE_URL}/storage/v1/object/public/plots/{plot_filename}"
+        return None
+    except Exception:
+        return None
+
+def save_analysis(user_email: str, test_type: str, filename: str,
+                  passed: bool, summary: str, image_url: str = None):
     with httpx.Client() as client:
         res = client.post(
             f"{SUPABASE_URL}/rest/v1/analyses",
@@ -56,7 +83,8 @@ def save_analysis(user_email: str, test_type: str, filename: str, passed: bool, 
                 "test_type": test_type,
                 "filename": filename,
                 "passed": passed,
-                "summary": summary
+                "summary": summary,
+                "image_url": image_url
             }
         )
     return res.status_code in (200, 201)
@@ -170,34 +198,51 @@ def get_history(current_user: dict = Depends(get_current_user)):
     analyses = get_user_analyses(current_user["email"])
     return {"analyses": analyses}
 
-# ─── Analysis Routes ──────────────────────────────────────────────────────────
+# ─── Analysis ─────────────────────────────────────────────────────────────────
 def run_analysis(job_id: str, temp_path: str, user_email: str, filename: str):
+    plot_path = None
     try:
         pf = PicketFence(temp_path)
         pf.analyze(tolerance=0.5, action_tolerance=0.25)
         summary = pf.results()
         passed  = pf.passed
+
+        # ── Generate and upload plot ──
+        plot_filename = f"{job_id}.png"
+        plot_path     = f"/tmp/{plot_filename}"
+        fig, ax = plt.subplots(figsize=(12, 6))
+        pf.plot_analyzed_image(ax=ax)
+        fig.savefig(plot_path, dpi=120, bbox_inches="tight",
+                    facecolor="#03080f", edgecolor="none")
+        plt.close(fig)
+
+        image_url = upload_plot_to_supabase(plot_path, plot_filename)
+
         jobs[job_id] = {
             "status": "Success",
             "passed": passed,
-            "analysis_summary": summary
+            "analysis_summary": summary,
+            "image_url": image_url
         }
-        # ── Save to Supabase ──
+
         save_analysis(
             user_email=user_email,
             test_type="Picket Fence",
             filename=filename,
             passed=passed,
-            summary=summary
+            summary=summary,
+            image_url=image_url
         )
+
     except Exception as e:
         jobs[job_id] = {"status": "Error", "message": f"Analysis Error: {str(e)}"}
     finally:
-        try:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-        except Exception:
-            pass
+        for path in [temp_path, plot_path]:
+            try:
+                if path and os.path.exists(path):
+                    os.remove(path)
+            except Exception:
+                pass
         cleanup_old_jobs()
 
 @app.post("/analyze")
