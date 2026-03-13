@@ -5,19 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>MLC QA — Medical Linac Analysis Platform</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:       #040d1a;
-      --surface:  #071428;
-      --border:   #0e2a4a;
-      --cyan:     #00d4ff;
-      --cyan-dim: #0099bb;
-      --text:     #e8f4f8;
-      --muted:    #7a9bb5;
-      --danger:   #ff4d6d;
+      --bg:      #03080f;
+      --surface: #060f1e;
+      --border:  #0d2137;
+      --cyan:    #00d4ff;
+      --cyan2:   #00ffcc;
+      --text:    #e2eef5;
+      --muted:   #4d7a96;
     }
 
     html { scroll-behavior: smooth; }
@@ -30,370 +29,944 @@
       overflow-x: hidden;
     }
 
-    /* ── animated grid background ── */
-    body::before {
-      content: '';
-      position: fixed; inset: 0;
-      background-image:
-        linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
-      background-size: 60px 60px;
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    /* ── glowing orb ── */
-    body::after {
-      content: '';
+    /* ── Particle canvas ── */
+    #particleCanvas {
       position: fixed;
-      top: -200px; left: 50%;
-      transform: translateX(-50%);
-      width: 800px; height: 800px;
-      background: radial-gradient(circle, rgba(0,212,255,0.07) 0%, transparent 70%);
-      pointer-events: none;
+      inset: 0;
       z-index: 0;
+      pointer-events: none;
     }
 
+    /* ── NAV ── */
     nav {
       position: fixed; top: 0; left: 0; right: 0;
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 20px 48px;
-      border-bottom: 1px solid var(--border);
-      background: rgba(4,13,26,0.85);
-      backdrop-filter: blur(12px);
       z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 48px;
+      height: 60px;
+      background: rgba(3,8,15,0.92);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
     }
 
     .logo {
-      font-family: 'Syne', sans-serif;
-      font-weight: 800;
-      font-size: 1.25rem;
-      letter-spacing: 0.05em;
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.6rem;
+      letter-spacing: 0.12em;
       color: var(--text);
     }
     .logo span { color: var(--cyan); }
 
-    .nav-btns { display: flex; gap: 12px; }
+    .nav-center {
+      display: flex; gap: 32px;
+      position: absolute; left: 50%; transform: translateX(-50%);
+    }
+    .nav-center a {
+      font-size: 0.82rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .nav-center a:hover { color: var(--cyan); }
+
+    .nav-right { display: flex; gap: 10px; align-items: center; }
 
     .btn-ghost {
       background: transparent;
       border: 1px solid var(--border);
       color: var(--muted);
-      padding: 9px 24px;
-      border-radius: 6px;
+      padding: 8px 22px;
+      border-radius: 4px;
       font-family: 'DM Sans', sans-serif;
-      font-size: 0.9rem;
+      font-size: 0.85rem;
       cursor: pointer;
-      transition: all 0.2s;
       text-decoration: none;
+      transition: all 0.2s;
     }
     .btn-ghost:hover { border-color: var(--cyan); color: var(--cyan); }
 
     .btn-primary {
       background: var(--cyan);
       border: none;
-      color: #040d1a;
-      padding: 9px 24px;
-      border-radius: 6px;
+      color: #03080f;
+      padding: 8px 22px;
+      border-radius: 4px;
       font-family: 'DM Sans', sans-serif;
-      font-weight: 500;
-      font-size: 0.9rem;
+      font-weight: 600;
+      font-size: 0.85rem;
       cursor: pointer;
-      transition: all 0.2s;
       text-decoration: none;
+      transition: all 0.2s;
     }
-    .btn-primary:hover { background: #33ddff; transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,212,255,0.3); }
+    .btn-primary:hover { background: #33ddff; box-shadow: 0 0 20px rgba(0,212,255,0.4); }
 
-    /* ── Hero ── */
-    .hero {
+    /* ── HERO TEXT AREA ── */
+    .hero-text {
       position: relative; z-index: 1;
-      min-height: 100vh;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      text-align: center;
-      padding: 120px 24px 80px;
+      padding: 110px 48px 40px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 40px;
     }
 
-    .badge {
+    .hero-left { max-width: 620px; }
+
+    .hero-tag {
       display: inline-flex; align-items: center; gap: 8px;
-      border: 1px solid rgba(0,212,255,0.3);
-      background: rgba(0,212,255,0.05);
-      color: var(--cyan);
-      font-size: 0.8rem;
-      letter-spacing: 0.1em;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem;
+      letter-spacing: 0.14em;
       text-transform: uppercase;
-      padding: 6px 16px;
-      border-radius: 100px;
-      margin-bottom: 32px;
-      animation: fadeUp 0.6s ease both;
+      color: var(--cyan);
+      margin-bottom: 18px;
+      opacity: 0;
+      animation: fadeUp 0.5s 0.1s ease forwards;
     }
-    .badge::before {
+    .hero-tag::before {
       content: '';
-      width: 6px; height: 6px;
+      display: inline-block;
+      width: 20px; height: 1px;
       background: var(--cyan);
-      border-radius: 50%;
-      box-shadow: 0 0 8px var(--cyan);
-      animation: pulse 2s infinite;
     }
 
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.3; }
+    .hero-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(2.2rem, 4vw, 3.4rem);
+      line-height: 1.0;
+      letter-spacing: 0.04em;
+      color: var(--text);
+      margin-bottom: 16px;
+      opacity: 0;
+      animation: fadeUp 0.5s 0.2s ease forwards;
     }
-
-    h1 {
-      font-family: 'Syne', sans-serif;
-      font-weight: 800;
-      font-size: clamp(2.8rem, 6vw, 5rem);
-      line-height: 1.05;
-      letter-spacing: -0.02em;
-      max-width: 800px;
-      animation: fadeUp 0.6s 0.1s ease both;
-    }
-    h1 .accent { color: var(--cyan); }
+    .hero-title .hl { color: var(--cyan); }
 
     .hero-sub {
-      margin-top: 24px;
-      font-size: 1.1rem;
+      font-size: 0.95rem;
       color: var(--muted);
-      max-width: 520px;
       line-height: 1.7;
+      max-width: 460px;
+      margin-bottom: 28px;
       font-weight: 300;
-      animation: fadeUp 0.6s 0.2s ease both;
+      opacity: 0;
+      animation: fadeUp 0.5s 0.3s ease forwards;
     }
 
     .hero-btns {
-      display: flex; gap: 16px; margin-top: 48px;
-      flex-wrap: wrap; justify-content: center;
-      animation: fadeUp 0.6s 0.3s ease both;
+      display: flex; gap: 12px; flex-wrap: wrap;
+      opacity: 0;
+      animation: fadeUp 0.5s 0.4s ease forwards;
     }
 
-    .btn-hero-primary {
+    .btn-cta {
       background: var(--cyan);
-      color: #040d1a;
+      color: #03080f;
       border: none;
-      padding: 14px 36px;
-      border-radius: 8px;
+      padding: 12px 30px;
+      border-radius: 4px;
       font-family: 'DM Sans', sans-serif;
       font-weight: 600;
-      font-size: 1rem;
+      font-size: 0.9rem;
       cursor: pointer;
       text-decoration: none;
       transition: all 0.2s;
-      display: inline-block;
+      letter-spacing: 0.02em;
     }
-    .btn-hero-primary:hover { background: #33ddff; transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,212,255,0.35); }
+    .btn-cta:hover { background: #33ddff; box-shadow: 0 0 28px rgba(0,212,255,0.4); transform: translateY(-1px); }
 
-    .btn-hero-ghost {
+    .btn-outline {
       background: transparent;
       color: var(--text);
       border: 1px solid var(--border);
-      padding: 14px 36px;
-      border-radius: 8px;
+      padding: 12px 30px;
+      border-radius: 4px;
       font-family: 'DM Sans', sans-serif;
-      font-size: 1rem;
+      font-size: 0.9rem;
       cursor: pointer;
       text-decoration: none;
       transition: all 0.2s;
-      display: inline-block;
     }
-    .btn-hero-ghost:hover { border-color: var(--cyan); color: var(--cyan); }
+    .btn-outline:hover { border-color: var(--cyan); color: var(--cyan); }
 
-    /* ── Stats bar ── */
-    .stats {
+    /* live indicator */
+    .live-badge {
+      display: flex; align-items: center; gap: 8px;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--muted);
+      opacity: 0;
+      animation: fadeUp 0.5s 0.5s ease forwards;
+    }
+    .live-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #00e5a0;
+      box-shadow: 0 0 8px #00e5a0;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+
+    /* ── IMAGE SLIDER ── */
+    .slider-section {
       position: relative; z-index: 1;
-      display: flex; justify-content: center; gap: 0;
+      margin: 0 48px 0;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      height: 34vh;
+      min-height: 220px;
+      max-height: 320px;
+      opacity: 0;
+      animation: fadeUp 0.6s 0.5s ease forwards;
+    }
+
+    .slider-track {
+      display: flex;
+      height: 100%;
+      transition: transform 0.7s cubic-bezier(0.77,0,0.175,1);
+    }
+
+    .slide {
+      min-width: 100%;
+      height: 100%;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* SVG-based clinical placeholder images */
+    .slide-visual {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      inset: 0;
+    }
+
+    .slide-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(3,8,15,0.7) 0%, transparent 40%, transparent 60%, rgba(3,8,15,0.7) 100%);
+    }
+
+    .slide-caption {
+      position: absolute;
+      bottom: 20px;
+      left: 28px;
+      z-index: 2;
+    }
+    .slide-caption h3 {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.1rem;
+      letter-spacing: 0.1em;
+      color: var(--text);
+      margin-bottom: 3px;
+    }
+    .slide-caption p {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--cyan);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    /* slider controls */
+    .slider-controls {
+      position: absolute;
+      bottom: 16px;
+      right: 20px;
+      z-index: 3;
+      display: flex;
+      gap: 6px;
+    }
+    .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      cursor: pointer;
+      transition: all 0.3s;
+      border: none;
+      padding: 0;
+    }
+    .dot.active {
+      background: var(--cyan);
+      width: 20px;
+      border-radius: 3px;
+      box-shadow: 0 0 6px var(--cyan);
+    }
+
+    /* progress bar */
+    .slider-progress {
+      position: absolute;
+      bottom: 0; left: 0;
+      height: 2px;
+      background: var(--cyan);
+      width: 0%;
+      transition: width linear;
+      z-index: 3;
+      box-shadow: 0 0 8px var(--cyan);
+    }
+
+    /* scan line effect */
+    .slider-section::after {
+      content: '';
+      position: absolute;
+      top: -100%;
+      left: 0; right: 0;
+      height: 40%;
+      background: linear-gradient(transparent, rgba(0,212,255,0.03), transparent);
+      animation: scanline 4s linear infinite;
+      pointer-events: none;
+      z-index: 4;
+    }
+    @keyframes scanline { to { top: 200%; } }
+
+    /* ── STATS BAR ── */
+    .stats-bar {
+      position: relative; z-index: 1;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
       border-top: 1px solid var(--border);
       border-bottom: 1px solid var(--border);
-      animation: fadeUp 0.6s 0.4s ease both;
+      margin-top: 40px;
+      opacity: 0;
+      animation: fadeUp 0.5s 0.8s ease forwards;
     }
-    .stat-item {
-      padding: 36px 64px;
+
+    .stat {
+      padding: 28px 0;
       text-align: center;
       border-right: 1px solid var(--border);
+      transition: background 0.2s;
     }
-    .stat-item:last-child { border-right: none; }
-    .stat-num {
-      font-family: 'Syne', sans-serif;
-      font-size: 2rem;
-      font-weight: 700;
-      color: var(--cyan);
-    }
-    .stat-label { font-size: 0.8rem; color: var(--muted); margin-top: 4px; letter-spacing: 0.05em; text-transform: uppercase; }
+    .stat:last-child { border-right: none; }
+    .stat:hover { background: rgba(0,212,255,0.03); }
 
-    /* ── Features ── */
+    .stat-num {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.8rem;
+      letter-spacing: 0.06em;
+      color: var(--cyan);
+      line-height: 1;
+    }
+    .stat-lbl {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.68rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-top: 5px;
+    }
+
+    /* ── FEATURES ── */
     .features {
       position: relative; z-index: 1;
-      max-width: 1100px; margin: 100px auto;
-      padding: 0 24px;
+      padding: 80px 48px;
+      max-width: 1200px;
+      margin: 0 auto;
     }
-    .section-label {
-      font-size: 0.75rem;
-      letter-spacing: 0.15em;
+
+    .section-eyebrow {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.16em;
       text-transform: uppercase;
       color: var(--cyan);
+      display: flex; align-items: center; gap: 12px;
       margin-bottom: 16px;
     }
+    .section-eyebrow::after {
+      content: '';
+      flex: 1;
+      max-width: 60px;
+      height: 1px;
+      background: var(--cyan);
+      opacity: 0.4;
+    }
+
     .section-title {
-      font-family: 'Syne', sans-serif;
-      font-size: clamp(1.8rem, 3vw, 2.5rem);
-      font-weight: 700;
-      margin-bottom: 60px;
-      max-width: 500px;
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(1.8rem, 3vw, 2.6rem);
+      letter-spacing: 0.06em;
+      margin-bottom: 48px;
+      max-width: 480px;
+      line-height: 1.05;
     }
 
     .features-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
       gap: 1px;
-      border: 1px solid var(--border);
       background: var(--border);
-      border-radius: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
       overflow: hidden;
     }
-    .feature-card {
+
+    .feat {
       background: var(--surface);
-      padding: 36px;
+      padding: 32px;
       transition: background 0.2s;
+      position: relative;
     }
-    .feature-card:hover { background: #0a1f38; }
+    .feat:hover { background: #071c33; }
+    .feat::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .feat:hover::before { opacity: 0.5; }
 
-    .feature-icon {
-      width: 44px; height: 44px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1.3rem;
-      margin-bottom: 20px;
-      background: rgba(0,212,255,0.05);
-    }
-    .feature-card h3 {
-      font-family: 'Syne', sans-serif;
-      font-size: 1rem;
-      font-weight: 600;
-      margin-bottom: 10px;
-    }
-    .feature-card p { font-size: 0.9rem; color: var(--muted); line-height: 1.6; }
-
-    /* ── CTA ── */
-    .cta-section {
-      position: relative; z-index: 1;
-      text-align: center;
-      padding: 100px 24px;
-      border-top: 1px solid var(--border);
-    }
-    .cta-section h2 {
-      font-family: 'Syne', sans-serif;
-      font-size: clamp(2rem, 4vw, 3rem);
-      font-weight: 700;
+    .feat-num {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
       margin-bottom: 16px;
     }
-    .cta-section p { color: var(--muted); margin-bottom: 40px; font-size: 1.05rem; }
+    .feat-icon { font-size: 1.5rem; margin-bottom: 14px; }
+    .feat h3 {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1rem;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+    .feat p { font-size: 0.85rem; color: var(--muted); line-height: 1.6; }
+
+    /* ── CTA ── */
+    .cta {
+      position: relative; z-index: 1;
+      text-align: center;
+      padding: 80px 48px;
+      border-top: 1px solid var(--border);
+    }
+
+    .cta h2 {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(2rem, 4vw, 3rem);
+      letter-spacing: 0.06em;
+      margin-bottom: 12px;
+    }
+    .cta p { color: var(--muted); margin-bottom: 32px; font-size: 0.95rem; }
 
     footer {
       position: relative; z-index: 1;
-      text-align: center;
-      padding: 32px;
       border-top: 1px solid var(--border);
+      padding: 24px 48px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem;
       color: var(--muted);
-      font-size: 0.85rem;
     }
 
     @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(20px); }
+      from { opacity: 0; transform: translateY(16px); }
       to   { opacity: 1; transform: translateY(0); }
     }
 
-    @media (max-width: 640px) {
-      nav { padding: 16px 20px; }
-      .stat-item { padding: 28px 28px; }
-      .stats { flex-wrap: wrap; }
+    @media (max-width: 768px) {
+      nav { padding: 0 20px; }
+      .nav-center { display: none; }
+      .hero-text { padding: 90px 20px 28px; flex-direction: column; }
+      .slider-section { margin: 0 20px; height: 28vh; }
+      .stats-bar { grid-template-columns: repeat(2, 1fr); }
+      .features { padding: 60px 20px; }
+      footer { flex-direction: column; gap: 8px; text-align: center; }
     }
   </style>
 </head>
 <body>
 
+<!-- Particle Canvas -->
+<canvas id="particleCanvas"></canvas>
+
+<!-- NAV -->
 <nav>
   <div class="logo">MLC<span>QA</span></div>
-  <div class="nav-btns">
+  <div class="nav-center">
+    <a href="#features">Features</a>
+    <a href="#about">About</a>
+    <a href="login.html">Docs</a>
+  </div>
+  <div class="nav-right">
     <a href="login.html" class="btn-ghost">Log In</a>
     <a href="signup.html" class="btn-primary">Sign Up</a>
   </div>
 </nav>
 
-<section class="hero">
-  <div class="badge">Clinical Radiation Physics Platform</div>
-  <h1>Precision <span class="accent">Linac QA</span><br/>for Medical Physicists</h1>
-  <p class="hero-sub">Upload DICOM images and get instant, automated analysis powered by Pylinac — trusted by physicists worldwide.</p>
-  <div class="hero-btns">
-    <a href="signup.html" class="btn-hero-primary">Get Started Free</a>
-    <a href="login.html" class="btn-hero-ghost">Sign In →</a>
+<!-- HERO TEXT -->
+<div class="hero-text">
+  <div class="hero-left">
+    <div class="hero-tag">Clinical Radiation Physics Platform</div>
+    <h1 class="hero-title">
+      Precision <span class="hl">Linac QA</span><br/>
+      for Medical Physicists
+    </h1>
+    <p class="hero-sub">
+      Upload DICOM images and get instant automated analysis powered by Pylinac —
+      the open-source standard trusted by physicists worldwide.
+    </p>
+    <div class="hero-btns">
+      <a href="signup.html" class="btn-cta">Get Started Free</a>
+      <a href="login.html" class="btn-outline">Sign In →</a>
+    </div>
   </div>
-</section>
-
-<div class="stats">
-  <div class="stat-item">
-    <div class="stat-num">0.5mm</div>
-    <div class="stat-label">MLC Tolerance</div>
-  </div>
-  <div class="stat-item">
-    <div class="stat-num">DICOM</div>
-    <div class="stat-label">Native Format</div>
-  </div>
-  <div class="stat-item">
-    <div class="stat-num">Pylinac</div>
-    <div class="stat-label">Powered By</div>
-  </div>
-  <div class="stat-item">
-    <div class="stat-num">100%</div>
-    <div class="stat-label">Web Based</div>
+  <div class="live-badge">
+    <div class="live-dot"></div>
+    System Online · mlc-qa.onrender.com
   </div>
 </div>
 
-<section class="features">
-  <div class="section-label">Capabilities</div>
-  <h2 class="section-title">Everything you need for Linac QA</h2>
+<!-- SLIDER -->
+<div class="slider-section" id="sliderSection">
+  <div class="slider-track" id="sliderTrack">
+
+    <!-- Slide 1: Picket Fence Pattern -->
+    <div class="slide">
+      <svg class="slide-visual" viewBox="0 0 1200 320" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <rect width="1200" height="320" fill="#03080f"/>
+        <!-- grid -->
+        <defs>
+          <pattern id="g1" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#0d2137" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+        <rect width="1200" height="320" fill="url(#g1)"/>
+        <!-- Picket fence bars -->
+        <g opacity="0.9">
+          <rect x="100" y="60" width="18" height="200" fill="none" stroke="#00d4ff" stroke-width="1.5" rx="1"/>
+          <rect x="180" y="60" width="18" height="200" fill="none" stroke="#00d4ff" stroke-width="1.5" rx="1"/>
+          <rect x="260" y="60" width="18" height="200" fill="none" stroke="#00d4ff" stroke-width="1.5" rx="1"/>
+          <rect x="340" y="60" width="18" height="200" fill="none" stroke="#00d4ff" stroke-width="1.5" rx="1"/>
+          <rect x="420" y="60" width="18" height="200" fill="none" stroke="#00d4ff" stroke-width="1.5" rx="1"/>
+          <rect x="500" y="60" width="18" height="200" fill="none" stroke="#00d4ff" stroke-width="1.5" rx="1"/>
+          <rect x="580" y="60" width="18" height="200" fill="none" stroke="#00d4ff" stroke-width="1.5" rx="1"/>
+          <rect x="660" y="60" width="18" height="200" fill="none" stroke="#00d4ff" stroke-width="1.5" rx="1"/>
+          <rect x="740" y="60" width="18" height="200" fill="none" stroke="#00d4ff" stroke-width="1.5" rx="1"/>
+          <rect x="820" y="60" width="18" height="200" fill="none" stroke="#00d4ff" stroke-width="1.5" rx="1"/>
+          <rect x="900" y="60" width="18" height="200" fill="none" stroke="#00d4ff" stroke-width="1.5" rx="1"/>
+          <rect x="980" y="60" width="18" height="200" fill="none" stroke="#00d4ff" stroke-width="1.5" rx="1"/>
+          <rect x="1060" y="60" width="18" height="200" fill="none" stroke="#00d4ff" stroke-width="1.5" rx="1"/>
+        </g>
+        <!-- MLC leaves -->
+        <g fill="rgba(0,212,255,0.08)" stroke="#00d4ff" stroke-width="0.8">
+          <rect x="80" y="55" width="1060" height="22" rx="2"/>
+          <rect x="80" y="243" width="1060" height="22" rx="2"/>
+        </g>
+        <!-- center line -->
+        <line x1="80" y1="160" x2="1120" y2="160" stroke="#00ffcc" stroke-width="0.8" stroke-dasharray="6,4" opacity="0.5"/>
+        <!-- tolerance bands -->
+        <rect x="80" y="156" width="1040" height="8" fill="rgba(0,255,204,0.05)" stroke="none"/>
+        <!-- measurement dots -->
+        <g fill="#00d4ff">
+          <circle cx="109" cy="160" r="3"/>
+          <circle cx="189" cy="161" r="3"/>
+          <circle cx="269" cy="159" r="3"/>
+          <circle cx="349" cy="160" r="3"/>
+          <circle cx="429" cy="158" r="3"/>
+          <circle cx="509" cy="161" r="3"/>
+          <circle cx="589" cy="160" r="3"/>
+          <circle cx="669" cy="159" r="3"/>
+          <circle cx="749" cy="161" r="3"/>
+          <circle cx="829" cy="160" r="3"/>
+          <circle cx="909" cy="159" r="3"/>
+          <circle cx="989" cy="161" r="3"/>
+          <circle cx="1069" cy="160" r="3"/>
+        </g>
+        <!-- PASS label -->
+        <rect x="1080" y="20" width="80" height="26" rx="4" fill="rgba(0,229,160,0.15)" stroke="#00e5a0" stroke-width="1"/>
+        <text x="1120" y="38" text-anchor="middle" fill="#00e5a0" font-family="monospace" font-size="11" letter-spacing="2">PASS</text>
+        <!-- title -->
+        <text x="24" y="38" fill="#7a9bb5" font-family="monospace" font-size="10" letter-spacing="2">PICKET FENCE ANALYSIS · RUN #2047</text>
+      </svg>
+      <div class="slide-overlay"></div>
+      <div class="slide-caption">
+        <h3>Picket Fence MLC QA</h3>
+        <p>Multi-leaf collimator positioning · 0.5mm tolerance</p>
+      </div>
+    </div>
+
+    <!-- Slide 2: Beam Profile -->
+    <div class="slide">
+      <svg class="slide-visual" viewBox="0 0 1200 320" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <rect width="1200" height="320" fill="#03080f"/>
+        <defs>
+          <pattern id="g2" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#0d2137" stroke-width="0.5"/>
+          </pattern>
+          <radialGradient id="beamGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#00d4ff" stop-opacity="0.25"/>
+            <stop offset="60%" stop-color="#00d4ff" stop-opacity="0.06"/>
+            <stop offset="100%" stop-color="transparent" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <rect width="1200" height="320" fill="url(#g2)"/>
+        <!-- beam glow -->
+        <ellipse cx="600" cy="160" rx="280" ry="120" fill="url(#beamGlow)"/>
+        <!-- isodose lines -->
+        <ellipse cx="600" cy="160" rx="240" ry="98" fill="none" stroke="#00d4ff" stroke-width="0.8" opacity="0.3" stroke-dasharray="4,4"/>
+        <ellipse cx="600" cy="160" rx="190" ry="78" fill="none" stroke="#00d4ff" stroke-width="0.8" opacity="0.4" stroke-dasharray="4,4"/>
+        <ellipse cx="600" cy="160" rx="140" ry="58" fill="none" stroke="#00d4ff" stroke-width="1" opacity="0.6"/>
+        <ellipse cx="600" cy="160" rx="90"  ry="38" fill="none" stroke="#00ffcc" stroke-width="1.2" opacity="0.7"/>
+        <ellipse cx="600" cy="160" rx="40"  ry="18" fill="rgba(0,255,204,0.12)" stroke="#00ffcc" stroke-width="1.5"/>
+        <!-- crosshairs -->
+        <line x1="600" y1="30" x2="600" y2="290" stroke="#00d4ff" stroke-width="0.6" stroke-dasharray="3,5" opacity="0.4"/>
+        <line x1="200" y1="160" x2="1000" y2="160" stroke="#00d4ff" stroke-width="0.6" stroke-dasharray="3,5" opacity="0.4"/>
+        <!-- profile curve top -->
+        <polyline points="200,160 280,158 340,154 380,148 410,138 430,124 450,108 480,88 520,72 560,62 600,58 640,62 680,72 720,88 750,108 770,124 790,138 820,148 860,154 920,158 1000,160" fill="none" stroke="#00d4ff" stroke-width="2" opacity="0.8"/>
+        <!-- axis labels -->
+        <text x="600" y="310" text-anchor="middle" fill="#4d7a96" font-family="monospace" font-size="9" letter-spacing="2">BEAM PROFILE · FLATNESS 1.2% · SYMMETRY 0.8%</text>
+        <rect x="40" y="20" width="120" height="26" rx="4" fill="rgba(0,212,255,0.1)" stroke="#00d4ff" stroke-width="0.8"/>
+        <text x="100" y="38" text-anchor="middle" fill="#00d4ff" font-family="monospace" font-size="10" letter-spacing="1">6MV BEAM</text>
+      </svg>
+      <div class="slide-overlay"></div>
+      <div class="slide-caption">
+        <h3>Beam Profile Analysis</h3>
+        <p>Flatness · Symmetry · Penumbra measurement</p>
+      </div>
+    </div>
+
+    <!-- Slide 3: Winston-Lutz -->
+    <div class="slide">
+      <svg class="slide-visual" viewBox="0 0 1200 320" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <rect width="1200" height="320" fill="#03080f"/>
+        <defs>
+          <pattern id="g3" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#0d2137" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+        <rect width="1200" height="320" fill="url(#g3)"/>
+        <!-- concentric circles — isocenter -->
+        <circle cx="600" cy="160" r="120" fill="none" stroke="#0d2137" stroke-width="1"/>
+        <circle cx="600" cy="160" r="80"  fill="none" stroke="#0d2137" stroke-width="1"/>
+        <circle cx="600" cy="160" r="40"  fill="none" stroke="#00d4ff" stroke-width="0.8" opacity="0.4"/>
+        <circle cx="600" cy="160" r="10"  fill="none" stroke="#00ffcc" stroke-width="1.5" opacity="0.8"/>
+        <!-- crosshair -->
+        <line x1="600" y1="20"  x2="600" y2="300" stroke="#00d4ff" stroke-width="0.6" opacity="0.3"/>
+        <line x1="400" y1="160" x2="800" y2="160" stroke="#00d4ff" stroke-width="0.6" opacity="0.3"/>
+        <!-- gantry angle markers -->
+        <g fill="#4d7a96" font-family="monospace" font-size="9" letter-spacing="1">
+          <text x="594" y="18"  text-anchor="middle">0°</text>
+          <text x="594" y="308" text-anchor="middle">180°</text>
+          <text x="388" y="164">270°</text>
+          <text x="806" y="164">90°</text>
+        </g>
+        <!-- radiation vs mechanical offset points -->
+        <g>
+          <circle cx="603" cy="157" r="4" fill="#00d4ff" opacity="0.9"/>
+          <circle cx="598" cy="162" r="4" fill="#00d4ff" opacity="0.9"/>
+          <circle cx="602" cy="163" r="4" fill="#00d4ff" opacity="0.9"/>
+          <circle cx="597" cy="158" r="4" fill="#00d4ff" opacity="0.9"/>
+          <circle cx="601" cy="160" r="4" fill="#00d4ff" opacity="0.9"/>
+          <circle cx="604" cy="162" r="4" fill="#00d4ff" opacity="0.9"/>
+          <circle cx="599" cy="156" r="4" fill="#00d4ff" opacity="0.9"/>
+          <circle cx="596" cy="161" r="4" fill="#00d4ff" opacity="0.9"/>
+        </g>
+        <!-- mechanical center -->
+        <circle cx="600" cy="160" r="2" fill="#00ffcc"/>
+        <line x1="594" y1="160" x2="606" y2="160" stroke="#00ffcc" stroke-width="1.5"/>
+        <line x1="600" y1="154" x2="600" y2="166" stroke="#00ffcc" stroke-width="1.5"/>
+        <!-- Winston-Lutz radius -->
+        <circle cx="600" cy="160" r="7" fill="none" stroke="#00e5a0" stroke-width="1" stroke-dasharray="2,2" opacity="0.7"/>
+        <text x="620" y="148" fill="#00e5a0" font-family="monospace" font-size="9">r=0.4mm</text>
+        <!-- label -->
+        <text x="24" y="38" fill="#7a9bb5" font-family="monospace" font-size="10" letter-spacing="2">WINSTON-LUTZ · ISOCENTER ANALYSIS · 8 GANTRY ANGLES</text>
+        <rect x="1060" y="20" width="110" height="26" rx="4" fill="rgba(0,229,160,0.15)" stroke="#00e5a0" stroke-width="1"/>
+        <text x="1115" y="38" text-anchor="middle" fill="#00e5a0" font-family="monospace" font-size="10" letter-spacing="2">0.4mm</text>
+      </svg>
+      <div class="slide-overlay"></div>
+      <div class="slide-caption">
+        <h3>Winston-Lutz Isocenter QA</h3>
+        <p>Radiation vs mechanical isocenter · SRS/SBRT ready</p>
+      </div>
+    </div>
+
+    <!-- Slide 4: Star Shot -->
+    <div class="slide">
+      <svg class="slide-visual" viewBox="0 0 1200 320" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <rect width="1200" height="320" fill="#03080f"/>
+        <defs>
+          <pattern id="g4" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#0d2137" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+        <rect width="1200" height="320" fill="url(#g4)"/>
+        <!-- star shot beams radiating from center -->
+        <g stroke="#00d4ff" stroke-width="14" opacity="0.18">
+          <line x1="600" y1="160" x2="600" y2="10"/>
+          <line x1="600" y1="160" x2="600" y2="310"/>
+          <line x1="600" y1="160" x2="750" y2="40"/>
+          <line x1="600" y1="160" x2="450" y2="280"/>
+          <line x1="600" y1="160" x2="750" y2="280"/>
+          <line x1="600" y1="160" x2="450" y2="40"/>
+          <line x1="600" y1="160" x2="200" y2="160"/>
+          <line x1="600" y1="160" x2="1000" y2="160"/>
+          <line x1="600" y1="160" x2="820" y2="80"/>
+          <line x1="600" y1="160" x2="380" y2="240"/>
+        </g>
+        <g stroke="#00d4ff" stroke-width="2" opacity="0.6">
+          <line x1="600" y1="160" x2="600" y2="10"/>
+          <line x1="600" y1="160" x2="600" y2="310"/>
+          <line x1="600" y1="160" x2="750" y2="40"/>
+          <line x1="600" y1="160" x2="450" y2="280"/>
+          <line x1="600" y1="160" x2="750" y2="280"/>
+          <line x1="600" y1="160" x2="450" y2="40"/>
+          <line x1="600" y1="160" x2="200" y2="160"/>
+          <line x1="600" y1="160" x2="1000" y2="160"/>
+          <line x1="600" y1="160" x2="820" y2="80"/>
+          <line x1="600" y1="160" x2="380" y2="240"/>
+        </g>
+        <!-- fitted circle -->
+        <circle cx="600" cy="160" r="18" fill="none" stroke="#00ffcc" stroke-width="2" opacity="0.9"/>
+        <circle cx="600" cy="160" r="3"  fill="#00ffcc"/>
+        <!-- radius label -->
+        <line x1="600" y1="160" x2="618" y2="160" stroke="#00ffcc" stroke-width="1"/>
+        <text x="622" y="157" fill="#00ffcc" font-family="monospace" font-size="9">r=0.3mm</text>
+        <!-- label -->
+        <text x="24" y="38" fill="#7a9bb5" font-family="monospace" font-size="10" letter-spacing="2">STAR SHOT · RADIATION ISOCENTER · 10 ROTATIONS</text>
+        <rect x="1060" y="20" width="110" height="26" rx="4" fill="rgba(0,229,160,0.15)" stroke="#00e5a0" stroke-width="1"/>
+        <text x="1115" y="38" text-anchor="middle" fill="#00e5a0" font-family="monospace" font-size="10" letter-spacing="2">PASS</text>
+      </svg>
+      <div class="slide-overlay"></div>
+      <div class="slide-caption">
+        <h3>Star Shot Analysis</h3>
+        <p>Radiation isocenter size · Gantry & collimator rotation</p>
+      </div>
+    </div>
+
+  </div><!-- end slider-track -->
+
+  <!-- dots -->
+  <div class="slider-controls" id="sliderDots"></div>
+  <!-- progress bar -->
+  <div class="slider-progress" id="sliderProgress"></div>
+</div>
+
+<!-- STATS BAR -->
+<div class="stats-bar">
+  <div class="stat">
+    <div class="stat-num">0.5mm</div>
+    <div class="stat-lbl">MLC Tolerance</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">DICOM</div>
+    <div class="stat-lbl">Native Format</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">Pylinac</div>
+    <div class="stat-lbl">Powered By</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">100%</div>
+    <div class="stat-lbl">Web Based</div>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<section class="features" id="features">
+  <div class="section-eyebrow">Capabilities</div>
+  <h2 class="section-title">Everything You Need For Linac QA</h2>
   <div class="features-grid">
-    <div class="feature-card">
-      <div class="feature-icon">⚡</div>
+    <div class="feat">
+      <div class="feat-num">01</div>
+      <div class="feat-icon">⚡</div>
       <h3>Picket Fence MLC QA</h3>
       <p>Automated multi-leaf collimator analysis with pass/fail reporting against clinical tolerances.</p>
     </div>
-    <div class="feature-card">
-      <div class="feature-icon">🔒</div>
+    <div class="feat">
+      <div class="feat-num">02</div>
+      <div class="feat-icon">🔒</div>
       <h3>Secure Accounts</h3>
-      <p>Your data is protected with JWT authentication and bcrypt-hashed passwords.</p>
+      <p>JWT-protected sessions and hashed passwords. Your patient data never leaves your control.</p>
     </div>
-    <div class="feature-card">
-      <div class="feature-icon">📊</div>
+    <div class="feat">
+      <div class="feat-num">03</div>
+      <div class="feat-icon">📊</div>
       <h3>Instant Reports</h3>
-      <p>Get detailed analysis summaries the moment your DICOM file is processed.</p>
+      <p>Get detailed analysis summaries the moment your DICOM file finishes processing.</p>
     </div>
-    <div class="feature-card">
-      <div class="feature-icon">☁️</div>
-      <h3>Cloud-based</h3>
-      <p>No software installation needed. Access your QA platform from any device, anywhere.</p>
+    <div class="feat">
+      <div class="feat-num">04</div>
+      <div class="feat-icon">☁️</div>
+      <h3>Cloud Based</h3>
+      <p>No installation. Access your QA platform from any browser, on any device, anywhere.</p>
     </div>
-    <div class="feature-card">
-      <div class="feature-icon">🎯</div>
+    <div class="feat">
+      <div class="feat-num">05</div>
+      <div class="feat-icon">🎯</div>
       <h3>Clinical Accuracy</h3>
       <p>Built on Pylinac — the open-source standard for medical physics quality assurance.</p>
     </div>
-    <div class="feature-card">
-      <div class="feature-icon">🚀</div>
+    <div class="feat">
+      <div class="feat-num">06</div>
+      <div class="feat-icon">🚀</div>
       <h3>More Tests Coming</h3>
-      <p>Winston-Lutz, Star Shot, VMAT and CatPhan analysis modules are in development.</p>
+      <p>Winston-Lutz, Star Shot, VMAT and CatPhan analysis modules currently in development.</p>
     </div>
   </div>
 </section>
 
-<section class="cta-section">
-  <h2>Ready to streamline your QA workflow?</h2>
+<!-- CTA -->
+<section class="cta" id="about">
+  <h2>Ready to Streamline Your QA Workflow?</h2>
   <p>Create a free account and run your first analysis in minutes.</p>
-  <a href="signup.html" class="btn-hero-primary">Create Free Account</a>
+  <a href="signup.html" class="btn-cta">Create Free Account</a>
 </section>
 
-<footer>© 2025 MLC QA Platform · Built with Pylinac · For clinical physics use</footer>
+<footer>
+  <span>© 2025 MLC QA PLATFORM · BUILT WITH PYLINAC</span>
+  <span>FOR CLINICAL PHYSICS USE ONLY</span>
+</footer>
 
+<script>
+// ── PARTICLE ANIMATION ──────────────────────────────────────────────────────
+const canvas = document.getElementById('particleCanvas');
+const ctx    = canvas.getContext('2d');
+
+let W, H, particles = [], beams = [];
+
+function resize() {
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Particle = small dot drifting
+class Particle {
+  constructor() { this.reset(); }
+  reset() {
+    this.x    = Math.random() * W;
+    this.y    = Math.random() * H;
+    this.vx   = (Math.random() - 0.5) * 0.3;
+    this.vy   = (Math.random() - 0.5) * 0.3;
+    this.r    = Math.random() * 1.5 + 0.4;
+    this.alpha = Math.random() * 0.35 + 0.05;
+    this.life = Math.random() * 300 + 100;
+    this.age  = 0;
+  }
+  update() {
+    this.x += this.vx; this.y += this.vy; this.age++;
+    if (this.age > this.life) this.reset();
+  }
+  draw() {
+    const fade = Math.min(1, Math.min(this.age, this.life - this.age) / 30);
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI*2);
+    ctx.fillStyle = `rgba(0,212,255,${this.alpha * fade})`;
+    ctx.fill();
+  }
+}
+
+// Beam = fast horizontal line (like a radiation beam sweeping)
+class Beam {
+  constructor() { this.reset(); }
+  reset() {
+    this.y     = Math.random() * H;
+    this.x     = -200;
+    this.w     = Math.random() * 180 + 60;
+    this.speed = Math.random() * 1.5 + 0.5;
+    this.alpha = Math.random() * 0.06 + 0.02;
+  }
+  update() {
+    this.x += this.speed;
+    if (this.x > W + 200) this.reset();
+  }
+  draw() {
+    const grad = ctx.createLinearGradient(this.x, 0, this.x + this.w, 0);
+    grad.addColorStop(0, `rgba(0,212,255,0)`);
+    grad.addColorStop(0.5, `rgba(0,212,255,${this.alpha})`);
+    grad.addColorStop(1, `rgba(0,212,255,0)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(this.x, this.y - 0.5, this.w, 1);
+  }
+}
+
+// Init
+for (let i = 0; i < 80; i++)  particles.push(new Particle());
+for (let i = 0; i < 12; i++)  beams.push(new Beam());
+
+// Connect nearby particles with faint lines
+function connectParticles() {
+  for (let i = 0; i < particles.length; i++) {
+    for (let j = i+1; j < particles.length; j++) {
+      const dx = particles[i].x - particles[j].x;
+      const dy = particles[i].y - particles[j].y;
+      const d  = Math.sqrt(dx*dx + dy*dy);
+      if (d < 90) {
+        ctx.beginPath();
+        ctx.moveTo(particles[i].x, particles[i].y);
+        ctx.lineTo(particles[j].x, particles[j].y);
+        ctx.strokeStyle = `rgba(0,212,255,${0.06 * (1 - d/90)})`;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+function animate() {
+  ctx.clearRect(0, 0, W, H);
+  beams.forEach(b => { b.update(); b.draw(); });
+  connectParticles();
+  particles.forEach(p => { p.update(); p.draw(); });
+  requestAnimationFrame(animate);
+}
+animate();
+
+
+// ── IMAGE SLIDER ────────────────────────────────────────────────────────────
+const track    = document.getElementById('sliderTrack');
+const dotsEl   = document.getElementById('sliderDots');
+const progressEl = document.getElementById('sliderProgress');
+const SLIDES   = 4;
+const INTERVAL = 4000;
+let current    = 0;
+let timer, progressTimer;
+
+// Build dots
+for (let i = 0; i < SLIDES; i++) {
+  const d = document.createElement('button');
+  d.className = 'dot' + (i === 0 ? ' active' : '');
+  d.setAttribute('aria-label', `Slide ${i+1}`);
+  d.addEventListener('click', () => goTo(i));
+  dotsEl.appendChild(d);
+}
+
+function updateDots() {
+  dotsEl.querySelectorAll('.dot').forEach((d,i) => d.classList.toggle('active', i === current));
+}
+
+function startProgress() {
+  clearInterval(progressTimer);
+  progressEl.style.transition = 'none';
+  progressEl.style.width = '0%';
+  requestAnimationFrame(() => {
+    progressEl.style.transition = `width ${INTERVAL}ms linear`;
+    progressEl.style.width = '100%';
+  });
+}
+
+function goTo(n) {
+  current = (n + SLIDES) % SLIDES;
+  track.style.transform = `translateX(-${current * 100}%)`;
+  updateDots();
+  clearTimeout(timer);
+  startProgress();
+  timer = setTimeout(() => goTo(current + 1), INTERVAL);
+}
+
+goTo(0);
+</script>
 </body>
 </html>
