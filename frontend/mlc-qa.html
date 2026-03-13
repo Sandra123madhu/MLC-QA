@@ -100,6 +100,30 @@
     .result-fail { color: var(--danger); }
     .result-heading { font-family: 'Syne', sans-serif; font-size: 1.4rem; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
     .server-status { font-size: 0.82rem; display: flex; align-items: center; gap: 8px; margin-bottom: 24px; }
+
+    /* Plot image */
+    .plot-wrap {
+      margin-top: 20px; border: 1px solid var(--border);
+      border-radius: 10px; overflow: hidden; background: #03080f;
+    }
+    .plot-wrap img { width: 100%; display: block; }
+    .plot-label {
+      font-family: 'DM Mono', monospace; font-size: 0.7rem;
+      color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase;
+      padding: 10px 16px; border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    /* PDF download button */
+    .btn-download {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: transparent; border: 1px solid var(--cyan);
+      color: var(--cyan); padding: 10px 22px; border-radius: 7px;
+      font-family: 'DM Sans', sans-serif; font-size: 0.88rem; font-weight: 500;
+      cursor: pointer; margin-top: 20px; transition: all 0.2s; text-decoration: none;
+    }
+    .btn-download:hover { background: rgba(0,212,255,0.08); box-shadow: 0 0 16px rgba(0,212,255,0.2); }
+    .server-status { font-size: 0.82rem; display: flex; align-items: center; gap: 8px; margin-bottom: 24px; }
     .status-dot-sm { width: 6px; height: 6px; border-radius: 50%; }
     .dot-ok { background: var(--success); box-shadow: 0 0 5px var(--success); }
     .dot-warn { background: #ffd32a; box-shadow: 0 0 5px #ffd32a; }
@@ -318,13 +342,30 @@ async function uploadFile() {
           setTimeout(poll, getDelay(attempts));
         } else if (result.status === "Success") {
           clearInterval(dotAnim);
-          const pass = result.passed;
+          const pass     = result.passed;
+          const imgUrl   = result.image_url || null;
+          const summary  = result.analysis_summary || "";
+          const filename = fileInput.files[0]?.name || "analysis";
+
+          // store for PDF generation
+          window._lastResult = { pass, imgUrl, summary, filename };
+
           resultsDiv.innerHTML = `
             <div class="result-heading ${pass ? 'result-pass' : 'result-fail'}">
               ${pass ? '✅' : '❌'} ${pass ? 'PASS' : 'FAIL'}
             </div>
-            <p style="color:var(--muted);font-size:0.85rem;margin-bottom:8px;">MLC positioning is ${pass ? 'within' : 'outside'} clinical tolerance</p>
-            <pre>${result.analysis_summary}</pre>`;
+            <p style="color:var(--muted);font-size:0.85rem;margin-bottom:8px;">
+              MLC positioning is ${pass ? 'within' : 'outside'} clinical tolerance
+            </p>
+            <pre>${summary}</pre>
+            ${imgUrl ? `
+            <div class="plot-wrap" style="margin-top:20px;">
+              <img src="${imgUrl}" alt="Picket Fence Analysis Plot" loading="lazy"/>
+              <div class="plot-label">Pylinac · Picket Fence Analyzed Image</div>
+            </div>` : ''}
+            <button class="btn-download" onclick="downloadPDF()">
+              ⬇ Download PDF Report
+            </button>`;
           btn.disabled = false; btn.textContent = "Analyse Another File";
         } else {
           clearInterval(dotAnim);
@@ -344,6 +385,122 @@ async function uploadFile() {
     btn.disabled = false; btn.textContent = "Run Picket Fence Analysis";
   }
 }
+
+// ── PDF Download ─────────────────────────────────────────────────────────────
+async function downloadPDF() {
+  const r = window._lastResult;
+  if (!r) return;
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const W = 210; // A4 width mm
+
+  // ── Header bar ──
+  doc.setFillColor(0, 212, 255);
+  doc.rect(0, 0, W, 18, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(4, 13, 26);
+  doc.text("MLC QA — Picket Fence Analysis Report", 14, 12);
+
+  // ── Date & file ──
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(120, 140, 160);
+  const now = new Date().toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
+  doc.text(`Generated: ${now}`, 14, 26);
+  doc.text(`File: ${r.filename}`, 14, 31);
+
+  // ── Result badge ──
+  const badgeColor = r.pass ? [0, 229, 160] : [255, 77, 109];
+  doc.setFillColor(...badgeColor);
+  doc.roundedRect(14, 37, 36, 10, 2, 2, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(4, 13, 26);
+  doc.text(r.pass ? "✓  PASS" : "✗  FAIL", 22, 44);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(120, 140, 160);
+  doc.text(
+    `MLC positioning is ${r.pass ? "within" : "outside"} clinical tolerance (0.5mm / action 0.25mm)`,
+    54, 44
+  );
+
+  // ── Divider ──
+  doc.setDrawColor(14, 42, 74);
+  doc.line(14, 51, W - 14, 51);
+
+  // ── Plot image ──
+  let yAfterImg = 55;
+  if (r.imgUrl) {
+    try {
+      const imgData = await fetchImageAsBase64(r.imgUrl);
+      const imgW = W - 28;
+      const imgH = imgW * 0.45;
+      doc.addImage(imgData, "PNG", 14, 55, imgW, imgH);
+      yAfterImg = 55 + imgH + 6;
+      doc.setFontSize(7);
+      doc.setTextColor(100, 130, 150);
+      doc.text("Figure: Pylinac Picket Fence Analyzed Image", 14, yAfterImg);
+      yAfterImg += 8;
+    } catch {
+      yAfterImg = 60;
+    }
+  }
+
+  // ── Summary section ──
+  doc.setDrawColor(14, 42, 74);
+  doc.line(14, yAfterImg, W - 14, yAfterImg);
+  yAfterImg += 6;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(0, 212, 255);
+  doc.text("ANALYSIS SUMMARY", 14, yAfterImg);
+  yAfterImg += 6;
+
+  doc.setFont("courier", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(180, 200, 210);
+  const lines = doc.splitTextToSize(r.summary, W - 28);
+  // add new page if needed
+  lines.forEach(line => {
+    if (yAfterImg > 275) {
+      doc.addPage();
+      yAfterImg = 20;
+    }
+    doc.text(line, 14, yAfterImg);
+    yAfterImg += 4.5;
+  });
+
+  // ── Footer ──
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7);
+    doc.setTextColor(80, 110, 130);
+    doc.text("MLC QA Platform · For clinical physics use only", 14, 290);
+    doc.text(`Page ${i} of ${pageCount}`, W - 30, 290);
+  }
+
+  const safeFile = r.filename.replace(/\.dcm$/i, "");
+  doc.save(`MLCQA_PF_${safeFile}_${Date.now()}.pdf`);
+}
+
+async function fetchImageAsBase64(url) {
+  const res  = await fetch(url);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror  = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 </script>
+<!-- jsPDF for PDF generation -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </body>
 </html>
