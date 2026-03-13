@@ -119,6 +119,18 @@
       white-space: pre-wrap; font-family: 'DM Mono', monospace;
       font-size: 0.82rem; color: var(--muted); line-height: 1.7;
     }
+    .plot-thumb {
+      width: 100%; border-radius: 8px; margin-bottom: 16px;
+      border: 1px solid var(--border); display: block;
+    }
+    .btn-dl {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: transparent; border: 1px solid var(--cyan);
+      color: var(--cyan); padding: 8px 18px; border-radius: 6px;
+      font-family: 'DM Sans', sans-serif; font-size: 0.82rem;
+      cursor: pointer; margin-top: 14px; transition: all 0.2s;
+    }
+    .btn-dl:hover { background: rgba(0,212,255,0.08); }
 
     /* ── Empty state ── */
     .empty-state {
@@ -285,7 +297,9 @@ function renderRows(data) {
     summaryRow.innerHTML = `
       <td colspan="5">
         <div class="summary-box">
+          ${a.image_url ? `<img class="plot-thumb" src="${a.image_url}" alt="Analysis plot" loading="lazy"/>` : ''}
           <pre>${a.summary || 'No summary available.'}</pre>
+          <button class="btn-dl" onclick="downloadHistoryPDF(${i})">⬇ Download PDF</button>
         </div>
       </td>`;
     tbody.appendChild(summaryRow);
@@ -347,6 +361,85 @@ async function loadHistory() {
 }
 
 loadHistory();
+
+// ── PDF Download from history ────────────────────────────────────────────────
+async function downloadHistoryPDF(i) {
+  const a = allAnalyses[i];
+  if (!a) return;
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const W = 210;
+
+  doc.setFillColor(0, 212, 255);
+  doc.rect(0, 0, W, 18, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(4, 13, 26);
+  doc.text("MLC QA — " + a.test_type + " Report", 14, 12);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(120, 140, 160);
+  const dt = new Date(a.created_at).toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
+  doc.text("Date: " + dt, 14, 26);
+  doc.text("File: " + (a.filename || "—"), 14, 31);
+
+  const badgeColor = a.passed ? [0, 229, 160] : [255, 77, 109];
+  doc.setFillColor(...badgeColor);
+  doc.roundedRect(14, 37, 36, 10, 2, 2, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(4, 13, 26);
+  doc.text(a.passed ? "✓  PASS" : "✗  FAIL", 22, 44);
+
+  doc.setDrawColor(14, 42, 74);
+  doc.line(14, 51, W - 14, 51);
+
+  let y = 57;
+  if (a.image_url) {
+    try {
+      const res  = await fetch(a.image_url);
+      const blob = await res.blob();
+      const b64  = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onloadend = () => res(r.result);
+        r.onerror = rej;
+        r.readAsDataURL(blob);
+      });
+      const imgW = W - 28;
+      const imgH = imgW * 0.45;
+      doc.addImage(b64, "PNG", 14, y, imgW, imgH);
+      y += imgH + 10;
+    } catch {}
+  }
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(0, 212, 255);
+  doc.text("ANALYSIS SUMMARY", 14, y);
+  y += 6;
+
+  doc.setFont("courier", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(180, 200, 210);
+  const lines = doc.splitTextToSize(a.summary || "", W - 28);
+  lines.forEach(line => {
+    if (y > 275) { doc.addPage(); y = 20; }
+    doc.text(line, 14, y);
+    y += 4.5;
+  });
+
+  const pages = doc.internal.getNumberOfPages();
+  for (let p = 1; p <= pages; p++) {
+    doc.setPage(p);
+    doc.setFontSize(7);
+    doc.setTextColor(80, 110, 130);
+    doc.text("MLC QA Platform · For clinical physics use only", 14, 290);
+    doc.text("Page " + p + " of " + pages, W - 30, 290);
+  }
+  doc.save("MLCQA_" + (a.filename || "report") + ".pdf");
+}
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </body>
 </html>
