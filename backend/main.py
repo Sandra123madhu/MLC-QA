@@ -46,6 +46,34 @@ def create_user(name: str, email: str, hashed_password: str):
         return data[0] if isinstance(data, list) else data
     raise HTTPException(status_code=500, detail=f"Could not create user: {res.text}")
 
+def save_analysis(user_email: str, test_type: str, filename: str, passed: bool, summary: str):
+    with httpx.Client() as client:
+        res = client.post(
+            f"{SUPABASE_URL}/rest/v1/analyses",
+            headers=sb_headers(),
+            json={
+                "user_email": user_email,
+                "test_type": test_type,
+                "filename": filename,
+                "passed": passed,
+                "summary": summary
+            }
+        )
+    return res.status_code in (200, 201)
+
+def get_user_analyses(user_email: str):
+    with httpx.Client() as client:
+        res = client.get(
+            f"{SUPABASE_URL}/rest/v1/analyses"
+            f"?user_email=eq.{user_email}"
+            f"&order=created_at.desc"
+            f"&limit=50",
+            headers=sb_headers()
+        )
+    if res.status_code == 200:
+        return res.json()
+    return []
+
 # ─── Password hashing ─────────────────────────────────────────────────────────
 def hash_password(password: str) -> str:
     return hmac.new(SECRET_KEY.encode(), password.encode(), hashlib.sha256).hexdigest()
@@ -136,16 +164,32 @@ def login(req: LoginRequest):
 def get_me(current_user: dict = Depends(get_current_user)):
     return {"email": current_user["email"], "name": current_user["name"]}
 
+# ─── History Route ─────────────────────────────────────────────────────────────
+@app.get("/history")
+def get_history(current_user: dict = Depends(get_current_user)):
+    analyses = get_user_analyses(current_user["email"])
+    return {"analyses": analyses}
+
 # ─── Analysis Routes ──────────────────────────────────────────────────────────
-def run_analysis(job_id: str, temp_path: str):
+def run_analysis(job_id: str, temp_path: str, user_email: str, filename: str):
     try:
         pf = PicketFence(temp_path)
         pf.analyze(tolerance=0.5, action_tolerance=0.25)
+        summary = pf.results()
+        passed  = pf.passed
         jobs[job_id] = {
             "status": "Success",
-            "passed": pf.passed,
-            "analysis_summary": pf.results()
+            "passed": passed,
+            "analysis_summary": summary
         }
+        # ── Save to Supabase ──
+        save_analysis(
+            user_email=user_email,
+            test_type="Picket Fence",
+            filename=filename,
+            passed=passed,
+            summary=summary
+        )
     except Exception as e:
         jobs[job_id] = {"status": "Error", "message": f"Analysis Error: {str(e)}"}
     finally:
@@ -170,7 +214,10 @@ async def analyze_mlc(
             temp_path = tmp.name
         job_id = str(uuid.uuid4())
         jobs[job_id] = {"status": "Processing"}
-        background_tasks.add_task(run_analysis, job_id, temp_path)
+        background_tasks.add_task(
+            run_analysis, job_id, temp_path,
+            current_user["email"], file.filename
+        )
         return {"status": "Processing", "job_id": job_id}
     except Exception as e:
         return {"status": "Error", "message": f"Upload Error: {str(e)}"}
