@@ -5,7 +5,8 @@ from pydantic import BaseModel
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from pylinac import PicketFence
-import os, shutil, tempfile, uuid, hashlib, hmac, matplotlib
+import os, shutil, tempfile, uuid, hashlib, hmac
+import matplotlib
 matplotlib.use("Agg")  # non-interactive backend — required on servers
 import matplotlib.pyplot as plt
 import httpx
@@ -210,11 +211,8 @@ def run_analysis(job_id: str, temp_path: str, user_email: str, filename: str):
         # ── Generate and upload plot ──
         plot_filename = f"{job_id}.png"
         plot_path     = f"/tmp/{plot_filename}"
-        fig, ax = plt.subplots(figsize=(12, 6))
-        pf.plot_analyzed_image(ax=ax)
-        fig.savefig(plot_path, dpi=120, bbox_inches="tight",
-                    facecolor="#03080f", edgecolor="none")
-        plt.close(fig)
+        pf.save_analyzed_image(plot_path)
+        plt.close("all")
 
         image_url = upload_plot_to_supabase(plot_path, plot_filename)
 
