@@ -5,28 +5,49 @@ from pydantic import BaseModel
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from pylinac import PicketFence
-import os, shutil, tempfile, uuid, hashlib, hmac, json
+import os, shutil, tempfile, uuid, hashlib, hmac
+import httpx
 
 # ─── Config ───────────────────────────────────────────────────────────────────
-SECRET_KEY = os.environ.get("SECRET_KEY", "mlcqa-change-this-secret-key-in-render")
-ALGORITHM  = "HS256"
-TOKEN_HOURS = 24
+SECRET_KEY   = os.environ.get("SECRET_KEY", "mlcqa-change-this-in-render")
+ALGORITHM    = "HS256"
+TOKEN_HOURS  = 24
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://swxrncaezcthahehhuu.supabase.co")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
-# ─── Simple file-based user store (no SQLAlchemy needed) ──────────────────────
-USERS_FILE = "/tmp/users.json"
+# ─── Supabase REST helpers ────────────────────────────────────────────────────
+def sb_headers():
+    return {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+    }
 
-def load_users() -> dict:
-    if os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "r") as f:
-            return json.load(f)
-    return {}
+def get_user_by_email(email: str):
+    with httpx.Client() as client:
+        res = client.get(
+            f"{SUPABASE_URL}/rest/v1/users?email=eq.{email}&limit=1",
+            headers=sb_headers()
+        )
+    if res.status_code == 200 and res.json():
+        return res.json()[0]
+    return None
 
-def save_users(users: dict):
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f)
+def create_user(name: str, email: str, hashed_password: str):
+    with httpx.Client() as client:
+        res = client.post(
+            f"{SUPABASE_URL}/rest/v1/users",
+            headers=sb_headers(),
+            json={"name": name, "email": email, "password": hashed_password}
+        )
+    if res.status_code in (200, 201):
+        data = res.json()
+        return data[0] if isinstance(data, list) else data
+    raise HTTPException(status_code=500, detail=f"Could not create user: {res.text}")
 
+# ─── Password hashing ─────────────────────────────────────────────────────────
 def hash_password(password: str) -> str:
-    """SHA-256 hash with SECRET_KEY as salt — no bcrypt needed."""
     return hmac.new(SECRET_KEY.encode(), password.encode(), hashlib.sha256).hexdigest()
 
 def verify_password(plain: str, hashed: str) -> bool:
@@ -93,25 +114,19 @@ def home():
 # ─── Auth Routes ──────────────────────────────────────────────────────────────
 @app.post("/auth/signup")
 def signup(req: SignupRequest):
-    users = load_users()
-    if req.email in users:
-        raise HTTPException(status_code=400, detail="Email already registered.")
-    if len(req.password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
     if not req.name.strip():
         raise HTTPException(status_code=400, detail="Name is required.")
-    users[req.email] = {
-        "name": req.name.strip(),
-        "email": req.email,
-        "password": hash_password(req.password)
-    }
-    save_users(users)
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+    existing = get_user_by_email(req.email)
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered.")
+    create_user(req.name.strip(), req.email, hash_password(req.password))
     return {"message": "Account created successfully."}
 
 @app.post("/auth/login")
 def login(req: LoginRequest):
-    users = load_users()
-    user = users.get(req.email)
+    user = get_user_by_email(req.email)
     if not user or not verify_password(req.password, user["password"]):
         raise HTTPException(status_code=401, detail="Invalid email or password.")
     token = create_token(req.email, user["name"])
