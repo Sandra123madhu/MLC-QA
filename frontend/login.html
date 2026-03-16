@@ -76,6 +76,12 @@
     .msg { padding: 12px 16px; border-radius: 8px; font-size: 0.88rem; margin-bottom: 20px; display: none; }
     .msg.error { background: rgba(255,77,109,0.1); border: 1px solid rgba(255,77,109,0.3); color: var(--error); display: block; }
     .msg.success { background: rgba(0,229,160,0.1); border: 1px solid rgba(0,229,160,0.3); color: var(--success); display: block; }
+    .server-status { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--muted); margin-bottom: 20px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+    .status-dot.online { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    .status-dot.offline { background: var(--error); }
+    .status-dot.checking { animation: pulse 1s infinite; background: var(--cyan); }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
     @keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
   </style>
 </head>
@@ -85,6 +91,11 @@
   <div class="logo">MLC<span>QA</span></div>
   <h1>Welcome back</h1>
   <p class="subtitle">Sign in to your account to continue</p>
+
+  <div class="server-status">
+    <div class="status-dot checking" id="statusDot"></div>
+    <span id="statusText">Checking server...</span>
+  </div>
 
   <div id="msg" class="msg"></div>
 
@@ -112,6 +123,25 @@ if (localStorage.getItem("mlcqa_token")) {
   window.location.href = "dashboard.html";
 }
 
+// ── Server health check on load ──────────────────────────────────────────────
+(async function checkServer() {
+  const dot  = document.getElementById("statusDot");
+  const text = document.getElementById("statusText");
+  try {
+    const res = await fetch(`${BACKEND_URL}/`, { method: "GET" });
+    if (res.ok) {
+      dot.className  = "status-dot online";
+      text.textContent = "Server online";
+    } else {
+      dot.className  = "status-dot offline";
+      text.textContent = "Server error — try again shortly";
+    }
+  } catch {
+    dot.className  = "status-dot offline";
+    text.textContent = "Server unreachable — it may be waking up (wait ~60s)";
+  }
+})();
+
 document.getElementById("password").addEventListener("keydown", e => {
   if (e.key === "Enter") doLogin();
 });
@@ -136,6 +166,7 @@ async function doLogin() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password })
     });
+
     const data = await res.json();
 
     if (!res.ok) {
@@ -149,9 +180,14 @@ async function doLogin() {
     localStorage.setItem("mlcqa_name", data.name);
     window.location.href = "dashboard.html";
 
-  } catch {
+  } catch (err) {
     msg.className = "msg error";
-    msg.textContent = "Could not reach the server. Please try again.";
+    // Distinguish CORS/network error from server error
+    if (err instanceof TypeError && err.message.includes("fetch")) {
+      msg.textContent = "Server is unreachable or still waking up. Wait 30–60 seconds and try again.";
+    } else {
+      msg.textContent = "Could not reach the server. Please try again.";
+    }
     btn.disabled = false; btn.textContent = "Sign In";
   }
 }
