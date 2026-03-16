@@ -18,6 +18,12 @@ TOKEN_HOURS  = 24
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://swxrncaezcthahehhuu.supabase.co")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
+# ─── Startup validation ───────────────────────────────────────────────────────
+if not SUPABASE_KEY:
+    raise RuntimeError("SUPABASE_KEY environment variable is not set.")
+if not SUPABASE_URL or "supabase.co" not in SUPABASE_URL:
+    raise RuntimeError("SUPABASE_URL environment variable looks wrong or is missing.")
+
 # ─── Supabase REST helpers ────────────────────────────────────────────────────
 def sb_headers():
     return {
@@ -145,9 +151,13 @@ class LoginRequest(BaseModel):
 # ─── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI()
 
+# ─── CORS — allow both your frontend and backend origins ─────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://mlc-qa-1.onrender.com",   # frontend
+        "https://mlc-qa.onrender.com",     # backend (for direct access)
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
