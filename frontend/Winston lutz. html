@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Winston-Lutz — MLC QA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #040d1a; --surface: #071428; --surface2: #0a1f38;
+      --border: #0e2a4a; --cyan: #00d4ff; --text: #e8f4f8; --muted: #7a9bb5;
+      --success: #00e5a0; --danger: #ff4d6d;
+    }
+    body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; }
+    body::before {
+      content: ''; position: fixed; inset: 0;
+      background-image: linear-gradient(rgba(0,212,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(0,212,255,0.025) 1px, transparent 1px);
+      background-size: 60px 60px; pointer-events: none; z-index: 0;
+    }
+    .sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 240px;
+      background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; z-index: 10; padding: 28px 0;
+    }
+    .sidebar-logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.2rem; padding: 0 28px 28px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+    .sidebar-logo span { color: var(--cyan); }
+    .nav-label { font-size: 0.7rem; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; padding: 0 28px; margin-bottom: 8px; }
+    .nav-item { display: flex; align-items: center; gap: 12px; padding: 11px 28px; color: var(--muted); font-size: 0.9rem; text-decoration: none; transition: all 0.15s; cursor: pointer; border: none; background: none; width: 100%; text-align: left; }
+    .nav-item:hover { color: var(--text); background: var(--surface2); }
+    .nav-item.active { color: var(--cyan); background: rgba(0,212,255,0.06); border-right: 2px solid var(--cyan); }
+    .nav-icon { font-size: 1rem; width: 20px; text-align: center; }
+    .sidebar-footer { margin-top: auto; padding: 24px 28px 0; border-top: 1px solid var(--border); }
+    .user-chip { display: flex; align-items: center; gap: 12px; padding: 12px 0; margin-bottom: 12px; }
+    .avatar { width: 34px; height: 34px; border-radius: 50%; background: rgba(0,212,255,0.15); border: 1px solid rgba(0,212,255,0.3); display: flex; align-items: center; justify-content: center; font-family: 'Syne', sans-serif; font-size: 0.85rem; color: var(--cyan); flex-shrink: 0; }
+    .user-name { font-size: 0.88rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .user-role { font-size: 0.75rem; color: var(--muted); }
+    .logout-btn { width: 100%; background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 9px; border-radius: 7px; font-family: 'DM Sans', sans-serif; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; }
+    .logout-btn:hover { border-color: var(--danger); color: var(--danger); }
+
+    .main { margin-left: 240px; padding: 40px 48px; position: relative; z-index: 1; max-width: 1000px; }
+    .page-header { margin-bottom: 36px; }
+    .breadcrumb { font-size: 0.82rem; color: var(--muted); margin-bottom: 12px; }
+    .breadcrumb a { color: var(--muted); text-decoration: none; transition: color 0.2s; }
+    .breadcrumb a:hover { color: var(--cyan); }
+    .page-header h1 { font-family: 'Syne', sans-serif; font-size: 1.7rem; font-weight: 700; margin-bottom: 6px; }
+    .page-header p { color: var(--muted); font-size: 0.9rem; }
+
+    .upload-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 36px; margin-bottom: 24px; }
+    .upload-zone { border: 2px dashed var(--border); border-radius: 10px; padding: 48px 24px; text-align: center; transition: all 0.2s; cursor: pointer; position: relative; }
+    .upload-zone:hover, .upload-zone.dragover { border-color: var(--cyan); background: rgba(0,212,255,0.03); }
+    .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .upload-icon { font-size: 2.5rem; margin-bottom: 12px; }
+    .upload-zone h3 { font-family: 'Syne', sans-serif; font-size: 1rem; margin-bottom: 6px; }
+    .upload-zone p { font-size: 0.85rem; color: var(--muted); }
+    .file-selected { font-size: 0.82rem; color: var(--cyan); margin-top: 12px; font-weight: 500; }
+
+    .tolerances { display: flex; gap: 16px; margin-top: 24px; flex-wrap: wrap; }
+    .tol-item { flex: 1; min-width: 160px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+    .tol-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+    .tol-val { font-family: 'Syne', sans-serif; font-size: 1.1rem; color: var(--cyan); }
+
+    .analyze-btn { width: 100%; background: var(--cyan); color: #040d1a; border: none; padding: 15px; border-radius: 9px; font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 1rem; cursor: pointer; margin-top: 20px; transition: all 0.2s; }
+    .analyze-btn:hover:not(:disabled) { background: #33ddff; box-shadow: 0 4px 20px rgba(0,212,255,0.3); transform: translateY(-1px); }
+    .analyze-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .results-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 36px; }
+    .results-card h2 { font-family: 'Syne', sans-serif; font-size: 1rem; font-weight: 600; margin-bottom: 20px; color: var(--muted); }
+    #resultsBody { color: var(--muted); font-size: 0.9rem; line-height: 1.6; }
+    #resultsBody pre { white-space: pre-wrap; font-family: 'DM Mono', monospace; font-size: 0.85rem; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-top: 12px; line-height: 1.7; }
+    .result-pass { color: var(--success); }
+    .result-fail { color: var(--danger); }
+    .result-heading { font-family: 'Syne', sans-serif; font-size: 1.4rem; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
+    .server-status { font-size: 0.82rem; display: flex; align-items: center; gap: 8px; margin-bottom: 24px; }
+    .status-dot-sm { width: 6px; height: 6px; border-radius: 50%; }
+    .dot-ok { background: var(--success); box-shadow: 0 0 5px var(--success); }
+    .dot-warn { background: #ffd32a; box-shadow: 0 0 5px #ffd32a; }
+
+    .plot-wrap { margin-top: 20px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #03080f; }
+    .plot-wrap img { width: 100%; display: block; }
+    .plot-label { font-family: 'DM Mono', monospace; font-size: 0.7rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; padding: 10px 16px; border-top: 1px solid var(--border); background: var(--surface); }
+
+    .btn-download { display: inline-flex; align-items: center; gap: 8px; background: transparent; border: 1px solid var(--cyan); color: var(--cyan); padding: 10px 22px; border-radius: 7px; font-family: 'DM Sans', sans-serif; font-size: 0.88rem; font-weight: 500; cursor: pointer; margin-top: 20px; transition: all 0.2s; text-decoration: none; }
+    .btn-download:hover { background: rgba(0,212,255,0.08); box-shadow: 0 0 16px rgba(0,212,255,0.2); }
+
+    .info-note { background: rgba(0,212,255,0.05); border: 1px solid rgba(0,212,255,0.15); border-radius: 8px; padding: 14px 18px; font-size: 0.85rem; color: var(--muted); margin-bottom: 20px; line-height: 1.6; }
+    .info-note strong { color: var(--cyan); }
+
+    @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+    @media(max-width:768px){ .sidebar{display:none;} .main{margin-left:0;padding:24px 20px;} }
+  </style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sidebar-logo">MLC<span>QA</span></div>
+  <div class="nav-label">Menu</div>
+  <a class="nav-item" href="dashboard.html"><span class="nav-icon">⬛</span> Dashboard</a>
+  <a class="nav-item active" href="#"><span class="nav-icon">🎯</span> Winston-Lutz</a>
+  <a class="nav-item" href="mlc-qa.html"><span class="nav-icon">⚡</span> Picket Fence</a>
+  <a class="nav-item" href="starshot.html"><span class="nav-icon">⭐</span> Starshot</a>
+  <a class="nav-item" href="history.html"><span class="nav-icon">📋</span> History</a>
+  <div class="sidebar-footer">
+    <div class="user-chip">
+      <div class="avatar" id="avatarInitial">?</div>
+      <div>
+        <div class="user-name" id="sidebarName">Loading...</div>
+        <div class="user-role">Medical Physicist</div>
+      </div>
+    </div>
+    <button class="logout-btn" onclick="logout()">Sign Out</button>
+  </div>
+</aside>
+
+<main class="main">
+  <div class="page-header">
+    <div class="breadcrumb"><a href="dashboard.html">Dashboard</a> / Winston-Lutz Test</div>
+    <h1>Winston-Lutz Test</h1>
+    <p>Verify isocenter accuracy by analyzing radiation field offsets relative to the BB marker</p>
+  </div>
+
+  <div class="server-status" id="serverStatus">
+    <div class="status-dot-sm dot-warn"></div>
+    <span style="color:var(--muted)">Checking server...</span>
+  </div>
+
+  <div class="info-note">
+    <strong>How it works:</strong> Upload one or more DICOM images of a BB phantom taken at multiple gantry/collimator/couch angles. The analysis measures the 2D CAX-to-BB distance for each image and reports the overall isocenter radius. You can upload individual <strong>.dcm</strong> files or a <strong>.zip</strong> archive containing multiple images.
+  </div>
+
+  <div class="upload-card">
+    <div class="upload-zone" id="uploadZone">
+      <input type="file" id="wlFile" accept=".dcm,.zip" onchange="onFileSelected(this)"/>
+      <div class="upload-icon">🎯</div>
+      <h3>Drop your DICOM or ZIP file here</h3>
+      <p>or click to browse — .dcm or .zip files accepted</p>
+      <div class="file-selected" id="fileLabel"></div>
+    </div>
+
+    <div class="tolerances">
+      <div class="tol-item">
+        <div class="tol-label">Action Tolerance</div>
+        <div class="tol-val">1.0 mm</div>
+      </div>
+      <div class="tol-item">
+        <div class="tol-label">Warning Tolerance</div>
+        <div class="tol-val">0.5 mm</div>
+      </div>
+      <div class="tol-item">
+        <div class="tol-label">Test Type</div>
+        <div class="tol-val">Isocenter</div>
+      </div>
+    </div>
+
+    <button class="analyze-btn" id="analyzeBtn" onclick="runAnalysis()" disabled>
+      Run Winston-Lutz Analysis
+    </button>
+  </div>
+
+  <div class="results-card">
+    <h2>Results</h2>
+    <div id="resultsBody">
+      <p>Upload a file and run the analysis to see results here.</p>
+    </div>
+  </div>
+</main>
+
+<script>
+const BACKEND_URL = "https://mlc-qa.onrender.com";
+const token = localStorage.getItem("mlcqa_token");
+const name  = localStorage.getItem("mlcqa_name");
+
+if (!token) { window.location.href = "login.html"; }
+
+if (name) {
+  document.getElementById("sidebarName").textContent = name;
+  document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
+}
+
+fetch(`${BACKEND_URL}/auth/me`, { headers: { "Authorization": `Bearer ${token}` } })
+  .then(r => { if (!r.ok) logout(); return r.json(); })
+  .then(d => {
+    document.getElementById("sidebarName").textContent = d.name;
+    document.getElementById("avatarInitial").textContent = d.name.charAt(0).toUpperCase();
+    localStorage.setItem("mlcqa_name", d.name);
+  }).catch(() => {});
+
+// Server health check
+(async () => {
+  const el = document.getElementById("serverStatus");
+  try {
+    const r = await fetch(`${BACKEND_URL}/`);
+    el.innerHTML = r.ok
+      ? `<div class="status-dot-sm dot-ok"></div><span style="color:var(--success)">Server online</span>`
+      : `<div class="status-dot-sm dot-warn"></div><span style="color:#ffd32a">Server degraded</span>`;
+    if (r.ok) document.getElementById("analyzeBtn").disabled = false;
+  } catch {
+    el.innerHTML = `<div class="status-dot-sm dot-warn"></div><span style="color:#ffd32a">Server waking up — wait ~60s</span>`;
+    setTimeout(() => location.reload(), 30000);
+  }
+})();
+
+function onFileSelected(input) {
+  const label = document.getElementById("fileLabel");
+  const btn   = document.getElementById("analyzeBtn");
+  if (input.files.length > 0) {
+    label.textContent = `Selected: ${input.files[0].name}`;
+    btn.disabled = false;
+  } else {
+    label.textContent = "";
+    btn.disabled = true;
+  }
+}
+
+// Drag and drop
+const zone = document.getElementById("uploadZone");
+zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("dragover"); });
+zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+zone.addEventListener("drop", e => {
+  e.preventDefault(); zone.classList.remove("dragover");
+  const f = e.dataTransfer.files[0];
+  if (f) { document.getElementById("wlFile").files = e.dataTransfer.files; onFileSelected(document.getElementById("wlFile")); }
+});
+
+async function runAnalysis() {
+  const fileInput = document.getElementById("wlFile");
+  const btn       = document.getElementById("analyzeBtn");
+  const resultsDiv = document.getElementById("resultsBody");
+
+  if (!fileInput.files.length) { alert("Please select a file first."); return; }
+
+  const file = fileInput.files[0];
+  const ext  = file.name.split(".").pop().toLowerCase();
+  if (!["dcm","zip"].includes(ext)) {
+    resultsDiv.innerHTML = `<p class="result-fail">❌ Only .dcm or .zip files are supported.</p>`; return;
+  }
+
+  btn.disabled = true; btn.textContent = "Uploading...";
+  resultsDiv.innerHTML = `<p style="color:var(--muted)">⏳ Uploading file...</p>`;
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+
+    const res = await fetch(`${BACKEND_URL}/analyze/winston-lutz`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}` },
+      body: formData,
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+
+    const data = await res.json();
+    if (data.status === "Error") {
+      resultsDiv.innerHTML = `<p class="result-fail">❌ ${data.message}</p>`;
+      btn.disabled = false; btn.textContent = "Run Winston-Lutz Analysis"; return;
+    }
+
+    const jobId = data.job_id;
+    btn.textContent = "Analysing...";
+    resultsDiv.innerHTML = `<p style="color:var(--muted)">🔬 Analysis running<span id="dots">.</span></p>`;
+
+    let dotCount = 0;
+    const dotAnim = setInterval(() => {
+      dotCount = (dotCount + 1) % 4;
+      const d = document.getElementById("dots");
+      if (d) d.textContent = ".".repeat(dotCount + 1);
+    }, 500);
+
+    let attempts = 0;
+    const getDelay = a => a < 5 ? 2000 : a < 15 ? 3000 : 5000;
+
+    const poll = async () => {
+      attempts++;
+      if (attempts > 60) {
+        clearInterval(dotAnim);
+        resultsDiv.innerHTML = `<p style="color:orange">⚠️ Analysis is taking longer than expected. Please try again.</p>`;
+        btn.disabled = false; btn.textContent = "Run Winston-Lutz Analysis"; return;
+      }
+      try {
+        const r = await fetch(`${BACKEND_URL}/result/${jobId}`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const result = await r.json();
+
+        if (result.status === "Processing") {
+          setTimeout(poll, getDelay(attempts));
+        } else if (result.status === "Success") {
+          clearInterval(dotAnim);
+          const pass    = result.passed;
+          const imgUrl  = result.image_url || null;
+          const summary = result.analysis_summary || "";
+          window._lastResult = { pass, imgUrl, summary, filename: file.name, testType: "Winston-Lutz" };
+
+          resultsDiv.innerHTML = `
+            <div class="result-heading ${pass ? "result-pass" : "result-fail"}">
+              ${pass ? "✅" : "❌"} ${pass ? "PASS" : "FAIL"}
+            </div>
+            <p style="color:var(--muted);font-size:0.85rem;margin-bottom:8px;">
+              Isocenter is ${pass ? "within" : "outside"} clinical tolerance (1.0 mm)
+            </p>
+            <pre>${summary}</pre>
+            ${imgUrl ? `<div class="plot-wrap"><img src="${imgUrl}" alt="Winston-Lutz Plot" loading="lazy"/>
+              <div class="plot-label">Pylinac · Winston-Lutz Analysis</div></div>` : ""}
+            <button class="btn-download" onclick="downloadPDF()">⬇ Download PDF Report</button>`;
+          btn.disabled = false; btn.textContent = "Analyse Another File";
+        } else {
+          clearInterval(dotAnim);
+          resultsDiv.innerHTML = `<p class="result-fail">❌ ${result.message}</p>`;
+          btn.disabled = false; btn.textContent = "Run Winston-Lutz Analysis";
+        }
+      } catch {
+        clearInterval(dotAnim);
+        resultsDiv.innerHTML = `<p class="result-fail">❌ Lost connection while waiting for results.</p>`;
+        btn.disabled = false; btn.textContent = "Run Winston-Lutz Analysis";
+      }
+    };
+    setTimeout(poll, getDelay(0));
+
+  } catch (err) {
+    resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.name === "AbortError" ? "Upload timed out. Try again." : "Unexpected error. Please try again."}</p>`;
+    btn.disabled = false; btn.textContent = "Run Winston-Lutz Analysis";
+  }
+}
+
+async function downloadPDF() {
+  const r = window._lastResult; if (!r) return;
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const W = 210;
+  doc.setFillColor(0, 212, 255); doc.rect(0, 0, W, 18, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(4, 13, 26);
+  doc.text("MLC QA — Winston-Lutz Analysis Report", 14, 12);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(120, 140, 160);
+  const now = new Date().toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
+  doc.text(`Generated: ${now}`, 14, 26); doc.text(`File: ${r.filename}`, 14, 31);
+  const badgeColor = r.pass ? [0, 229, 160] : [255, 77, 109];
+  doc.setFillColor(...badgeColor); doc.roundedRect(14, 37, 36, 10, 2, 2, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(4, 13, 26);
+  doc.text(r.pass ? "✓  PASS" : "✗  FAIL", 22, 44);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(120, 140, 160);
+  doc.text(`Isocenter is ${r.pass ? "within" : "outside"} clinical tolerance (1.0 mm)`, 54, 44);
+  doc.setDrawColor(14, 42, 74); doc.line(14, 51, W - 14, 51);
+  let y = 55;
+  if (r.imgUrl) {
+    try {
+      const imgData = await fetchImageAsBase64(r.imgUrl);
+      const imgW = W - 28; const imgH = imgW * 0.45;
+      doc.addImage(imgData, "PNG", 14, y, imgW, imgH); y += imgH + 6;
+      doc.setFontSize(7); doc.setTextColor(100, 130, 150);
+      doc.text("Figure: Pylinac Winston-Lutz Analysis", 14, y); y += 8;
+    } catch { y = 60; }
+  }
+  doc.setDrawColor(14, 42, 74); doc.line(14, y, W - 14, y); y += 6;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(0, 212, 255);
+  doc.text("ANALYSIS SUMMARY", 14, y); y += 6;
+  doc.setFont("courier", "normal"); doc.setFontSize(7.5); doc.setTextColor(180, 200, 210);
+  doc.splitTextToSize(r.summary, W - 28).forEach(line => {
+    if (y > 275) { doc.addPage(); y = 20; }
+    doc.text(line, 14, y); y += 4.5;
+  });
+  const pages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i); doc.setFontSize(7); doc.setTextColor(80, 110, 130);
+    doc.text("MLC QA Platform · For clinical physics use only", 14, 290);
+    doc.text(`Page ${i} of ${pages}`, W - 30, 290);
+  }
+  doc.save(`MLCQA_WL_${r.filename.replace(/\.[^.]+$/, "")}_${Date.now()}.pdf`);
+}
+
+async function fetchImageAsBase64(url) {
+  const res = await fetch(url); const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject; reader.readAsDataURL(blob);
+  });
+}
+
+function logout() {
+  localStorage.removeItem("mlcqa_token"); localStorage.removeItem("mlcqa_name");
+  window.location.href = "index.html";
+}
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</body>
+</html>
