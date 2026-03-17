@@ -124,15 +124,16 @@
     .card-desc { font-size: 0.85rem; color: var(--muted); line-height: 1.55; }
     .card-arrow { margin-top: 20px; font-size: 0.85rem; color: var(--cyan); display: flex; align-items: center; gap: 4px; }
 
-    /* ── Quick stats ── */
-    .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
-    .stat-card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 12px; padding: 22px 24px;
-      animation: fadeUp 0.4s 0.1s ease both;
+    /* ── Overview text ── */
+    .overview-text {
+      margin-bottom: 48px;
+      animation: fadeUp 0.4s ease both;
     }
-    .stat-val { font-family: 'Syne', sans-serif; font-size: 1.6rem; font-weight: 700; color: var(--cyan); }
-    .stat-lbl { font-size: 0.8rem; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .overview-text p {
+      color: var(--muted); font-size: 0.97rem; line-height: 1.8;
+      max-width: 780px;
+    }
+    .overview-text p + p { margin-top: 16px; }
 
     @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
 
@@ -182,24 +183,12 @@
     </div>
   </div>
 
-  <!-- Quick Stats -->
+  <!-- Overview -->
   <div class="section-head">
     <h2>Overview</h2>
-    <p>Your QA platform at a glance</p>
   </div>
-  <div class="stats-row" style="margin-bottom:48px;">
-    <div class="stat-card">
-      <div class="stat-val">1</div>
-      <div class="stat-lbl">Active Module</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-val">0.5mm</div>
-      <div class="stat-lbl">MLC Tolerance</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-val">DICOM</div>
-      <div class="stat-lbl">Input Format</div>
-    </div>
+  <div class="overview-text">
+    <p>MLC QA is a cloud-based platform for medical physicists to automate multi-leaf collimator quality assurance. Upload a DICOM image and get instant Picket Fence analysis with pass/fail results. All analyses are securely saved to your history for easy reference.</p>
   </div>
 
   <!-- Analysis Modules -->
