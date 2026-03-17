@@ -4,7 +4,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
-from pylinac import PicketFence
+from pylinac import PicketFence, WinstonLutz, Starshot
 import os, shutil, tempfile, uuid, hashlib, hmac
 import matplotlib
 matplotlib.use("Agg")  # non-interactive backend — required on servers
@@ -17,12 +17,6 @@ ALGORITHM    = "HS256"
 TOKEN_HOURS  = 24
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://swxrncaezcthahehhuu.supabase.co")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-
-# ─── Startup validation ───────────────────────────────────────────────────────
-if not SUPABASE_KEY:
-    raise RuntimeError("SUPABASE_KEY environment variable is not set.")
-if not SUPABASE_URL or "supabase.co" not in SUPABASE_URL:
-    raise RuntimeError("SUPABASE_URL environment variable looks wrong or is missing.")
 
 # ─── Supabase REST helpers ────────────────────────────────────────────────────
 def sb_headers():
@@ -151,13 +145,9 @@ class LoginRequest(BaseModel):
 # ─── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI()
 
-# ─── CORS — allow both your frontend and backend origins ─────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://mlc-qa-1.onrender.com",   # frontend
-        "https://mlc-qa.onrender.com",     # backend (for direct access)
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -280,3 +270,148 @@ def get_result(job_id: str, current_user: dict = Depends(get_current_user)):
     if job_id not in jobs:
         return {"status": "Error", "message": "Job ID not found."}
     return jobs[job_id]
+
+# ─── Winston-Lutz ─────────────────────────────────────────────────────────────
+def run_winston_lutz(job_id: str, temp_path: str, user_email: str, filename: str):
+    plot_path = None
+    try:
+        # Supports single .dcm or a .zip of multiple images
+        if temp_path.endswith(".zip"):
+            import zipfile, pathlib
+            extract_dir = temp_path + "_extracted"
+            os.makedirs(extract_dir, exist_ok=True)
+            with zipfile.ZipFile(temp_path, "r") as z:
+                z.extractall(extract_dir)
+            wl = WinstonLutz(extract_dir)
+        else:
+            wl = WinstonLutz(os.path.dirname(temp_path))
+
+        wl.analyze()
+        summary = wl.results()
+        passed  = wl.passed
+
+        plot_filename = f"{job_id}.png"
+        plot_path     = f"/tmp/{plot_filename}"
+        wl.save_summary_plot(plot_path)
+        plt.close("all")
+
+        image_url = upload_plot_to_supabase(plot_path, plot_filename)
+
+        jobs[job_id] = {
+            "status": "Success",
+            "passed": passed,
+            "analysis_summary": summary,
+            "image_url": image_url
+        }
+        save_analysis(
+            user_email=user_email, test_type="Winston-Lutz",
+            filename=filename, passed=passed,
+            summary=summary, image_url=image_url
+        )
+    except Exception as e:
+        jobs[job_id] = {"status": "Error", "message": f"Analysis Error: {str(e)}"}
+    finally:
+        for path in [temp_path, plot_path]:
+            try:
+                if path and os.path.exists(path):
+                    if os.path.isdir(path + "_extracted"):
+                        shutil.rmtree(path + "_extracted", ignore_errors=True)
+                    os.remove(path)
+            except Exception:
+                pass
+        cleanup_old_jobs()
+
+@app.post("/analyze/winston-lutz")
+async def analyze_winston_lutz(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    ext = file.filename.lower().split(".")[-1]
+    if ext not in ("dcm", "zip"):
+        return {"status": "Error", "message": "Only .dcm or .zip files are supported."}
+    try:
+        suffix = f".{ext}"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir="/tmp") as tmp:
+            shutil.copyfileobj(file.file, tmp)
+            temp_path = tmp.name
+        job_id = str(uuid.uuid4())
+        jobs[job_id] = {"status": "Processing"}
+        background_tasks.add_task(
+            run_winston_lutz, job_id, temp_path,
+            current_user["email"], file.filename
+        )
+        return {"status": "Processing", "job_id": job_id}
+    except Exception as e:
+        return {"status": "Error", "message": f"Upload Error: {str(e)}"}
+
+# ─── Starshot ─────────────────────────────────────────────────────────────────
+def run_starshot(job_id: str, temp_path: str, user_email: str, filename: str):
+    plot_path = None
+    try:
+        if temp_path.endswith(".zip"):
+            import zipfile
+            extract_dir = temp_path + "_extracted"
+            os.makedirs(extract_dir, exist_ok=True)
+            with zipfile.ZipFile(temp_path, "r") as z:
+                z.extractall(extract_dir)
+            ss = Starshot.from_zip(temp_path)
+        else:
+            ss = Starshot(temp_path)
+
+        ss.analyze(tolerance=1.0)
+        summary = ss.results()
+        passed  = ss.passed
+
+        plot_filename = f"{job_id}.png"
+        plot_path     = f"/tmp/{plot_filename}"
+        ss.save_analyzed_image(plot_path)
+        plt.close("all")
+
+        image_url = upload_plot_to_supabase(plot_path, plot_filename)
+
+        jobs[job_id] = {
+            "status": "Success",
+            "passed": passed,
+            "analysis_summary": summary,
+            "image_url": image_url
+        }
+        save_analysis(
+            user_email=user_email, test_type="Starshot",
+            filename=filename, passed=passed,
+            summary=summary, image_url=image_url
+        )
+    except Exception as e:
+        jobs[job_id] = {"status": "Error", "message": f"Analysis Error: {str(e)}"}
+    finally:
+        for path in [temp_path, plot_path]:
+            try:
+                if path and os.path.exists(path):
+                    os.remove(path)
+            except Exception:
+                pass
+        cleanup_old_jobs()
+
+@app.post("/analyze/starshot")
+async def analyze_starshot(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    ext = file.filename.lower().split(".")[-1]
+    if ext not in ("dcm", "zip"):
+        return {"status": "Error", "message": "Only .dcm or .zip files are supported."}
+    try:
+        suffix = f".{ext}"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir="/tmp") as tmp:
+            shutil.copyfileobj(file.file, tmp)
+            temp_path = tmp.name
+        job_id = str(uuid.uuid4())
+        jobs[job_id] = {"status": "Processing"}
+        background_tasks.add_task(
+            run_starshot, job_id, temp_path,
+            current_user["email"], file.filename
+        )
+        return {"status": "Processing", "job_id": job_id}
+    except Exception as e:
+        return {"status": "Error", "message": f"Upload Error: {str(e)}"}
