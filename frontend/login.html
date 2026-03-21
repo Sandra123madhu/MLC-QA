@@ -3,102 +3,23 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Log In — MLC QA</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --bg: #040d1a; --surface: #071428; --border: #0e2a4a;
-      --cyan: #00d4ff; --text: #e8f4f8; --muted: #7a9bb5;
-      --error: #ff4d6d; --success: #00e5a0;
-    }
-    body {
-      background: var(--bg); color: var(--text);
-      font-family: 'DM Sans', sans-serif;
-      min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    }
-    body::before {
-      content: ''; position: fixed; inset: 0;
-      background-image: linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
-      background-size: 60px 60px; pointer-events: none;
-    }
-    body::after {
-      content: ''; position: fixed; top: -300px; left: 50%; transform: translateX(-50%);
-      width: 700px; height: 700px;
-      background: radial-gradient(circle, rgba(0,212,255,0.06) 0%, transparent 70%);
-      pointer-events: none;
-    }
-    .card {
-      position: relative; z-index: 1;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 48px 44px;
-      width: 100%; max-width: 420px;
-      margin: 24px;
-      animation: fadeUp 0.5s ease both;
-    }
-    .back-link {
-      display: inline-flex; align-items: center; gap: 6px;
-      color: var(--muted); font-size: 0.85rem; text-decoration: none;
-      margin-bottom: 36px; transition: color 0.2s;
-    }
-    .back-link:hover { color: var(--cyan); }
-    .logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.1rem; color: var(--text); margin-bottom: 8px; }
-    .logo span { color: var(--cyan); }
-    h1 { font-family: 'Syne', sans-serif; font-size: 1.7rem; font-weight: 700; margin-bottom: 6px; }
-    .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 36px; }
-    .field { margin-bottom: 20px; }
-    label { display: block; font-size: 0.82rem; color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 8px; }
-    input {
-      width: 100%; background: var(--bg); border: 1px solid var(--border);
-      color: var(--text); padding: 13px 16px; border-radius: 8px;
-      font-family: 'DM Sans', sans-serif; font-size: 0.95rem;
-      transition: border-color 0.2s, box-shadow 0.2s; outline: none;
-    }
-    input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(0,212,255,0.1); }
-    .forgot { text-align: right; margin-top: 6px; }
-    .forgot a { font-size: 0.82rem; color: var(--muted); text-decoration: none; transition: color 0.2s; }
-    .forgot a:hover { color: var(--cyan); }
-    .btn {
-      width: 100%; background: var(--cyan); color: #040d1a;
-      border: none; padding: 14px; border-radius: 8px;
-      font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 1rem;
-      cursor: pointer; margin-top: 8px; transition: all 0.2s;
-    }
-    .btn:hover:not(:disabled) { background: #33ddff; box-shadow: 0 4px 20px rgba(0,212,255,0.3); transform: translateY(-1px); }
-    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-    .divider { text-align: center; color: var(--muted); font-size: 0.85rem; margin: 24px 0; }
-    .signup-link { text-align: center; font-size: 0.9rem; color: var(--muted); }
-    .signup-link a { color: var(--cyan); text-decoration: none; font-weight: 500; }
-    .signup-link a:hover { text-decoration: underline; }
-    .msg { padding: 12px 16px; border-radius: 8px; font-size: 0.88rem; margin-bottom: 20px; display: none; }
-    .msg.error { background: rgba(255,77,109,0.1); border: 1px solid rgba(255,77,109,0.3); color: var(--error); display: block; }
-    .msg.success { background: rgba(0,229,160,0.1); border: 1px solid rgba(0,229,160,0.3); color: var(--success); display: block; }
-    .server-status { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--muted); margin-bottom: 20px; }
-    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
-    .status-dot.online { background: var(--success); box-shadow: 0 0 6px var(--success); }
-    .status-dot.offline { background: var(--error); }
-    .status-dot.checking { animation: pulse 1s infinite; background: var(--cyan); }
-    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
-    @keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
-  </style>
+  <title>Sign In — MLC QA</title>
+  <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
-<div class="card">
+<div class="auth-page">
+<div class="auth-card fade-up">
   <a href="index.html" class="back-link">← Back to home</a>
-  <div class="logo">MLC<span>QA</span></div>
+  <div class="logo-row">
+    <div class="logo-mark"><svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg></div>
+    <div class="logo-text">MLC<span>QA</span></div>
+  </div>
   <h1>Welcome back</h1>
   <p class="subtitle">Sign in to your account to continue</p>
-
-  <div class="server-status">
-    <div class="status-dot checking" id="statusDot"></div>
-    <span id="statusText">Checking server...</span>
+  <div class="server-status" id="serverStatus">
+    <div class="status-dot-sm dot-warn"></div><span>Checking server...</span>
   </div>
-
   <div id="msg" class="msg"></div>
-
   <div class="field">
     <label>Email Address</label>
     <input type="email" id="email" placeholder="you@hospital.com" autocomplete="email"/>
@@ -106,90 +27,42 @@
   <div class="field">
     <label>Password</label>
     <input type="password" id="password" placeholder="••••••••" autocomplete="current-password"/>
-    <div class="forgot"><a href="#">Forgot password?</a></div>
+    <div style="text-align:right;margin-top:5px"><a href="#" style="font-size:0.75rem;color:var(--text-muted);font-family:var(--mono)">Forgot password?</a></div>
   </div>
-
-  <button class="btn" id="loginBtn" onclick="doLogin()">Sign In</button>
-
-  <div class="divider">— or —</div>
-  <div class="signup-link">Don't have an account? <a href="signup.html">Sign up free</a></div>
+  <button class="btn-auth" id="loginBtn" onclick="doLogin()">Sign In</button>
+  <div class="auth-divider">— or —</div>
+  <div class="auth-link">Don't have an account? <a href="signup.html">Sign up free</a></div>
 </div>
-
+</div>
 <script>
 const BACKEND_URL = "https://mlc-qa.onrender.com";
-
-// Redirect if already logged in
-if (localStorage.getItem("mlcqa_token")) {
-  window.location.href = "dashboard.html";
-}
-
-// ── Server health check on load ──────────────────────────────────────────────
-(async function checkServer() {
-  const dot  = document.getElementById("statusDot");
-  const text = document.getElementById("statusText");
+if (localStorage.getItem("mlcqa_token")) { window.location.href = "dashboard.html"; }
+(async () => {
+  const el = document.getElementById("serverStatus");
   try {
-    const res = await fetch(`${BACKEND_URL}/`, { method: "GET" });
-    if (res.ok) {
-      dot.className  = "status-dot online";
-      text.textContent = "Server online";
-    } else {
-      dot.className  = "status-dot offline";
-      text.textContent = "Server error — try again shortly";
-    }
-  } catch {
-    dot.className  = "status-dot offline";
-    text.textContent = "Server unreachable — it may be waking up (wait ~60s)";
-  }
+    const r = await fetch(`${BACKEND_URL}/`);
+    el.innerHTML = r.ok
+      ? `<div class="status-dot-sm dot-ok"></div><span>Server online</span>`
+      : `<div class="status-dot-sm dot-warn"></div><span>Server degraded</span>`;
+  } catch { el.innerHTML = `<div class="status-dot-sm dot-warn"></div><span>Server waking up — please wait ~60s</span>`; }
 })();
-
-document.getElementById("password").addEventListener("keydown", e => {
-  if (e.key === "Enter") doLogin();
-});
-
+document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
 async function doLogin() {
-  const email    = document.getElementById("email").value.trim();
+  const email = document.getElementById("email").value.trim();
   const password = document.getElementById("password").value;
-  const btn      = document.getElementById("loginBtn");
-  const msg      = document.getElementById("msg");
-
+  const btn = document.getElementById("loginBtn");
+  const msg = document.getElementById("msg");
   msg.className = "msg"; msg.textContent = "";
-
-  if (!email || !password) {
-    msg.className = "msg error"; msg.textContent = "Please enter your email and password."; return;
-  }
-
+  if (!email || !password) { msg.className = "msg error"; msg.textContent = "Please enter your email and password."; return; }
   btn.disabled = true; btn.textContent = "Signing in...";
-
   try {
-    const res = await fetch(`${BACKEND_URL}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password })
-    });
-
+    const res = await fetch(`${BACKEND_URL}/auth/login`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({email,password}) });
     const data = await res.json();
-
-    if (!res.ok) {
-      msg.className = "msg error";
-      msg.textContent = data.detail || "Login failed. Please check your credentials.";
-      btn.disabled = false; btn.textContent = "Sign In";
-      return;
-    }
-
+    if (!res.ok) { msg.className="msg error"; msg.textContent=data.detail||"Invalid email or password."; btn.disabled=false; btn.textContent="Sign In"; return; }
     localStorage.setItem("mlcqa_token", data.access_token);
     localStorage.setItem("mlcqa_name", data.name);
     window.location.href = "dashboard.html";
-
-  } catch (err) {
-    msg.className = "msg error";
-    // Distinguish CORS/network error from server error
-    if (err instanceof TypeError && err.message.includes("fetch")) {
-      msg.textContent = "Server is unreachable or still waking up. Wait 30–60 seconds and try again.";
-    } else {
-      msg.textContent = "Could not reach the server. Please try again.";
-    }
-    btn.disabled = false; btn.textContent = "Sign In";
-  }
+  } catch { msg.className="msg error"; msg.textContent="Server unreachable. Wait 30–60 seconds and try again."; btn.disabled=false; btn.textContent="Sign In"; }
 }
 </script>
 </body>
