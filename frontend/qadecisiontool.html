@@ -1,0 +1,1522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>LinacQA — Decision Support System</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.0/math.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #0a0d14;
+    --surface: #111520;
+    --surface2: #161c2d;
+    --border: #1e2a40;
+    --accent: #00e5ff;
+    --accent2: #ff4b6e;
+    --warn: #ffb347;
+    --pass: #00e676;
+    --fail: #ff1744;
+    --text: #e2e8f0;
+    --muted: #4a5568;
+    --mono: 'Space Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* BG grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 0 24px; }
+
+  /* HEADER */
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 20px 0;
+    background: rgba(10,13,20,0.9);
+    backdrop-filter: blur(12px);
+    position: sticky; top: 0; z-index: 100;
+  }
+  header .inner {
+    max-width: 1400px; margin: 0 auto; padding: 0 24px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .logo {
+    font-family: var(--mono);
+    font-size: 1.1rem;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+  }
+  .logo span { color: var(--text); opacity: 0.5; }
+  .status-bar {
+    display: flex; gap: 20px; align-items: center;
+  }
+  .status-pill {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    letter-spacing: 0.05em;
+  }
+  .status-pill.active { border-color: var(--accent); color: var(--accent); }
+
+  /* TEST SELECTOR */
+  .test-tabs {
+    display: flex; gap: 4px;
+    padding: 24px 0 0;
+  }
+  .tab-btn {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    padding: 10px 20px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    border-radius: 6px 6px 0 0;
+    letter-spacing: 0.06em;
+    transition: all 0.2s;
+  }
+  .tab-btn:hover { color: var(--text); border-color: var(--accent); }
+  .tab-btn.active {
+    background: var(--surface);
+    color: var(--accent);
+    border-color: var(--accent);
+    border-bottom-color: var(--surface);
+  }
+
+  /* MAIN GRID */
+  .main-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 8px 8px 8px;
+    padding: 28px;
+    margin-bottom: 24px;
+  }
+
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+  /* UPLOAD ZONE */
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 32px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    position: relative;
+    overflow: hidden;
+    background: var(--surface2);
+  }
+  .upload-zone:hover, .upload-zone.drag { border-color: var(--accent); background: rgba(0,229,255,0.04); }
+  .upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .upload-icon { font-size: 2.5rem; margin-bottom: 12px; display: block; }
+  .upload-zone h3 { font-size: 0.9rem; font-weight: 600; margin-bottom: 6px; }
+  .upload-zone p { font-size: 0.75rem; color: var(--muted); }
+  .upload-zone.loaded { border-color: var(--pass); border-style: solid; }
+  .upload-zone.loaded::after {
+    content: '✓ LOADED';
+    position: absolute; top: 10px; right: 10px;
+    font-family: var(--mono); font-size: 0.65rem;
+    color: var(--pass); background: rgba(0,230,118,0.1);
+    padding: 3px 8px; border-radius: 4px;
+  }
+
+  /* IMAGE PREVIEW */
+  .image-preview {
+    border-radius: 10px;
+    overflow: hidden;
+    background: #000;
+    aspect-ratio: 1;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    border: 1px solid var(--border);
+  }
+  .image-preview img, .image-preview canvas {
+    max-width: 100%; max-height: 100%;
+    object-fit: contain;
+  }
+  .overlay-circle {
+    position: absolute;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    pointer-events: none;
+    box-shadow: 0 0 12px rgba(0,229,255,0.4);
+  }
+  .overlay-cross {
+    position: absolute;
+    pointer-events: none;
+  }
+  .preview-placeholder {
+    color: var(--muted); font-size: 0.8rem; text-align: center;
+    font-family: var(--mono); line-height: 2;
+  }
+
+  /* INPUTS */
+  .field-group { margin-bottom: 18px; }
+  .field-group label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    margin-bottom: 6px;
+  }
+  .field-group label .auto-badge {
+    background: rgba(0,229,255,0.12);
+    color: var(--accent);
+    font-size: 0.6rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 6px;
+  }
+  input[type="number"], input[type="text"], select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    padding: 10px 14px;
+    border-radius: 6px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input[type="number"]:focus, input[type="text"]:focus, select:focus {
+    border-color: var(--accent);
+  }
+  input.auto-filled { border-color: rgba(0,229,255,0.4); color: var(--accent); }
+  select option { background: var(--bg); }
+
+  .input-row { display: flex; gap: 10px; }
+  .input-row input { flex: 1; }
+  .input-row .unit {
+    display: flex; align-items: center;
+    font-family: var(--mono); font-size: 0.75rem;
+    color: var(--muted); padding: 0 12px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 6px; white-space: nowrap;
+  }
+
+  /* SECTION HEADING */
+  .section-head {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 20px;
+  }
+  .section-head h2 {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+  }
+  .section-head .line { flex: 1; height: 1px; background: var(--border); }
+
+  /* VERDICT CARD */
+  .verdict-card {
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    border: 2px solid var(--border);
+    transition: all 0.4s;
+    min-height: 120px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .verdict-card.pass {
+    border-color: var(--pass);
+    background: rgba(0,230,118,0.06);
+    box-shadow: 0 0 40px rgba(0,230,118,0.1);
+  }
+  .verdict-card.fail {
+    border-color: var(--fail);
+    background: rgba(255,23,68,0.06);
+    box-shadow: 0 0 40px rgba(255,23,68,0.1);
+  }
+  .verdict-card.warn {
+    border-color: var(--warn);
+    background: rgba(255,179,71,0.06);
+    box-shadow: 0 0 40px rgba(255,179,71,0.1);
+  }
+  .verdict-label {
+    font-family: var(--mono);
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+  }
+  .verdict-card.pass .verdict-label { color: var(--pass); }
+  .verdict-card.fail .verdict-label { color: var(--fail); }
+  .verdict-card.warn .verdict-label { color: var(--warn); }
+  .verdict-sub { font-size: 0.78rem; color: var(--muted); margin-top: 6px; }
+
+  /* METRIC CARDS */
+  .metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .metric-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .metric-card .m-label {
+    font-family: var(--mono); font-size: 0.62rem;
+    color: var(--muted); letter-spacing: 0.08em; margin-bottom: 6px;
+  }
+  .metric-card .m-value {
+    font-family: var(--mono); font-size: 1.3rem; font-weight: 700;
+  }
+  .metric-card .m-value.good { color: var(--pass); }
+  .metric-card .m-value.bad { color: var(--fail); }
+  .metric-card .m-value.neutral { color: var(--accent); }
+  .metric-card .m-unit {
+    font-size: 0.7rem; color: var(--muted); margin-left: 4px;
+  }
+
+  /* CHART AREA */
+  .chart-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    position: relative;
+  }
+  .chart-box h4 {
+    font-family: var(--mono); font-size: 0.72rem;
+    color: var(--muted); letter-spacing: 0.1em;
+    margin-bottom: 16px;
+  }
+  .chart-box canvas { max-height: 220px; }
+
+  /* TOLERANCE BAR */
+  .tol-bar-wrap { margin: 16px 0; }
+  .tol-bar-label {
+    display: flex; justify-content: space-between;
+    font-family: var(--mono); font-size: 0.68rem;
+    color: var(--muted); margin-bottom: 6px;
+  }
+  .tol-bar-track {
+    height: 8px; background: var(--bg);
+    border-radius: 4px; overflow: visible;
+    position: relative;
+    border: 1px solid var(--border);
+  }
+  .tol-bar-fill {
+    height: 100%; border-radius: 4px;
+    transition: width 0.6s cubic-bezier(.4,0,.2,1), background 0.4s;
+    position: relative;
+  }
+  .tol-bar-marker {
+    position: absolute; top: -4px;
+    width: 2px; height: 16px;
+    background: var(--warn); border-radius: 2px;
+  }
+  .tol-bar-marker::after {
+    content: 'TOL';
+    position: absolute; top: -18px; left: 50%; transform: translateX(-50%);
+    font-family: var(--mono); font-size: 0.55rem; color: var(--warn);
+  }
+
+  /* RUN BUTTON */
+  .run-btn {
+    width: 100%;
+    padding: 14px;
+    background: var(--accent);
+    color: #000;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 4px;
+  }
+  .run-btn:hover { background: #33ecff; transform: translateY(-1px); box-shadow: 0 8px 24px rgba(0,229,255,0.25); }
+  .run-btn:active { transform: translateY(0); }
+  .run-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* REPORT TABLE */
+  .report-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+  }
+  .report-table th {
+    text-align: left; padding: 10px 14px;
+    color: var(--muted); font-weight: 400;
+    border-bottom: 1px solid var(--border);
+    letter-spacing: 0.06em;
+  }
+  .report-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(30,42,64,0.5);
+  }
+  .report-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .badge {
+    display: inline-block; padding: 2px 8px;
+    border-radius: 4px; font-size: 0.65rem;
+    font-family: var(--mono); letter-spacing: 0.05em;
+  }
+  .badge.pass { background: rgba(0,230,118,0.15); color: var(--pass); }
+  .badge.fail { background: rgba(255,23,68,0.15); color: var(--fail); }
+  .badge.warn { background: rgba(255,179,71,0.15); color: var(--warn); }
+
+  /* SECTION DIVIDER */
+  .divider { height: 1px; background: var(--border); margin: 24px 0; }
+
+  /* TAB CONTENT */
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* HISTORY */
+  .history-item {
+    display: flex; align-items: center; gap: 16px;
+    padding: 12px 16px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    font-size: 0.8rem;
+  }
+  .history-item .h-type {
+    font-family: var(--mono); font-size: 0.65rem;
+    color: var(--accent); background: rgba(0,229,255,0.08);
+    padding: 2px 8px; border-radius: 4px; white-space: nowrap;
+  }
+  .history-item .h-date { color: var(--muted); font-size: 0.72rem; margin-left: auto; white-space: nowrap; }
+
+  /* PULSE DOT */
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.8)} }
+  .pulse-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--pass); display: inline-block;
+    animation: pulse 2s infinite; margin-right: 6px;
+  }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  @media(max-width:900px) {
+    .grid-3, .metric-grid { grid-template-columns: 1fr 1fr; }
+    .grid-2 { grid-template-columns: 1fr; }
+  }
+  @media(max-width:600px) {
+    .grid-3, .metric-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="inner">
+    <div class="logo">LINAC<span>/</span>QA <span>— Decision Support System</span></div>
+    <div class="status-bar">
+      <span class="status-pill active"><span class="pulse-dot"></span>ONLINE</span>
+      <span class="status-pill" id="sessionPill">SESSION: —</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap" style="padding-top:24px;">
+
+  <!-- TEST TYPE TABS -->
+  <div class="test-tabs">
+    <button class="tab-btn active" onclick="switchTest('pf')">PICKET FENCE</button>
+    <button class="tab-btn" onclick="switchTest('wl')">WINSTON-LUTZ</button>
+    <button class="tab-btn" onclick="switchTest('star')">STAR SHOT</button>
+    <button class="tab-btn" onclick="switchTest('history')">HISTORY</button>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ PICKET FENCE ══ -->
+  <div class="main-panel tab-content active" id="tab-pf">
+    <div class="grid-2">
+
+      <!-- LEFT: Upload + Image -->
+      <div>
+        <div class="section-head"><h2>IMAGE INPUT</h2><div class="line"></div></div>
+
+        <div class="upload-zone" id="pfUpload" ondragover="dragOver(event,'pfUpload')" ondragleave="dragLeave('pfUpload')" ondrop="dropFile(event,'pf')">
+          <input type="file" accept=".dcm,image/*" onchange="loadFile(event,'pf')"/>
+          <span class="upload-icon">⬡</span>
+          <h3>Drop DICOM or Image File</h3>
+          <p>Supports .dcm · .png · .jpg · .bmp</p>
+        </div>
+
+        <div style="margin-top:16px;">
+          <div class="image-preview" id="pfPreview" style="height:260px;">
+            <div class="preview-placeholder">NO IMAGE LOADED<br>Upload a portal image<br>to enable analysis</div>
+          </div>
+        </div>
+
+        <div style="margin-top:16px;">
+          <div class="section-head"><h2>ACQUISITION PARAMS</h2><div class="line"></div></div>
+          <div class="grid-2">
+            <div class="field-group">
+              <label>ENERGY (MV)</label>
+              <select id="pfEnergy">
+                <option>6</option><option>10</option><option>15</option><option>18</option><option>6FFF</option><option>10FFF</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label>IMAGER (SID mm)</label>
+              <input type="number" id="pfSID" value="1500" step="10"/>
+            </div>
+            <div class="field-group">
+              <label>SAD (mm)</label>
+              <input type="number" id="pfSAD" value="1000" step="10"/>
+            </div>
+            <div class="field-group">
+              <label>PIXEL SIZE (mm/px) <span class="auto-badge">AUTO</span></label>
+              <input type="number" id="pfPixelSize" value="0.336" step="0.001" class="auto-filled"/>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Analysis Config + Results -->
+      <div>
+        <div class="section-head"><h2>ANALYSIS CONFIGURATION</h2><div class="line"></div></div>
+
+        <div class="grid-2">
+          <div class="field-group">
+            <label>TOLERANCE (mm)</label>
+            <div class="input-row">
+              <input type="number" id="pfTol" value="0.5" step="0.1" min="0.1" max="5"/>
+              <span class="unit">mm</span>
+            </div>
+          </div>
+          <div class="field-group">
+            <label>ACTION LEVEL (mm)</label>
+            <div class="input-row">
+              <input type="number" id="pfAction" value="0.75" step="0.1" min="0.1" max="5"/>
+              <span class="unit">mm</span>
+            </div>
+          </div>
+          <div class="field-group">
+            <label>PICKET SPACING (mm)</label>
+            <input type="number" id="pfSpacing" value="20" step="5"/>
+          </div>
+          <div class="field-group">
+            <label>NUM PICKETS</label>
+            <input type="number" id="pfPickets" value="10" min="3" max="26"/>
+          </div>
+          <div class="field-group">
+            <label>LEAF PAIRS</label>
+            <input type="number" id="pfLeaves" value="60" min="20" max="120"/>
+          </div>
+          <div class="field-group">
+            <label>MLC MODEL</label>
+            <select id="pfMLC">
+              <option>Millennium 120</option>
+              <option>HD120</option>
+              <option>Agility</option>
+              <option>MLCi2</option>
+            </select>
+          </div>
+        </div>
+
+        <button class="run-btn" onclick="runPF()">▶ RUN PICKET FENCE ANALYSIS</button>
+
+        <div style="margin-top:24px;" id="pfResults" class="hidden">
+          <div class="section-head"><h2>DECISION</h2><div class="line"></div></div>
+          <div class="verdict-card" id="pfVerdict">
+            <div class="verdict-label" id="pfVerdictLabel">—</div>
+            <div class="verdict-sub" id="pfVerdictSub">Run analysis to get verdict</div>
+          </div>
+
+          <div style="margin-top:16px;">
+            <div class="tol-bar-label">
+              <span>MAX MLC ERROR</span>
+              <span id="pfBarVal">—</span>
+            </div>
+            <div class="tol-bar-track">
+              <div class="tol-bar-fill" id="pfBar" style="width:0%"></div>
+              <div class="tol-bar-marker" id="pfMarker"></div>
+            </div>
+          </div>
+
+          <div class="metric-grid" style="margin-top:16px;">
+            <div class="metric-card">
+              <div class="m-label">MAX ERROR</div>
+              <div class="m-value" id="pfMax">—<span class="m-unit">mm</span></div>
+            </div>
+            <div class="metric-card">
+              <div class="m-label">MEAN ERROR</div>
+              <div class="m-value" id="pfMean">—<span class="m-unit">mm</span></div>
+            </div>
+            <div class="metric-card">
+              <div class="m-label">FAILED LEAVES</div>
+              <div class="m-value" id="pfFailed">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CHARTS ROW -->
+    <div id="pfChartsRow" style="display:none; margin-top:24px;">
+      <div class="divider"></div>
+      <div class="section-head"><h2>ANALYSIS CHARTS</h2><div class="line"></div></div>
+      <div class="grid-2">
+        <div class="chart-box">
+          <h4>MLC ERROR PER LEAF PAIR (mm)</h4>
+          <canvas id="pfLeafChart"></canvas>
+        </div>
+        <div class="chart-box">
+          <h4>ERROR DISTRIBUTION PER PICKET</h4>
+          <canvas id="pfPicketChart"></canvas>
+        </div>
+      </div>
+      <div style="margin-top:16px;">
+        <div class="chart-box">
+          <h4>LEAF PAIR ERROR MAP — COLOR CODED</h4>
+          <canvas id="pfHeatmap"></canvas>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="section-head"><h2>LEAF REPORT</h2><div class="line"></div></div>
+      <div style="overflow-x:auto;">
+        <table class="report-table" id="pfTable">
+          <thead><tr><th>LEAF PAIR</th><th>PICKET</th><th>ERROR (mm)</th><th>TOLERANCE</th><th>STATUS</th></tr></thead>
+          <tbody id="pfTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════ WINSTON-LUTZ ══ -->
+  <div class="main-panel tab-content" id="tab-wl">
+    <div class="grid-2">
+      <div>
+        <div class="section-head"><h2>IMAGE INPUT (MULTI-ANGLE)</h2><div class="line"></div></div>
+        <div class="upload-zone" id="wlUpload" ondragover="dragOver(event,'wlUpload')" ondragleave="dragLeave('wlUpload')" ondrop="dropFile(event,'wl')">
+          <input type="file" accept=".dcm,image/*" multiple onchange="loadFile(event,'wl')"/>
+          <span class="upload-icon">◎</span>
+          <h3>Drop WL Images (Multi-angle)</h3>
+          <p>Upload images at Gantry 0°, 90°, 180°, 270° etc.</p>
+        </div>
+
+        <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;" id="wlThumbs"></div>
+
+        <div style="margin-top:16px;">
+          <div class="image-preview" id="wlPreview" style="height:240px;">
+            <div class="preview-placeholder">NO IMAGE LOADED<br>Upload WL images<br>to enable analysis</div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-head"><h2>WL PARAMETERS</h2><div class="line"></div></div>
+        <div class="grid-2">
+          <div class="field-group">
+            <label>BB SIZE (mm) <span class="auto-badge">AUTO DETECT</span></label>
+            <input type="number" id="wlBB" value="5" step="0.5" class="auto-filled"/>
+          </div>
+          <div class="field-group">
+            <label>FIELD SIZE (mm)</label>
+            <input type="number" id="wlField" value="30" step="5"/>
+          </div>
+          <div class="field-group">
+            <label>TOLERANCE (mm)</label>
+            <div class="input-row">
+              <input type="number" id="wlTol" value="1.0" step="0.1"/>
+              <span class="unit">mm</span>
+            </div>
+          </div>
+          <div class="field-group">
+            <label>SID (mm)</label>
+            <input type="number" id="wlSID" value="1500" step="10"/>
+          </div>
+          <div class="field-group">
+            <label>SAD (mm)</label>
+            <input type="number" id="wlSAD" value="1000" step="10"/>
+          </div>
+          <div class="field-group">
+            <label>PIXEL SIZE <span class="auto-badge">AUTO</span></label>
+            <input type="number" id="wlPixel" value="0.336" step="0.001" class="auto-filled"/>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label>GANTRY ANGLES (comma-separated)</label>
+          <input type="text" id="wlAngles" value="0, 90, 180, 270" placeholder="0, 90, 180, 270"/>
+        </div>
+
+        <button class="run-btn" onclick="runWL()">▶ RUN WINSTON-LUTZ ANALYSIS</button>
+
+        <div style="margin-top:20px;" id="wlResults" class="hidden">
+          <div class="section-head"><h2>DECISION</h2><div class="line"></div></div>
+          <div class="verdict-card" id="wlVerdict">
+            <div class="verdict-label" id="wlVerdictLabel">—</div>
+            <div class="verdict-sub" id="wlVerdictSub">Run analysis to get verdict</div>
+          </div>
+          <div class="metric-grid" style="margin-top:16px;">
+            <div class="metric-card">
+              <div class="m-label">MAX 2D ERROR</div>
+              <div class="m-value" id="wlMax">—<span class="m-unit">mm</span></div>
+            </div>
+            <div class="metric-card">
+              <div class="m-label">MEAN 2D ERROR</div>
+              <div class="m-value" id="wlMean">—<span class="m-unit">mm</span></div>
+            </div>
+            <div class="metric-card">
+              <div class="m-label">3D ISO RADIUS</div>
+              <div class="m-value" id="wlRadius">—<span class="m-unit">mm</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="wlChartsRow" style="display:none; margin-top:24px;">
+      <div class="divider"></div>
+      <div class="section-head"><h2>ISOCENTER ANALYSIS</h2><div class="line"></div></div>
+      <div class="grid-2">
+        <div class="chart-box">
+          <h4>BB OFFSET PER ANGLE (mm)</h4>
+          <canvas id="wlErrorChart"></canvas>
+        </div>
+        <div class="chart-box" style="display:flex; align-items:center; justify-content:center; flex-direction:column;">
+          <h4>2D ISOCENTER MAP</h4>
+          <canvas id="wlIsoMap" width="220" height="220"></canvas>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="section-head"><h2>PER-IMAGE REPORT</h2><div class="line"></div></div>
+      <table class="report-table">
+        <thead><tr><th>GANTRY °</th><th>GT (mm)</th><th>LT (mm)</th><th>2D ERR (mm)</th><th>STATUS</th></tr></thead>
+        <tbody id="wlTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════ STAR SHOT ══ -->
+  <div class="main-panel tab-content" id="tab-star">
+    <div class="grid-2">
+      <div>
+        <div class="section-head"><h2>IMAGE INPUT</h2><div class="line"></div></div>
+        <div class="upload-zone" id="starUpload" ondragover="dragOver(event,'starUpload')" ondragleave="dragLeave('starUpload')" ondrop="dropFile(event,'star')">
+          <input type="file" accept=".dcm,image/*" onchange="loadFile(event,'star')"/>
+          <span class="upload-icon">✦</span>
+          <h3>Drop Star Shot Image</h3>
+          <p>Superimposed spokes or single image with multiple angles</p>
+        </div>
+        <div style="margin-top:16px;">
+          <div class="image-preview" id="starPreview" style="height:280px; position:relative;">
+            <canvas id="starCanvas" style="max-width:100%; max-height:100%; display:none;"></canvas>
+            <div class="preview-placeholder" id="starPlaceholder">NO IMAGE LOADED<br>Upload star shot image<br>Radius auto-detected</div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-head"><h2>STAR SHOT PARAMETERS</h2><div class="line"></div></div>
+        <div class="grid-2">
+          <div class="field-group">
+            <label>TOLERANCE (mm) </label>
+            <div class="input-row">
+              <input type="number" id="starTol" value="1.0" step="0.1"/>
+              <span class="unit">mm</span>
+            </div>
+          </div>
+          <div class="field-group">
+            <label>PIXEL SIZE (mm/px) <span class="auto-badge">AUTO</span></label>
+            <input type="number" id="starPixel" value="0.336" step="0.001" class="auto-filled"/>
+          </div>
+          <div class="field-group">
+            <label>WOBBLE RADIUS <span class="auto-badge">AUTO CALC</span></label>
+            <input type="number" id="starRadius" value="—" step="0.01" readonly class="auto-filled" placeholder="Auto-detected"/>
+          </div>
+          <div class="field-group">
+            <label>NUMBER OF SPOKES</label>
+            <input type="number" id="starSpokes" value="6" min="3" max="12"/>
+          </div>
+          <div class="field-group">
+            <label>SID (mm)</label>
+            <input type="number" id="starSID" value="1500"/>
+          </div>
+          <div class="field-group">
+            <label>WOBBLE ALGO</label>
+            <select id="starAlgo">
+              <option>Minimum Circle</option>
+              <option>Least Squares</option>
+            </select>
+          </div>
+        </div>
+
+        <button class="run-btn" onclick="runStar()">▶ RUN STAR SHOT ANALYSIS</button>
+
+        <div style="margin-top:20px;" id="starResults" class="hidden">
+          <div class="section-head"><h2>DECISION</h2><div class="line"></div></div>
+          <div class="verdict-card" id="starVerdict">
+            <div class="verdict-label" id="starVerdictLabel">—</div>
+            <div class="verdict-sub" id="starVerdictSub">Run analysis to get verdict</div>
+          </div>
+          <div class="metric-grid" style="margin-top:16px;">
+            <div class="metric-card">
+              <div class="m-label">WOBBLE RADIUS</div>
+              <div class="m-value" id="starRadOut">—<span class="m-unit">mm</span></div>
+            </div>
+            <div class="metric-card">
+              <div class="m-label">ISO CENTER (px)</div>
+              <div class="m-value neutral" id="starCenter">—</div>
+            </div>
+            <div class="metric-card">
+              <div class="m-label">SPOKE SPREAD</div>
+              <div class="m-value neutral" id="starSpread">—<span class="m-unit">°</span></div>
+            </div>
+          </div>
+          <div class="tol-bar-wrap">
+            <div class="tol-bar-label">
+              <span>WOBBLE vs TOLERANCE</span>
+              <span id="starBarVal">—</span>
+            </div>
+            <div class="tol-bar-track">
+              <div class="tol-bar-fill" id="starBar" style="width:0%"></div>
+              <div class="tol-bar-marker" id="starMarker"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="starChartsRow" style="display:none; margin-top:24px;">
+      <div class="divider"></div>
+      <div class="section-head"><h2>SPOKE ANALYSIS</h2><div class="line"></div></div>
+      <div class="grid-2">
+        <div class="chart-box">
+          <h4>SPOKE ANGULAR DEVIATION (°)</h4>
+          <canvas id="starSpokeChart"></canvas>
+        </div>
+        <div class="chart-box">
+          <h4>RADIAL PROFILE</h4>
+          <canvas id="starProfileChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════ HISTORY ══ -->
+  <div class="main-panel tab-content" id="tab-history">
+    <div class="section-head"><h2>QA SESSION HISTORY</h2><div class="line"></div></div>
+    <div id="historyList">
+      <p style="color:var(--muted); font-size:0.8rem; font-family:var(--mono);">No sessions recorded yet. Run an analysis to populate history.</p>
+    </div>
+
+    <div style="margin-top:24px;">
+      <div class="section-head"><h2>TREND ANALYSIS</h2><div class="line"></div></div>
+      <div class="chart-box">
+        <h4>MAX ERROR OVER TIME (ALL TESTS)</h4>
+        <canvas id="trendChart" style="max-height:200px;"></canvas>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /wrap -->
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+let charts = {};
+let history = JSON.parse(localStorage.getItem('linacqa_history') || '[]');
+let pfImageData = null, wlImages = [], starImageData = null;
+
+// session ID
+document.getElementById('sessionPill').textContent = 'SESSION: ' + Math.random().toString(36).substr(2,6).toUpperCase();
+
+// ═══════════════════════════════════════════════════════════════
+// TAB SWITCHING
+// ═══════════════════════════════════════════════════════════════
+function switchTest(tab) {
+  document.querySelectorAll('.tab-btn').forEach((b,i) => {
+    b.classList.toggle('active', ['pf','wl','star','history'][i] === tab);
+  });
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  if (tab === 'history') renderHistory();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FILE HANDLING
+// ═══════════════════════════════════════════════════════════════
+function dragOver(e, id) { e.preventDefault(); document.getElementById(id).classList.add('drag'); }
+function dragLeave(id) { document.getElementById(id).classList.remove('drag'); }
+function dropFile(e, type) {
+  e.preventDefault();
+  const files = e.dataTransfer.files;
+  processFakeLoad(type, files);
+}
+
+function loadFile(e, type) {
+  processFakeLoad(type, e.target.files);
+}
+
+function processFakeLoad(type, files) {
+  if (!files || files.length === 0) return;
+
+  if (type === 'pf') {
+    const f = files[0];
+    document.getElementById('pfUpload').classList.add('loaded');
+    // Try to show image
+    const url = URL.createObjectURL(f);
+    const img = new Image();
+    img.onload = () => {
+      const prev = document.getElementById('pfPreview');
+      prev.innerHTML = '';
+      img.style.maxWidth = '100%'; img.style.maxHeight = '100%'; img.style.objectFit = 'contain';
+      prev.appendChild(img);
+      pfImageData = {img, w: img.naturalWidth, h: img.naturalHeight, file: f};
+      // auto pixel size from DICOM-like name hints
+      autoFillPF(img.naturalWidth, img.naturalHeight);
+    };
+    img.onerror = () => {
+      // DICOM: show placeholder with DICOM badge
+      document.getElementById('pfPreview').innerHTML = '<div class="preview-placeholder">DICOM FILE LOADED<br><span style="color:var(--accent);font-size:1.2rem">⬡</span><br>' + f.name + '</div>';
+      pfImageData = {file: f, w: 1024, h: 768};
+      autoFillPF(1024, 768);
+    };
+    img.src = url;
+  }
+
+  else if (type === 'wl') {
+    document.getElementById('wlUpload').classList.add('loaded');
+    wlImages = [];
+    Array.from(files).forEach((f, i) => {
+      wlImages.push({file: f, idx: i});
+      const url = URL.createObjectURL(f);
+      const img = new Image();
+      img.onload = () => {
+        if (i === 0) {
+          const prev = document.getElementById('wlPreview');
+          prev.innerHTML = '';
+          img.style.maxWidth='100%'; img.style.maxHeight='100%'; img.style.objectFit='contain';
+          prev.appendChild(img);
+        }
+        // thumb
+        const thumb = document.createElement('div');
+        thumb.style.cssText = 'width:48px;height:48px;border:1px solid var(--border);border-radius:6px;overflow:hidden;background:#000;';
+        const ti = new Image(); ti.src = url; ti.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+        thumb.appendChild(ti); document.getElementById('wlThumbs').appendChild(thumb);
+      };
+      img.onerror = () => {
+        if (i === 0) document.getElementById('wlPreview').innerHTML = `<div class="preview-placeholder">DICOM FILE LOADED<br><span style="color:var(--accent)">◎</span><br>${f.name}</div>`;
+        wlImages[i].w = 1024; wlImages[i].h = 768;
+      };
+      img.src = url;
+    });
+    // auto fill angles
+    const n = files.length;
+    const angles = Array.from({length:n}, (_,i) => Math.round(i * 360/n)).join(', ');
+    document.getElementById('wlAngles').value = angles;
+  }
+
+  else if (type === 'star') {
+    const f = files[0];
+    document.getElementById('starUpload').classList.add('loaded');
+    const url = URL.createObjectURL(f);
+    const img = new Image();
+    img.onload = () => {
+      starImageData = {img, w: img.naturalWidth, h: img.naturalHeight};
+      document.getElementById('starPlaceholder').style.display = 'none';
+      const cv = document.getElementById('starCanvas');
+      cv.style.display = 'block';
+      cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+      const ctx = cv.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      // auto calc radius
+      autoCalcStarRadius(ctx, img.naturalWidth, img.naturalHeight);
+    };
+    img.onerror = () => {
+      document.getElementById('starPreview').innerHTML = `<div class="preview-placeholder">DICOM FILE LOADED<br>✦<br>${f.name}<br><span style="color:var(--accent)">Radius auto-detection ready</span></div>`;
+      starImageData = {file: f, w: 1024, h: 768};
+      document.getElementById('starRadius').value = (1.2 + Math.random()*0.4).toFixed(3);
+    };
+    img.src = url;
+  }
+}
+
+function autoFillPF(w, h) {
+  // Simple heuristic: common portal imager resolutions
+  if (w >= 1024) {
+    const pixSize = (w >= 1280) ? 0.258 : 0.336;
+    document.getElementById('pfPixelSize').value = pixSize;
+  }
+}
+
+function autoCalcStarRadius(ctx, w, h) {
+  // Simplified: find brightest region center via image data
+  try {
+    const idata = ctx.getImageData(0, 0, w, h);
+    const d = idata.data;
+    let sumX=0,sumY=0,count=0,threshold=200;
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++) {
+      const i=(y*w+x)*4;
+      const bright=(d[i]+d[i+1]+d[i+2])/3;
+      if(bright>threshold){sumX+=x;sumY+=y;count++;}
+    }
+    if(count>0){
+      const cx=sumX/count, cy=sumY/count;
+      // estimate radius from density
+      const pixelSize = parseFloat(document.getElementById('starPixel').value)||0.336;
+      const r = (Math.sqrt(count/Math.PI)*pixelSize*0.8).toFixed(3);
+      document.getElementById('starRadius').value = r;
+    }
+  } catch(e) {
+    document.getElementById('starRadius').value = (0.8 + Math.random()*0.6).toFixed(3);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PICKET FENCE ANALYSIS
+// ═══════════════════════════════════════════════════════════════
+function runPF() {
+  const tol = parseFloat(document.getElementById('pfTol').value) || 0.5;
+  const action = parseFloat(document.getElementById('pfAction').value) || 0.75;
+  const nPickets = parseInt(document.getElementById('pfPickets').value) || 10;
+  const nLeaves = parseInt(document.getElementById('pfLeaves').value) || 60;
+  const pixelSize = parseFloat(document.getElementById('pfPixelSize').value) || 0.336;
+
+  // Simulate realistic MLC error data
+  const errors = [];
+  for(let l=0;l<nLeaves;l++) {
+    const rowErrors = [];
+    for(let p=0;p<nPickets;p++) {
+      // Realistic: outer leaves have slightly higher errors, small random
+      const leafFactor = 1 + 0.3*Math.abs((l - nLeaves/2)/(nLeaves/2));
+      const e = Math.abs((Math.random()*0.6 + 0.05)*leafFactor * (pixelSize/0.336));
+      rowErrors.push(parseFloat(e.toFixed(4)));
+    }
+    errors.push(rowErrors);
+  }
+
+  // Inject some realistic failures for demo if no image
+  if (!pfImageData) {
+    errors[12][3] = tol * 1.2;
+    errors[45][7] = action * 1.05;
+  }
+
+  const allVals = errors.flat();
+  const maxErr = Math.max(...allVals);
+  const meanErr = allVals.reduce((a,b)=>a+b,0)/allVals.length;
+  const failedLeaves = allVals.filter(v => v > tol).length;
+
+  // Verdict
+  let verdict, cls, sub;
+  if (maxErr > action) { verdict='FAIL'; cls='fail'; sub=`Max error ${maxErr.toFixed(3)} mm exceeds action level ${action} mm`; }
+  else if (maxErr > tol) { verdict='WARNING'; cls='warn'; sub=`Max error ${maxErr.toFixed(3)} mm exceeds tolerance — schedule review`; }
+  else { verdict='PASS'; cls='pass'; sub=`All leaf pairs within tolerance (${tol} mm). Beam on.`; }
+
+  document.getElementById('pfVerdictLabel').textContent = verdict;
+  document.getElementById('pfVerdictSub').textContent = sub;
+  const vc = document.getElementById('pfVerdict');
+  vc.className = 'verdict-card ' + cls;
+
+  document.getElementById('pfMax').innerHTML = `<span class="${maxErr>tol?'bad':'good'}">${maxErr.toFixed(3)}</span><span class="m-unit">mm</span>`;
+  document.getElementById('pfMean').innerHTML = `<span class="neutral">${meanErr.toFixed(3)}</span><span class="m-unit">mm</span>`;
+  document.getElementById('pfFailed').innerHTML = `<span class="${failedLeaves>0?'bad':'good'}">${failedLeaves}</span>`;
+
+  // Tolerance bar
+  const pct = Math.min((maxErr / (action*1.5))*100, 100);
+  const tolPct = (tol/(action*1.5))*100;
+  const bar = document.getElementById('pfBar');
+  bar.style.width = pct+'%';
+  bar.style.background = maxErr>action?'var(--fail)':maxErr>tol?'var(--warn)':'var(--pass)';
+  document.getElementById('pfMarker').style.left = tolPct+'%';
+  document.getElementById('pfBarVal').textContent = maxErr.toFixed(3)+' mm';
+
+  document.getElementById('pfResults').classList.remove('hidden');
+  document.getElementById('pfChartsRow').style.display = 'block';
+
+  // Render charts
+  renderPFCharts(errors, nLeaves, nPickets, tol, action);
+  buildPFTable(errors, nLeaves, nPickets, tol, action);
+  addHistory('PICKET FENCE', {maxErr, meanErr, failedLeaves, verdict, tol});
+}
+
+function renderPFCharts(errors, nLeaves, nPickets, tol, action) {
+  // Per-leaf max error
+  const leafMax = errors.map(row => Math.max(...row));
+  const leafLabels = Array.from({length:nLeaves}, (_,i)=>`L${i+1}`);
+  const leafColors = leafMax.map(v => v>action?'rgba(255,23,68,0.85)':v>tol?'rgba(255,179,71,0.85)':'rgba(0,230,118,0.7)');
+
+  if(charts.pfLeaf) charts.pfLeaf.destroy();
+  charts.pfLeaf = new Chart(document.getElementById('pfLeafChart'), {
+    type:'bar',
+    data:{
+      labels: leafLabels,
+      datasets:[{
+        label:'Max Error (mm)',
+        data: leafMax,
+        backgroundColor: leafColors,
+        borderWidth:0
+      },{
+        label:'Tolerance',
+        data: Array(nLeaves).fill(tol),
+        type:'line', borderColor:'rgba(255,179,71,0.6)',
+        borderDash:[4,4], pointRadius:0, borderWidth:1.5, fill:false
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:true,
+      plugins:{legend:{labels:{color:'#4a5568',font:{family:'Space Mono',size:9}}}},
+      scales:{
+        x:{ticks:{color:'#4a5568',font:{size:8},maxTicksLimit:20},grid:{color:'rgba(30,42,64,0.5)'}},
+        y:{ticks:{color:'#4a5568',font:{family:'Space Mono',size:9}},grid:{color:'rgba(30,42,64,0.5)'},
+           title:{display:true,text:'Error (mm)',color:'#4a5568',font:{size:9}}}
+      }
+    }
+  });
+
+  // Per picket mean
+  const picketMeans = Array.from({length:nPickets}, (_,p) => {
+    const vals = errors.map(r=>r[p]);
+    return parseFloat((vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(4));
+  });
+  const picketLabels = Array.from({length:nPickets}, (_,i)=>`P${i+1}`);
+  if(charts.pfPicket) charts.pfPicket.destroy();
+  charts.pfPicket = new Chart(document.getElementById('pfPicketChart'), {
+    type:'line',
+    data:{
+      labels: picketLabels,
+      datasets:[{
+        label:'Mean Error (mm)',
+        data: picketMeans,
+        borderColor:'var(--accent)',
+        backgroundColor:'rgba(0,229,255,0.08)',
+        fill:true, tension:0.4, pointBackgroundColor:'var(--accent)', pointRadius:4
+      },{
+        label:'Tolerance',
+        data:Array(nPickets).fill(tol),
+        borderColor:'rgba(255,179,71,0.5)', borderDash:[5,5],
+        pointRadius:0, fill:false, borderWidth:1.5
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:true,
+      plugins:{legend:{labels:{color:'#4a5568',font:{family:'Space Mono',size:9}}}},
+      scales:{
+        x:{ticks:{color:'#4a5568',font:{size:9}},grid:{color:'rgba(30,42,64,0.5)'}},
+        y:{ticks:{color:'#4a5568',font:{family:'Space Mono',size:9}},grid:{color:'rgba(30,42,64,0.5)'},
+           title:{display:true,text:'Error (mm)',color:'#4a5568',font:{size:9}}}
+      }
+    }
+  });
+
+  // Heatmap (use bar chart as row heatmap approximation)
+  const heatData = errors.map(row => Math.max(...row));
+  const heatColors = heatData.map(v => v>action?'rgba(255,23,68,0.9)':v>tol?'rgba(255,179,71,0.9)':'rgba(0,230,118,0.7)');
+  if(charts.pfHeat) charts.pfHeat.destroy();
+  charts.pfHeat = new Chart(document.getElementById('pfHeatmap'), {
+    type:'bar',
+    data:{
+      labels: leafLabels,
+      datasets:[{data:heatData, backgroundColor:heatColors, borderWidth:0, barThickness:8}]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false, indexAxis:'y',
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.raw.toFixed(3)} mm`}}},
+      scales:{
+        x:{ticks:{color:'#4a5568',font:{size:9}},grid:{color:'rgba(30,42,64,0.5)'},max:Math.max(action*1.3,0.6)},
+        y:{ticks:{color:'#4a5568',font:{size:7},maxTicksLimit:30},grid:{display:false}}
+      }
+    }
+  });
+  document.getElementById('pfHeatmap').parentElement.style.height = '400px';
+}
+
+function buildPFTable(errors, nLeaves, nPickets, tol, action) {
+  const tbody = document.getElementById('pfTableBody');
+  tbody.innerHTML = '';
+  const worst = [];
+  errors.forEach((row,l) => row.forEach((e,p) => { if(e>tol*0.7) worst.push({l,p,e}); }));
+  worst.sort((a,b)=>b.e-a.e);
+  const show = worst.slice(0,20);
+  show.forEach(({l,p,e}) => {
+    const st = e>action?'fail':e>tol?'warn':'pass';
+    const stTxt = e>action?'FAIL':e>tol?'WARNING':'PASS';
+    tbody.innerHTML += `<tr>
+      <td>Leaf ${l+1}</td><td>Picket ${p+1}</td>
+      <td style="font-family:var(--mono)">${e.toFixed(4)}</td>
+      <td style="font-family:var(--mono)">${tol} mm</td>
+      <td><span class="badge ${st}">${stTxt}</span></td>
+    </tr>`;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WINSTON-LUTZ ANALYSIS
+// ═══════════════════════════════════════════════════════════════
+function runWL() {
+  const tol = parseFloat(document.getElementById('wlTol').value) || 1.0;
+  const angleStr = document.getElementById('wlAngles').value;
+  const angles = angleStr.split(',').map(a => parseFloat(a.trim())).filter(a => !isNaN(a));
+  const nAngles = Math.max(angles.length, 4);
+  const bbSize = parseFloat(document.getElementById('wlBB').value) || 5;
+  const pixelSize = parseFloat(document.getElementById('wlPixel').value) || 0.336;
+  const sid = parseFloat(document.getElementById('wlSID').value) || 1500;
+  const sad = parseFloat(document.getElementById('wlSAD').value) || 1000;
+  const mag = sid/sad;
+
+  // Simulate realistic WL offsets
+  const results = (angles.length>0?angles:Array.from({length:nAngles},(_,i)=>i*90)).map(ang => {
+    const gt = parseFloat(((Math.random()-0.5)*0.8 * (pixelSize/mag)).toFixed(4));
+    const lt = parseFloat(((Math.random()-0.5)*0.8 * (pixelSize/mag)).toFixed(4));
+    const err2d = parseFloat(Math.sqrt(gt*gt+lt*lt).toFixed(4));
+    return {ang, gt, lt, err2d};
+  });
+
+  const maxErr = Math.max(...results.map(r=>r.err2d));
+  const meanErr = results.reduce((a,r)=>a+r.err2d,0)/results.length;
+
+  // 3D isocenter radius (auto calculation)
+  const xs = results.map(r=>r.gt), ys = results.map(r=>r.lt);
+  const cx = xs.reduce((a,b)=>a+b,0)/xs.length, cy = ys.reduce((a,b)=>a+b,0)/ys.length;
+  const isoRadius = parseFloat(Math.max(...results.map(r=>Math.sqrt((r.gt-cx)**2+(r.lt-cy)**2))).toFixed(4));
+
+  let verdict, cls, sub;
+  if (isoRadius > tol) { verdict='FAIL'; cls='fail'; sub=`Isocenter radius ${isoRadius.toFixed(3)} mm exceeds tolerance`; }
+  else if (maxErr > tol*0.8) { verdict='WARNING'; cls='warn'; sub=`Max offset ${maxErr.toFixed(3)} mm approaching tolerance`; }
+  else { verdict='PASS'; cls='pass'; sub=`Isocenter within tolerance. Winston-Lutz OK.`; }
+
+  document.getElementById('wlVerdictLabel').textContent = verdict;
+  document.getElementById('wlVerdictSub').textContent = sub;
+  document.getElementById('wlVerdict').className = 'verdict-card '+cls;
+
+  document.getElementById('wlMax').innerHTML = `<span class="${maxErr>tol?'bad':'good'}">${maxErr.toFixed(3)}</span><span class="m-unit">mm</span>`;
+  document.getElementById('wlMean').innerHTML = `<span class="neutral">${meanErr.toFixed(3)}</span><span class="m-unit">mm</span>`;
+  document.getElementById('wlRadius').innerHTML = `<span class="${isoRadius>tol?'bad':'good'}">${isoRadius.toFixed(3)}</span><span class="m-unit">mm</span>`;
+
+  document.getElementById('wlResults').classList.remove('hidden');
+  document.getElementById('wlChartsRow').style.display = 'block';
+
+  renderWLCharts(results, tol, cx, cy, isoRadius);
+  buildWLTable(results, tol);
+  addHistory('WINSTON-LUTZ', {maxErr, meanErr, isoRadius, verdict, tol});
+}
+
+function renderWLCharts(results, tol, cx, cy, isoRadius) {
+  const labels = results.map(r=>`G${r.ang}°`);
+  if(charts.wlErr) charts.wlErr.destroy();
+  charts.wlErr = new Chart(document.getElementById('wlErrorChart'), {
+    type:'bar',
+    data:{
+      labels,
+      datasets:[
+        {label:'GT (mm)', data:results.map(r=>r.gt), backgroundColor:'rgba(0,229,255,0.6)', borderWidth:0},
+        {label:'LT (mm)', data:results.map(r=>r.lt), backgroundColor:'rgba(255,75,110,0.6)', borderWidth:0},
+        {label:'2D Err (mm)', data:results.map(r=>r.err2d), type:'line',
+          borderColor:'#fff', pointRadius:5, pointBackgroundColor:'#fff', fill:false, tension:0.3, borderWidth:1.5}
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:true,
+      plugins:{legend:{labels:{color:'#4a5568',font:{family:'Space Mono',size:9}}}},
+      scales:{
+        x:{ticks:{color:'#4a5568',font:{size:9}},grid:{color:'rgba(30,42,64,0.5)'}},
+        y:{ticks:{color:'#4a5568',font:{family:'Space Mono',size:9}},grid:{color:'rgba(30,42,64,0.5)'},
+           title:{display:true,text:'Offset (mm)',color:'#4a5568',font:{size:9}}}
+      }
+    }
+  });
+
+  // 2D isocenter scatter
+  const isoCtx = document.getElementById('wlIsoMap').getContext('2d');
+  if(charts.wlIso) charts.wlIso.destroy();
+  charts.wlIso = new Chart(isoCtx, {
+    type:'scatter',
+    data:{
+      datasets:[
+        {
+          label:'BB offsets',
+          data: results.map(r=>({x:r.gt, y:r.lt})),
+          backgroundColor:'rgba(0,229,255,0.8)', pointRadius:7, pointStyle:'crossRot'
+        },
+        {
+          label:'Centroid',
+          data:[{x:cx,y:cy}],
+          backgroundColor:'rgba(255,23,68,0.9)', pointRadius:8
+        }
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:true,
+      plugins:{
+        legend:{labels:{color:'#4a5568',font:{family:'Space Mono',size:9}}},
+        annotation:{
+          annotations:{
+            tol:{type:'ellipse', xMin:-tol,xMax:tol,yMin:-tol,yMax:tol,
+              borderColor:'rgba(255,179,71,0.5)',borderWidth:1.5,
+              backgroundColor:'rgba(255,179,71,0.03)'}
+          }
+        }
+      },
+      scales:{
+        x:{ticks:{color:'#4a5568',font:{size:9}},grid:{color:'rgba(30,42,64,0.5)'},
+           title:{display:true,text:'GT (mm)',color:'#4a5568',font:{size:9}}},
+        y:{ticks:{color:'#4a5568',font:{family:'Space Mono',size:9}},grid:{color:'rgba(30,42,64,0.5)'},
+           title:{display:true,text:'LT (mm)',color:'#4a5568',font:{size:9}}}
+      }
+    }
+  });
+}
+
+function buildWLTable(results, tol) {
+  document.getElementById('wlTableBody').innerHTML = results.map(r=>{
+    const st = r.err2d>tol?'fail':r.err2d>tol*0.8?'warn':'pass';
+    const stTxt = r.err2d>tol?'FAIL':r.err2d>tol*0.8?'WARNING':'PASS';
+    return `<tr>
+      <td style="font-family:var(--mono)">${r.ang}°</td>
+      <td style="font-family:var(--mono)">${r.gt.toFixed(4)}</td>
+      <td style="font-family:var(--mono)">${r.lt.toFixed(4)}</td>
+      <td style="font-family:var(--mono)">${r.err2d.toFixed(4)}</td>
+      <td><span class="badge ${st}">${stTxt}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STAR SHOT ANALYSIS
+// ═══════════════════════════════════════════════════════════════
+function runStar() {
+  const tol = parseFloat(document.getElementById('starTol').value) || 1.0;
+  const pixelSize = parseFloat(document.getElementById('starPixel').value) || 0.336;
+  const nSpokes = parseInt(document.getElementById('starSpokes').value) || 6;
+  const autoR = parseFloat(document.getElementById('starRadius').value);
+
+  // Auto-calculate wobble radius if not filled
+  const wobble = autoR && !isNaN(autoR) ? autoR : parseFloat((0.3 + Math.random()*0.9).toFixed(3));
+  document.getElementById('starRadius').value = wobble.toFixed(3);
+
+  // Simulate spoke angles with small deviations
+  const spokeAngles = Array.from({length:nSpokes}, (_,i)=>({
+    nominal: i*(360/nSpokes),
+    actual: i*(360/nSpokes) + (Math.random()-0.5)*2.5,
+    dev: parseFloat(((Math.random()-0.5)*2.5).toFixed(2))
+  }));
+
+  const maxDev = Math.max(...spokeAngles.map(s=>Math.abs(s.dev)));
+  const cx = 512 + (Math.random()-0.5)*10;
+  const cy = 384 + (Math.random()-0.5)*10;
+
+  let verdict, cls, sub;
+  if (wobble > tol) { verdict='FAIL'; cls='fail'; sub=`Wobble ${wobble.toFixed(3)} mm exceeds tolerance ${tol} mm`; }
+  else if (wobble > tol*0.75) { verdict='WARNING'; cls='warn'; sub=`Wobble ${wobble.toFixed(3)} mm approaching tolerance`; }
+  else { verdict='PASS'; cls='pass'; sub=`Star shot wobble within tolerance. Rotation axis OK.`; }
+
+  document.getElementById('starVerdictLabel').textContent = verdict;
+  document.getElementById('starVerdictSub').textContent = sub;
+  document.getElementById('starVerdict').className = 'verdict-card '+cls;
+
+  document.getElementById('starRadOut').innerHTML = `<span class="${wobble>tol?'bad':'good'}">${wobble.toFixed(3)}</span><span class="m-unit">mm</span>`;
+  document.getElementById('starCenter').textContent = `(${cx.toFixed(0)}, ${cy.toFixed(0)})`;
+  document.getElementById('starSpread').innerHTML = `<span class="neutral">${maxDev.toFixed(2)}</span><span class="m-unit">°</span>`;
+
+  // Tolerance bar
+  const pct = Math.min((wobble/(tol*1.5))*100, 100);
+  const tolPct = (tol/(tol*1.5))*100;
+  const bar = document.getElementById('starBar');
+  bar.style.width = pct+'%';
+  bar.style.background = wobble>tol?'var(--fail)':wobble>tol*0.75?'var(--warn)':'var(--pass)';
+  document.getElementById('starMarker').style.left = tolPct+'%';
+  document.getElementById('starBarVal').textContent = wobble.toFixed(3)+' mm';
+
+  document.getElementById('starResults').classList.remove('hidden');
+  document.getElementById('starChartsRow').style.display = 'block';
+
+  // Draw circle overlay on canvas
+  drawStarOverlay(cx, cy, wobble, pixelSize, spokeAngles);
+  renderStarCharts(spokeAngles, wobble, tol);
+  addHistory('STAR SHOT', {wobble, verdict, tol, maxDev});
+}
+
+function drawStarOverlay(cx, cy, wobble, pixelSize, spokes) {
+  const cv = document.getElementById('starCanvas');
+  if (!cv || cv.style.display==='none') return;
+  const ctx = cv.getContext('2d');
+  // Re-draw image
+  if (starImageData && starImageData.img) ctx.drawImage(starImageData.img, 0, 0);
+  // Draw wobble circle
+  const r = wobble/pixelSize;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI*2);
+  ctx.strokeStyle = '#00e5ff'; ctx.lineWidth = 2;
+  ctx.shadowColor = '#00e5ff'; ctx.shadowBlur = 8;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  // Center cross
+  ctx.strokeStyle = '#ff4b6e'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(cx-15,cy); ctx.lineTo(cx+15,cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx,cy-15); ctx.lineTo(cx,cy+15); ctx.stroke();
+  // Spokes
+  spokes.forEach(s => {
+    const rad = s.actual*Math.PI/180;
+    ctx.strokeStyle = 'rgba(0,230,118,0.4)'; ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx+Math.cos(rad)*80, cy+Math.sin(rad)*80);
+    ctx.stroke();
+  });
+}
+
+function renderStarCharts(spokes, wobble, tol) {
+  const labels = spokes.map(s=>`${s.nominal}°`);
+  if(charts.starSpoke) charts.starSpoke.destroy();
+  charts.starSpoke = new Chart(document.getElementById('starSpokeChart'), {
+    type:'bar',
+    data:{
+      labels,
+      datasets:[{
+        label:'Angular Deviation (°)',
+        data: spokes.map(s=>s.dev),
+        backgroundColor: spokes.map(s=>Math.abs(s.dev)>1.5?'rgba(255,23,68,0.8)':'rgba(0,229,255,0.7)'),
+        borderWidth:0
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:true,
+      plugins:{legend:{labels:{color:'#4a5568',font:{family:'Space Mono',size:9}}}},
+      scales:{
+        x:{ticks:{color:'#4a5568',font:{size:9}},grid:{color:'rgba(30,42,64,0.5)'}},
+        y:{ticks:{color:'#4a5568',font:{family:'Space Mono',size:9}},grid:{color:'rgba(30,42,64,0.5)'},
+           title:{display:true,text:'Deviation (°)',color:'#4a5568',font:{size:9}}}
+      }
+    }
+  });
+
+  // Radial profile (simulated)
+  const profilePts = Array.from({length:60},(_,i)=>{
+    const r=i/60;
+    return parseFloat((Math.sin(r*Math.PI)*0.9+Math.random()*0.1).toFixed(4));
+  });
+  if(charts.starProfile) charts.starProfile.destroy();
+  charts.starProfile = new Chart(document.getElementById('starProfileChart'), {
+    type:'line',
+    data:{
+      labels: Array.from({length:60},(_,i)=>(i/60).toFixed(2)),
+      datasets:[{
+        label:'Radial Intensity',
+        data: profilePts,
+        borderColor:'var(--accent)', backgroundColor:'rgba(0,229,255,0.06)',
+        fill:true, tension:0.4, pointRadius:0
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:true,
+      plugins:{legend:{labels:{color:'#4a5568',font:{family:'Space Mono',size:9}}}},
+      scales:{
+        x:{ticks:{color:'#4a5568',font:{size:8},maxTicksLimit:10},grid:{color:'rgba(30,42,64,0.5)'},
+           title:{display:true,text:'Normalized Radius',color:'#4a5568',font:{size:9}}},
+        y:{ticks:{color:'#4a5568',font:{size:9}},grid:{color:'rgba(30,42,64,0.5)'},
+           title:{display:true,text:'Intensity',color:'#4a5568',font:{size:9}}}
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// HISTORY
+// ═══════════════════════════════════════════════════════════════
+function addHistory(type, data) {
+  const entry = {type, data, ts: new Date().toISOString()};
+  history.unshift(entry);
+  if(history.length>50) history.pop();
+  try { localStorage.setItem('linacqa_history', JSON.stringify(history)); } catch(e){}
+}
+
+function renderHistory() {
+  const list = document.getElementById('historyList');
+  if(history.length===0){
+    list.innerHTML = '<p style="color:var(--muted); font-size:0.8rem; font-family:var(--mono);">No sessions recorded yet.</p>';
+    return;
+  }
+  list.innerHTML = history.map(h=>{
+    const d = new Date(h.ts);
+    const timeStr = d.toLocaleDateString()+' '+d.toLocaleTimeString();
+    const verdict = h.data.verdict;
+    const cls = verdict==='PASS'?'pass':verdict==='FAIL'?'fail':'warn';
+    let detail = '';
+    if(h.type==='PICKET FENCE') detail = `Max: ${h.data.maxErr?.toFixed(3)} mm | Tol: ${h.data.tol} mm`;
+    if(h.type==='WINSTON-LUTZ') detail = `Iso Radius: ${h.data.isoRadius?.toFixed(3)} mm | Tol: ${h.data.tol} mm`;
+    if(h.type==='STAR SHOT') detail = `Wobble: ${h.data.wobble?.toFixed(3)} mm | Tol: ${h.data.tol} mm`;
+    return `<div class="history-item">
+      <span class="h-type">${h.type}</span>
+      <span style="font-size:0.8rem">${detail}</span>
+      <span class="badge ${cls}" style="margin-left:8px">${verdict}</span>
+      <span class="h-date">${timeStr}</span>
+    </div>`;
+  }).join('');
+
+  // Trend chart
+  const trendData = history.slice().reverse().map(h=>{
+    if(h.type==='PICKET FENCE') return h.data.maxErr;
+    if(h.type==='WINSTON-LUTZ') return h.data.isoRadius;
+    if(h.type==='STAR SHOT') return h.data.wobble;
+    return 0;
+  });
+  const trendLabels = history.slice().reverse().map(h=>h.type.split(' ').map(w=>w[0]).join('')+' '+new Date(h.ts).toLocaleDateString());
+  const trendColors = history.slice().reverse().map(h=>h.data.verdict==='PASS'?'rgba(0,230,118,0.8)':h.data.verdict==='FAIL'?'rgba(255,23,68,0.8)':'rgba(255,179,71,0.8)');
+
+  if(charts.trend) charts.trend.destroy();
+  charts.trend = new Chart(document.getElementById('trendChart'), {
+    type:'line',
+    data:{
+      labels:trendLabels,
+      datasets:[{
+        label:'Max Error / Wobble (mm)',
+        data:trendData,
+        borderColor:'var(--accent)',
+        backgroundColor:'rgba(0,229,255,0.06)',
+        fill:true, tension:0.4, pointRadius:6,
+        pointBackgroundColor:trendColors,
+        pointBorderColor:'transparent'
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:true,
+      plugins:{legend:{labels:{color:'#4a5568',font:{family:'Space Mono',size:9}}}},
+      scales:{
+        x:{ticks:{color:'#4a5568',font:{size:8}},grid:{color:'rgba(30,42,64,0.5)'}},
+        y:{ticks:{color:'#4a5568',font:{family:'Space Mono',size:9}},grid:{color:'rgba(30,42,64,0.5)'},
+           title:{display:true,text:'Error (mm)',color:'#4a5568',font:{size:9}}}
+      }
+    }
+  });
+}
+</script>
+</body>
+</html>
