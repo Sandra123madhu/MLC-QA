@@ -173,17 +173,20 @@ async function runAnalysis() {
           document.getElementById("gaugeTolLabel").textContent="Tol: "+tol2+" mm";
           document.getElementById("gaugeMaxLabel").textContent=ms2.toFixed(2)+" mm";
           document.getElementById("gaugeSection").style.display="block";
-          const mean2=maxErr2*0.6; const isoR=maxErr2*0.7;
+          const cd2=result.chart_data||{};
+          const realMax2=cd2.max_2d_error!=null?cd2.max_2d_error:maxErr2;
+          const realMean2=cd2.mean_2d_error!=null?cd2.mean_2d_error:(maxErr2*0.6);
+          const realIso=cd2.iso_radius!=null?cd2.iso_radius:(maxErr2*0.7);
           const mr2=document.getElementById("metricsRow");
           mr2.innerHTML=[
-            {label:"Max 2D Offset",val:maxErr2.toFixed(3),unit:"mm",cls:maxErr2>tol2?"metric-fail":"metric-pass"},
-            {label:"Mean Offset",val:mean2.toFixed(3),unit:"mm",cls:"metric-accent"},
-            {label:"3D Iso Radius",val:isoR.toFixed(3),unit:"mm",cls:isoR>tol2?"metric-fail":"metric-pass"},
+            {label:"Max 2D Offset",val:realMax2.toFixed(3),unit:"mm",cls:realMax2>tol2?"metric-fail":"metric-pass"},
+            {label:"Mean Offset",val:realMean2.toFixed(3),unit:"mm",cls:"metric-accent"},
+            {label:"3D Iso Radius",val:realIso.toFixed(3),unit:"mm",cls:realIso>tol2?"metric-fail":"metric-pass"},
             {label:"Tolerance",val:"1.0",unit:"mm",cls:"metric-accent"}
           ].map(m=>'<div class="metric-card"><div class="metric-label">'+m.label+'</div><div class="metric-value '+m.cls+'">'+m.val+(m.unit?'<span class="metric-unit">'+m.unit+'</span>':'')+'</div></div>').join('');
           mr2.style.display="grid";
           if(imgUrl){document.getElementById("plotSection").innerHTML='<div class="plot-wrap"><img src="'+imgUrl+'" alt="WL Plot" loading="lazy"/><div class="plot-label">Pylinac · Winston-Lutz Analysis</div></div>';document.getElementById("plotSection").style.display="block";}
-          renderWLCharts(pass,maxErr2,files.length);
+          renderWLCharts(result.chart_data||{},tol2);
           document.getElementById("chartsSection").style.display="block";
           document.getElementById("pdfSection").style.display="block";
           btn.disabled=false; btn.textContent="Analyse Another File";
@@ -196,31 +199,41 @@ async function runAnalysis() {
 
 
 let wlChart1=null, wlChart2=null;
-function renderWLCharts(pass,maxErr,nFiles) {
-  const nA=Math.max(nFiles,4);
-  const angles=Array.from({length:nA},(_,i)=>Math.round(i*360/nA));
-  const gt=angles.map(()=>parseFloat(((Math.random()-0.5)*maxErr*1.2).toFixed(3)));
-  const lt=angles.map(()=>parseFloat(((Math.random()-0.5)*maxErr*1.2).toFixed(3)));
-  const e2d=gt.map((g,i)=>parseFloat(Math.sqrt(g*g+lt[i]*lt[i]).toFixed(3)));
+function renderWLCharts(cd, tol) {
+  // cd = chart_data from backend — real pylinac per-image offsets
+  const imgs = (cd.images || []);
+  const labels = imgs.map(d=>d.gantry+"°");
+  const gt  = imgs.map(d=>d.gt);
+  const lt  = imgs.map(d=>d.lt);
+  const e2d = imgs.map(d=>d.error_2d);
+  const e2dColors = e2d.map(v=>v>tol?"rgba(201,64,80,0.85)":v>tol*0.6?"rgba(200,137,42,0.8)":"rgba(26,171,117,0.75)");
   const cOpts={plugins:{legend:{labels:{color:"#8ba4c0",font:{family:"'IBM Plex Mono'",size:9}}}},scales:{x:{ticks:{color:"#546a85",font:{size:9}},grid:{color:"rgba(36,53,82,0.8)"}},y:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"}}}};
   if(wlChart1) wlChart1.destroy();
   wlChart1=new Chart(document.getElementById("wlAngleChart"),{
     type:"bar",
-    data:{labels:angles.map(a=>a+"°"),datasets:[
+    data:{labels,datasets:[
       {label:"GT (mm)",data:gt,backgroundColor:"rgba(43,159,212,0.65)",borderWidth:0},
       {label:"LT (mm)",data:lt,backgroundColor:"rgba(201,64,80,0.55)",borderWidth:0},
-      {label:"2D Error",data:e2d,type:"line",borderColor:"#dce8f5",pointRadius:4,fill:false,tension:0.3,borderWidth:1.5}
+      {label:"2D Error (mm)",data:e2d,type:"line",borderColor:"#dce8f5",pointBackgroundColor:e2dColors,pointRadius:5,fill:false,tension:0.2,borderWidth:1.5}
     ]},
-    options:{responsive:true,maintainAspectRatio:true,...cOpts}
+    options:{responsive:true,maintainAspectRatio:true,...cOpts,scales:{
+      x:{ticks:{color:"#546a85",font:{size:9}},grid:{color:"rgba(36,53,82,0.8)"}},
+      y:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"Offset (mm)",color:"#546a85",font:{size:9}}}
+    }}
   });
+  const cx=gt.length?gt.reduce((a,b)=>a+b,0)/gt.length:0;
+  const cy=lt.length?lt.reduce((a,b)=>a+b,0)/lt.length:0;
   if(wlChart2) wlChart2.destroy();
   wlChart2=new Chart(document.getElementById("wlScatterChart"),{
     type:"scatter",
     data:{datasets:[
-      {label:"BB offsets",data:gt.map((g,i)=>({x:g,y:lt[i]})),backgroundColor:"rgba(43,159,212,0.8)",pointRadius:7,pointStyle:"crossRot"},
-      {label:"Centroid",data:[{x:gt.reduce((a,b)=>a+b,0)/gt.length,y:lt.reduce((a,b)=>a+b,0)/lt.length}],backgroundColor:"rgba(201,64,80,0.9)",pointRadius:9}
+      {label:"BB offset per image",data:gt.map((g,i)=>({x:g,y:lt[i]})),backgroundColor:e2dColors,pointRadius:7,pointStyle:"crossRot"},
+      {label:"Centroid",data:[{x:cx,y:cy}],backgroundColor:"rgba(201,64,80,0.9)",pointRadius:10,pointStyle:"star"}
     ]},
-    options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{labels:{color:"#8ba4c0",font:{family:"'IBM Plex Mono'",size:9}}}},scales:{x:{ticks:{color:"#546a85"},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"GT (mm)",color:"#546a85",font:{size:9}}},y:{ticks:{color:"#546a85"},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"LT (mm)",color:"#546a85",font:{size:9}}}}}
+    options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{labels:{color:"#8ba4c0",font:{family:"'IBM Plex Mono'",size:9}}}},scales:{
+      x:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"GT (mm)",color:"#546a85",font:{size:9}}},
+      y:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"LT (mm)",color:"#546a85",font:{size:9}}}
+    }}
   });
 }
 
