@@ -455,30 +455,43 @@ def _extract_ss_chart_data(ss):
                 if attr in rd_attrs:
                     val = getattr(rd, attr)
                     if hasattr(val,"__len__") and len(val)>0:
+                        raw = []
                         for i,item in enumerate(val):
                             if hasattr(item,"angle"):
                                 try: ang = round(float(item.angle),2)
                                 except: ang = i*60.0
-                                spokes.append({"index":i,"angle":ang,"residual_mm":wobble_radius})
                             else:
-                                spokes.append({"index":i,"angle":i*60.0,"residual_mm":float(item) if isinstance(item,(int,float)) else wobble_radius})
+                                ang = i*60.0
+                            raw.append({"norm_angle": ang % 180, "angle": ang % 180,
+                                        "residual_mm": wobble_radius})
+                        # Deduplicate
+                        seen = []
+                        for sp in raw:
+                            if not any(abs(sp["norm_angle"]-s["norm_angle"])<10 for s in seen):
+                                seen.append(sp)
+                        seen.sort(key=lambda x: x["norm_angle"])
+                        spokes = [{"index":i,"angle":s["angle"],"residual_mm":s["residual_mm"]}
+                                  for i,s in enumerate(seen)]
                         break
                     elif isinstance(val,int):
-                        # num_spokes — build evenly spaced
-                        for i in range(val):
-                            spokes.append({"index":i,"angle":round(i*360/val,1),"residual_mm":wobble_radius})
+                        # num_spokes — build evenly spaced within 0-180
+                        unique = val // 2 if val > 3 else val
+                        for i in range(unique):
+                            spokes.append({"index":i,"angle":round(i*180/unique,1),"residual_mm":wobble_radius})
                         break
         except Exception: pass
 
         # ── Spokes from ss.lines directly ──
         if not spokes:
             try:
+                raw_spokes = []
                 for i, line in enumerate(ss.lines):
                     try: angle = round(float(line.angle.degrees),2)
                     except:
                         try: angle = round(float(line.angle),2)
                         except: angle = i*60.0
-                    # Distance from wobble center to line
+                    # Normalise to 0–180 (a line and its opposite are the same spoke)
+                    norm_angle = angle % 180
                     dist = wobble_radius
                     try:
                         import math
@@ -490,7 +503,28 @@ def _extract_ss_chart_data(ss):
                         dpmm = getattr(ss.image,"dpmm",1)
                         dist = round(dist_px/dpmm,4) if dpmm>0 else round(dist_px,4)
                     except: pass
-                    spokes.append({"index":i,"angle":angle,"residual_mm":dist})
+                    raw_spokes.append({"norm_angle": norm_angle, "angle": angle, "residual_mm": dist})
+
+                # Deduplicate — collapse spokes within 10° of each other (opposite sides of same line)
+                seen = []
+                for sp in raw_spokes:
+                    is_dup = False
+                    for s in seen:
+                        if abs(sp["norm_angle"] - s["norm_angle"]) < 10:
+                            # Keep the one with larger residual (more conservative)
+                            if sp["residual_mm"] > s["residual_mm"]:
+                                s["residual_mm"] = sp["residual_mm"]
+                            is_dup = True
+                            break
+                    if not is_dup:
+                        seen.append({"norm_angle": sp["norm_angle"],
+                                     "angle": sp["norm_angle"],  # display normalised
+                                     "residual_mm": sp["residual_mm"]})
+
+                # Sort by angle and re-index
+                seen.sort(key=lambda x: x["norm_angle"])
+                spokes = [{"index":i, "angle":s["angle"], "residual_mm":s["residual_mm"]}
+                          for i,s in enumerate(seen)]
             except Exception: pass
 
         # ── Radial intensity profile ──
