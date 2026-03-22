@@ -213,10 +213,14 @@ let pfChart1=null, pfChart2=null;
 
 function renderPFCharts(cd, tol) {
   // cd = chart_data from backend — real pylinac values
-  const leafErrors = cd.leaf_max_errors || [];
-  const picketMeans = cd.picket_mean_errors || [];
-  const nLeaves = leafErrors.length;
-  const nPickets = picketMeans.length;
+  const leafErrors = (cd.leaf_max_errors && cd.leaf_max_errors.length > 0) ? cd.leaf_max_errors : null;
+  const picketMeans = (cd.picket_mean_errors && cd.picket_mean_errors.length > 0) ? cd.picket_mean_errors : null;
+  if (!leafErrors && !picketMeans) {
+    document.getElementById("chartsSection").innerHTML += '<p style="color:var(--text-muted);font-size:0.8rem;font-family:var(--mono);padding:12px">Chart data not available for this file — check server logs.</p>';
+    return;
+  }
+  const nLeaves = leafErrors ? leafErrors.length : 0;
+  const nPickets = picketMeans ? picketMeans.length : 0;
   const leafColors = leafErrors.map(v=>v>tol?"rgba(201,64,80,0.85)":v>tol*0.6?"rgba(200,137,42,0.8)":"rgba(26,171,117,0.75)");
   const chartOpts={plugins:{legend:{labels:{color:"#8ba4c0",font:{family:"'IBM Plex Mono'",size:9}}}},scales:{x:{ticks:{color:"#546a85",font:{size:7},maxTicksLimit:15},grid:{color:"rgba(36,53,82,0.8)"}},y:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"Error (mm)",color:"#546a85",font:{size:9}}}}};
   if(pfChart1) pfChart1.destroy();
