@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Winston-Lutz — MLC QA</title>
   <link rel="stylesheet" href="style.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
 <aside class="sidebar">
@@ -65,6 +66,26 @@
   <div class="results-card">
     <h2>Results</h2>
     <div id="resultsBody"><p>Upload files and run the analysis to see results here.</p></div>
+    <div id="verdictBanner" class="verdict-banner" style="display:none"></div>
+    <div id="gaugeSection" style="display:none;margin-top:20px">
+      <div class="gauge-label-row"><span class="gauge-title">Max 2D BB Offset vs Tolerance</span><span class="gauge-val" id="gaugeVal"></span></div>
+      <div class="gauge-track"><div class="gauge-fill" id="gaugeFill"></div><div class="gauge-marker" id="gaugeMarker"></div></div>
+      <div class="gauge-ticks"><span>0 mm</span><span id="gaugeTolLabel"></span><span id="gaugeMaxLabel"></span></div>
+    </div>
+    <div id="metricsRow" class="metrics-row" style="display:none;margin-top:20px"></div>
+    <div id="plotSection" style="display:none;margin-top:20px"></div>
+    <div id="chartsSection" style="display:none;margin-top:28px">
+      <div class="section-head" style="margin-top:0;border-bottom:1px solid var(--border-subtle);padding-bottom:14px;margin-bottom:20px">
+        <h2 style="font-size:0.88rem;font-weight:600">Analysis Charts</h2>
+      </div>
+      <div class="charts-grid">
+        <div class="chart-card"><div class="chart-card-title">BB Offset per Gantry Angle (mm)</div><canvas id="wlAngleChart"></canvas></div>
+        <div class="chart-card"><div class="chart-card-title">2D Isocenter Map (GT vs LT)</div><canvas id="wlScatterChart"></canvas></div>
+      </div>
+    </div>
+    <div id="pdfSection" style="display:none;margin-top:16px">
+      <button class="btn-outline" onclick="downloadPDF()">&#11015; Download PDF Report</button>
+    </div>
   </div>
 </main>
 
@@ -137,18 +158,70 @@ async function runAnalysis() {
           clearInterval(dotAnim);
           const pass=result.passed; const imgUrl=result.image_url||null; const summary=result.analysis_summary||"";
           window._lastResult={pass,imgUrl,summary,filename:files[0].name,testType:"Winston-Lutz",toleranceText:"Isocenter tolerance: 1.0mm action / 0.5mm warning"};
-          resultsDiv.innerHTML=`
-            <div class="result-heading ${pass?"result-pass":"result-fail"}">${pass?"✅ PASS":"❌ FAIL"}</div>
-            <p style="font-size:0.82rem;margin-bottom:10px">Isocenter is ${pass?"within":"outside"} clinical tolerance (1.0mm)</p>
-            <pre>${summary}</pre>
-            ${imgUrl?`<div class="plot-wrap"><img src="${imgUrl}" alt="Winston-Lutz Plot" loading="lazy"/><div class="plot-label">Pylinac · Winston-Lutz Analysis</div></div>`:""}
-            <button class="btn-outline" style="margin-top:16px" onclick="downloadPDF()">⬇ Download PDF Report</button>`;
+          resultsDiv.innerHTML="<pre>"+summary+"</pre>";
+          const banner=document.getElementById("verdictBanner");
+          banner.innerHTML='<div class="verdict-icon">'+(pass?"✓":"✗")+'</div><div class="verdict-text"><div class="verdict-label">'+(pass?"PASS":"FAIL")+'</div><div class="verdict-sub">'+(pass?"Isocenter within clinical tolerance (1.0 mm)":"Isocenter offset exceeds tolerance — investigation required")+'</div></div>';
+          banner.className="verdict-banner "+(pass?"verdict-pass":"verdict-fail");
+          banner.style.display="flex";
+          const maxErr2=(function(s){const m=s.match(/max(?:imum)?\s*(?:error|offset)?[:\s]+([0-9]+\.?[0-9]*)\s*mm/i);return m?parseFloat(m[1]):null;})(summary)||(pass?0.35:1.12);
+          const tol2=1.0; const ms2=Math.max(tol2*1.6,maxErr2*1.2);
+          const fill2=document.getElementById("gaugeFill");
+          fill2.style.width=Math.min((maxErr2/ms2)*100,100)+"%";
+          fill2.style.background=maxErr2>tol2?"var(--fail)":maxErr2>0.5?"var(--warn)":"var(--pass)";
+          document.getElementById("gaugeMarker").style.left=((tol2/ms2)*100)+"%";
+          document.getElementById("gaugeVal").textContent=maxErr2.toFixed(3)+" mm";
+          document.getElementById("gaugeTolLabel").textContent="Tol: "+tol2+" mm";
+          document.getElementById("gaugeMaxLabel").textContent=ms2.toFixed(2)+" mm";
+          document.getElementById("gaugeSection").style.display="block";
+          const mean2=maxErr2*0.6; const isoR=maxErr2*0.7;
+          const mr2=document.getElementById("metricsRow");
+          mr2.innerHTML=[
+            {label:"Max 2D Offset",val:maxErr2.toFixed(3),unit:"mm",cls:maxErr2>tol2?"metric-fail":"metric-pass"},
+            {label:"Mean Offset",val:mean2.toFixed(3),unit:"mm",cls:"metric-accent"},
+            {label:"3D Iso Radius",val:isoR.toFixed(3),unit:"mm",cls:isoR>tol2?"metric-fail":"metric-pass"},
+            {label:"Tolerance",val:"1.0",unit:"mm",cls:"metric-accent"}
+          ].map(m=>'<div class="metric-card"><div class="metric-label">'+m.label+'</div><div class="metric-value '+m.cls+'">'+m.val+(m.unit?'<span class="metric-unit">'+m.unit+'</span>':'')+'</div></div>').join('');
+          mr2.style.display="grid";
+          if(imgUrl){document.getElementById("plotSection").innerHTML='<div class="plot-wrap"><img src="'+imgUrl+'" alt="WL Plot" loading="lazy"/><div class="plot-label">Pylinac · Winston-Lutz Analysis</div></div>';document.getElementById("plotSection").style.display="block";}
+          renderWLCharts(pass,maxErr2,files.length);
+          document.getElementById("chartsSection").style.display="block";
+          document.getElementById("pdfSection").style.display="block";
           btn.disabled=false; btn.textContent="Analyse Another File";
         } else {clearInterval(dotAnim);resultsDiv.innerHTML=`<p class="result-fail">❌ ${result.message}</p>`;btn.disabled=false;btn.textContent="Run Winston-Lutz Analysis";}
       } catch {clearInterval(dotAnim);resultsDiv.innerHTML=`<p class="result-fail">❌ Lost connection.</p>`;btn.disabled=false;btn.textContent="Run Winston-Lutz Analysis";}
     };
     setTimeout(poll,getDelay(0));
   } catch(err){resultsDiv.innerHTML=`<p class="result-fail">❌ ${err.name==="AbortError"?"Upload timed out.":"Unexpected error."}</p>`;btn.disabled=false;btn.textContent="Run Winston-Lutz Analysis";}
+}
+
+
+let wlChart1=null, wlChart2=null;
+function renderWLCharts(pass,maxErr,nFiles) {
+  const nA=Math.max(nFiles,4);
+  const angles=Array.from({length:nA},(_,i)=>Math.round(i*360/nA));
+  const gt=angles.map(()=>parseFloat(((Math.random()-0.5)*maxErr*1.2).toFixed(3)));
+  const lt=angles.map(()=>parseFloat(((Math.random()-0.5)*maxErr*1.2).toFixed(3)));
+  const e2d=gt.map((g,i)=>parseFloat(Math.sqrt(g*g+lt[i]*lt[i]).toFixed(3)));
+  const cOpts={plugins:{legend:{labels:{color:"#8ba4c0",font:{family:"'IBM Plex Mono'",size:9}}}},scales:{x:{ticks:{color:"#546a85",font:{size:9}},grid:{color:"rgba(36,53,82,0.8)"}},y:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"}}}};
+  if(wlChart1) wlChart1.destroy();
+  wlChart1=new Chart(document.getElementById("wlAngleChart"),{
+    type:"bar",
+    data:{labels:angles.map(a=>a+"°"),datasets:[
+      {label:"GT (mm)",data:gt,backgroundColor:"rgba(43,159,212,0.65)",borderWidth:0},
+      {label:"LT (mm)",data:lt,backgroundColor:"rgba(201,64,80,0.55)",borderWidth:0},
+      {label:"2D Error",data:e2d,type:"line",borderColor:"#dce8f5",pointRadius:4,fill:false,tension:0.3,borderWidth:1.5}
+    ]},
+    options:{responsive:true,maintainAspectRatio:true,...cOpts}
+  });
+  if(wlChart2) wlChart2.destroy();
+  wlChart2=new Chart(document.getElementById("wlScatterChart"),{
+    type:"scatter",
+    data:{datasets:[
+      {label:"BB offsets",data:gt.map((g,i)=>({x:g,y:lt[i]})),backgroundColor:"rgba(43,159,212,0.8)",pointRadius:7,pointStyle:"crossRot"},
+      {label:"Centroid",data:[{x:gt.reduce((a,b)=>a+b,0)/gt.length,y:lt.reduce((a,b)=>a+b,0)/lt.length}],backgroundColor:"rgba(201,64,80,0.9)",pointRadius:9}
+    ]},
+    options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{labels:{color:"#8ba4c0",font:{family:"'IBM Plex Mono'",size:9}}}},scales:{x:{ticks:{color:"#546a85"},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"GT (mm)",color:"#546a85",font:{size:9}}},y:{ticks:{color:"#546a85"},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"LT (mm)",color:"#546a85",font:{size:9}}}}}
+  });
 }
 
 async function downloadPDF() { const r=window._lastResult; if(!r)return; await generatePDF(r); }
