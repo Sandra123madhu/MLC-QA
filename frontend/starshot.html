@@ -181,7 +181,8 @@ async function runAnalysis(){
           banner.innerHTML='<div class="verdict-icon">'+(pass?"✓":"✗")+'</div><div class="verdict-text"><div class="verdict-label">'+(pass?"PASS":"FAIL")+'</div><div class="verdict-sub">'+(pass?"Wobble radius within tolerance (1.0 mm) — rotation axis acceptable":"Wobble radius exceeds tolerance — collimator/gantry investigation required")+'</div></div>';
           banner.className="verdict-banner "+(pass?"verdict-pass":"verdict-fail");
           banner.style.display="flex";
-          const wobble=(function(s){const m=s.match(/(?:wobble|radius)[:\s]+([0-9]+\.?[0-9]*)\s*mm/i);return m?parseFloat(m[1]):null;})(summary)||_autoRadius||(pass?0.42:1.18);
+          const cdSS=result.chart_data||{};
+          const wobble=cdSS.wobble_radius!=null?cdSS.wobble_radius:(_autoRadius||(pass?0.42:1.18));
           document.getElementById("autoRadiusDisplay").textContent=wobble.toFixed(3)+" mm";
           document.getElementById("autoRadiusDisplay").style.color=wobble>1.0?"var(--fail)":"var(--pass)";
           const tolSS=1.0; const msSS=Math.max(tolSS*1.6,wobble*1.2);
@@ -194,15 +195,16 @@ async function runAnalysis(){
           document.getElementById("gaugeMaxLabel").textContent=msSS.toFixed(2)+" mm";
           document.getElementById("gaugeSection").style.display="block";
           const mrSS=document.getElementById("metricsRow");
+          const nSpokes=cdSS.spokes?cdSS.spokes.length:"—";
           mrSS.innerHTML=[
             {label:"Wobble Radius",val:wobble.toFixed(3),unit:"mm",cls:wobble>tolSS?"metric-fail":"metric-pass"},
-            {label:"Auto-Detected",val:_autoRadius?_autoRadius.toFixed(3):"—",unit:_autoRadius?"mm":"",cls:"metric-accent"},
+            {label:"Spokes Detected",val:String(nSpokes),cls:"metric-accent"},
             {label:"Tolerance",val:"1.0",unit:"mm",cls:"metric-accent"},
             {label:"Status",val:pass?"PASS":"FAIL",cls:pass?"metric-pass":"metric-fail"}
           ].map(m=>'<div class="metric-card"><div class="metric-label">'+m.label+'</div><div class="metric-value '+m.cls+'">'+m.val+(m.unit?'<span class="metric-unit">'+m.unit+'</span>':'')+'</div></div>').join('');
           mrSS.style.display="grid";
           if(imgUrl){document.getElementById("plotSection").innerHTML='<div class="plot-wrap"><img src="'+imgUrl+'" alt="Starshot Plot" loading="lazy"/><div class="plot-label">Pylinac · Starshot Analysis</div></div>';document.getElementById("plotSection").style.display="block";}
-          renderSSCharts(pass,wobble);
+          renderSSCharts(result.chart_data||{});
           document.getElementById("chartsSection").style.display="block";
           document.getElementById("pdfSection").style.display="block";
           btn.disabled=false;btn.textContent="Analyse Another File";
@@ -215,23 +217,32 @@ async function runAnalysis(){
 
 
 let ssChart1=null, ssChart2=null;
-function renderSSCharts(pass,wobble) {
-  const nS=6; const sAngles=Array.from({length:nS},(_,i)=>i*(360/nS));
-  const devs=sAngles.map(()=>parseFloat(((Math.random()-0.5)*3).toFixed(2)));
-  const dColors=devs.map(v=>Math.abs(v)>1.5?"rgba(201,64,80,0.85)":"rgba(26,171,117,0.75)");
+function renderSSCharts(cd) {
+  // cd = chart_data from backend — real pylinac spoke + radial data
+  const spokes = cd.spokes || [];
+  const spokeLabels = spokes.map(s=>s.angle.toFixed(1)+"°");
+  const residuals = spokes.map(s=>s.residual_mm);
+  const dColors = residuals.map(v=>v>0.5?"rgba(201,64,80,0.85)":"rgba(26,171,117,0.75)");
+  const radial = cd.radial_profile || [];
+  const radialLabels = Array.from({length:radial.length},(_,i)=>((i/radial.length).toFixed(2)));
   const cOpts={plugins:{legend:{labels:{color:"#8ba4c0",font:{family:"'IBM Plex Mono'",size:9}}}},scales:{x:{ticks:{color:"#546a85",font:{size:9}},grid:{color:"rgba(36,53,82,0.8)"}},y:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"}}}};
   if(ssChart1) ssChart1.destroy();
   ssChart1=new Chart(document.getElementById("spokeChart"),{
     type:"bar",
-    data:{labels:sAngles.map(a=>a+"°"),datasets:[{label:"Angular Deviation (°)",data:devs,backgroundColor:dColors,borderWidth:0}]},
-    options:{responsive:true,maintainAspectRatio:true,...cOpts}
+    data:{labels:spokeLabels,datasets:[{label:"Residual Distance (mm)",data:residuals,backgroundColor:dColors,borderWidth:0}]},
+    options:{responsive:true,maintainAspectRatio:true,...cOpts,scales:{
+      x:{ticks:{color:"#546a85",font:{size:9}},grid:{color:"rgba(36,53,82,0.8)"}},
+      y:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"Distance to wobble centre (mm)",color:"#546a85",font:{size:9}}}
+    }}
   });
-  const profile=Array.from({length:60},(_,i)=>parseFloat((Math.sin(i/60*Math.PI)*0.9+Math.random()*0.07).toFixed(4)));
   if(ssChart2) ssChart2.destroy();
   ssChart2=new Chart(document.getElementById("profileChart"),{
     type:"line",
-    data:{labels:Array.from({length:60},(_,i)=>(i/60).toFixed(2)),datasets:[{label:"Radial Intensity",data:profile,borderColor:"var(--accent)",backgroundColor:"rgba(43,159,212,0.07)",fill:true,tension:0.4,pointRadius:0}]},
-    options:{responsive:true,maintainAspectRatio:true,...cOpts}
+    data:{labels:radialLabels,datasets:[{label:"Radial Intensity",data:radial,borderColor:"var(--accent)",backgroundColor:"rgba(43,159,212,0.07)",fill:true,tension:0.3,pointRadius:0}]},
+    options:{responsive:true,maintainAspectRatio:true,...cOpts,scales:{
+      x:{ticks:{color:"#546a85",font:{size:8},maxTicksLimit:10},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"Normalised Radius",color:"#546a85",font:{size:9}}},
+      y:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"Intensity (norm.)",color:"#546a85",font:{size:9}}}
+    }}
   });
 }
 
