@@ -182,19 +182,22 @@ async function runAnalysis() {
           document.getElementById("gaugeMaxLabel").textContent=maxScale.toFixed(2)+" mm";
           document.getElementById("gaugeSection").style.display="block";
           // Metrics
-          const mean=maxErr*(0.4+Math.random()*0.2); const failed=pass?0:Math.floor(Math.random()*3)+1;
+          const cd=result.chart_data||{};
+          const realMax=cd.max_error!=null?cd.max_error:maxErr;
+          const realMean=cd.mean_error!=null?cd.mean_error:(maxErr*0.5);
+          const realFailed=cd.failed_leaves!=null?cd.failed_leaves:(pass?0:1);
           const mr=document.getElementById("metricsRow");
           mr.innerHTML=[
-            {label:"Max MLC Error",val:maxErr.toFixed(3),unit:"mm",cls:maxErr>tol?"metric-fail":"metric-pass"},
-            {label:"Mean Error",val:mean.toFixed(3),unit:"mm",cls:"metric-accent"},
-            {label:"Failed Leaves",val:String(failed),cls:failed>0?"metric-fail":"metric-pass"},
+            {label:"Max MLC Error",val:realMax.toFixed(3),unit:"mm",cls:realMax>tol?"metric-fail":"metric-pass"},
+            {label:"Mean Error",val:realMean.toFixed(3),unit:"mm",cls:"metric-accent"},
+            {label:"Failed Leaves",val:String(realFailed),cls:realFailed>0?"metric-fail":"metric-pass"},
             {label:"Tolerance",val:"0.5",unit:"mm",cls:"metric-accent"}
           ].map(m=>'<div class="metric-card"><div class="metric-label">'+m.label+'</div><div class="metric-value '+m.cls+'">'+m.val+(m.unit?'<span class="metric-unit">'+m.unit+'</span>':'')+'</div></div>').join('');
           mr.style.display="grid";
           // Plot
           if(imgUrl){document.getElementById("plotSection").innerHTML='<div class="plot-wrap"><img src="'+imgUrl+'" alt="Picket Fence Plot" loading="lazy"/><div class="plot-label">Pylinac · Picket Fence Analysis</div></div>';document.getElementById("plotSection").style.display="block";}
           // Charts
-          renderPFCharts(pass,maxErr,tol);
+          renderPFCharts(result.chart_data||{},tol);
           document.getElementById("chartsSection").style.display="block";
           document.getElementById("pdfSection").style.display="block";
           btn.disabled=false; btn.textContent="Analyse Another File";
@@ -208,32 +211,29 @@ async function runAnalysis() {
 
 let pfChart1=null, pfChart2=null;
 
-function renderPFCharts(pass, maxErr, tol) {
-  const nLeaves=60;
-  const leafErrors=Array.from({length:nLeaves},(_,i)=>{
-    const fac=1+0.25*Math.abs((i-nLeaves/2)/(nLeaves/2));
-    let e=Math.abs((Math.random()*0.3+0.05)*fac);
-    if(!pass&&i===14) e=maxErr;
-    return parseFloat(e.toFixed(4));
-  });
-  const leafColors=leafErrors.map(v=>v>tol?"rgba(201,64,80,0.85)":v>tol*0.6?"rgba(200,137,42,0.8)":"rgba(26,171,117,0.75)");
+function renderPFCharts(cd, tol) {
+  // cd = chart_data from backend — real pylinac values
+  const leafErrors = cd.leaf_max_errors || [];
+  const picketMeans = cd.picket_mean_errors || [];
+  const nLeaves = leafErrors.length;
+  const nPickets = picketMeans.length;
+  const leafColors = leafErrors.map(v=>v>tol?"rgba(201,64,80,0.85)":v>tol*0.6?"rgba(200,137,42,0.8)":"rgba(26,171,117,0.75)");
   const chartOpts={plugins:{legend:{labels:{color:"#8ba4c0",font:{family:"'IBM Plex Mono'",size:9}}}},scales:{x:{ticks:{color:"#546a85",font:{size:7},maxTicksLimit:15},grid:{color:"rgba(36,53,82,0.8)"}},y:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"Error (mm)",color:"#546a85",font:{size:9}}}}};
   if(pfChart1) pfChart1.destroy();
   pfChart1=new Chart(document.getElementById("leafChart"),{
     type:"bar",
-    data:{labels:Array.from({length:nLeaves},(_,i)=>`L${i+1}`),datasets:[
+    data:{labels:Array.from({length:nLeaves},(_,i)=>"L"+(i+1)),datasets:[
       {label:"Max Error (mm)",data:leafErrors,backgroundColor:leafColors,borderWidth:0},
       {label:"Tolerance",data:Array(nLeaves).fill(tol),type:"line",borderColor:"rgba(200,137,42,0.7)",borderDash:[4,3],pointRadius:0,borderWidth:1.5,fill:false}
     ]},
     options:{responsive:true,maintainAspectRatio:true,...chartOpts}
   });
-  const nP=10; const pm=Array.from({length:nP},()=>parseFloat((Math.random()*0.28+0.04).toFixed(4)));
   if(pfChart2) pfChart2.destroy();
   pfChart2=new Chart(document.getElementById("picketChart"),{
     type:"line",
-    data:{labels:Array.from({length:nP},(_,i)=>`P${i+1}`),datasets:[
-      {label:"Mean Error (mm)",data:pm,borderColor:"var(--accent)",backgroundColor:"rgba(43,159,212,0.08)",fill:true,tension:0.4,pointBackgroundColor:"var(--accent)",pointRadius:5},
-      {label:"Tolerance",data:Array(nP).fill(tol),borderColor:"rgba(200,137,42,0.6)",borderDash:[5,4],pointRadius:0,fill:false,borderWidth:1.5}
+    data:{labels:Array.from({length:nPickets},(_,i)=>"P"+(i+1)),datasets:[
+      {label:"Mean Error (mm)",data:picketMeans,borderColor:"var(--accent)",backgroundColor:"rgba(43,159,212,0.08)",fill:true,tension:0.4,pointBackgroundColor:"var(--accent)",pointRadius:5},
+      {label:"Tolerance",data:Array(nPickets).fill(tol),borderColor:"rgba(200,137,42,0.6)",borderDash:[5,4],pointRadius:0,fill:false,borderWidth:1.5}
     ]},
     options:{responsive:true,maintainAspectRatio:true,...chartOpts}
   });
