@@ -229,3 +229,111 @@ tbody td { padding:11px 16px; font-size:0.83rem; color:var(--text-2); }
   .sidebar { display:none; }
   .main { margin-left:0; padding:20px 16px; }
 }
+
+/* ═══════════════════════════════════════════════
+   DECISION SUPPORT ENHANCEMENTS
+   Verdict banner · Gauge · Metrics · Charts
+═══════════════════════════════════════════════ */
+
+/* ── Verdict Banner ── */
+.verdict-banner {
+  display: flex; align-items: center; gap: 18px;
+  padding: 20px 24px; border-radius: var(--r-lg);
+  border: 1px solid; margin-top: 20px;
+  animation: fadeUp 0.3s ease both;
+}
+.verdict-pass {
+  background: var(--pass-dim); border-color: rgba(26,171,117,0.3);
+  box-shadow: 0 0 24px rgba(26,171,117,0.08);
+}
+.verdict-fail {
+  background: var(--fail-dim); border-color: rgba(201,64,80,0.3);
+  box-shadow: 0 0 24px rgba(201,64,80,0.08);
+}
+.verdict-icon {
+  width: 48px; height: 48px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.4rem; font-weight: 700; flex-shrink: 0;
+}
+.verdict-pass .verdict-icon { background: rgba(26,171,117,0.15); color: var(--pass); border: 1.5px solid rgba(26,171,117,0.4); }
+.verdict-fail .verdict-icon { background: rgba(201,64,80,0.15); color: var(--fail); border: 1.5px solid rgba(201,64,80,0.4); }
+.verdict-label {
+  font-family: var(--mono); font-size: 1.15rem; font-weight: 600; letter-spacing: 0.06em;
+}
+.verdict-pass .verdict-label { color: var(--pass); }
+.verdict-fail .verdict-label { color: var(--fail); }
+.verdict-sub { font-size: 0.82rem; color: var(--text-2); margin-top: 3px; }
+
+/* ── Tolerance Gauge ── */
+.gauge-label-row {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 8px;
+}
+.gauge-title { font-family: var(--mono); font-size: 0.68rem; color: var(--text-muted); letter-spacing: 0.07em; text-transform: uppercase; }
+.gauge-val { font-family: var(--mono); font-size: 0.88rem; font-weight: 600; color: var(--text); }
+.gauge-track {
+  height: 9px; background: var(--bg);
+  border-radius: 5px; overflow: visible;
+  position: relative; border: 1px solid var(--border);
+}
+.gauge-fill {
+  height: 100%; border-radius: 5px;
+  transition: width 0.7s cubic-bezier(.4,0,.2,1), background 0.4s;
+}
+.gauge-marker {
+  position: absolute; top: -5px;
+  width: 2px; height: 19px;
+  background: var(--warn); border-radius: 2px;
+  transition: left 0.4s;
+}
+.gauge-marker::after {
+  content: 'TOL';
+  position: absolute; top: -17px; left: 50%; transform: translateX(-50%);
+  font-family: var(--mono); font-size: 0.55rem; color: var(--warn); white-space: nowrap;
+}
+.gauge-ticks {
+  display: flex; justify-content: space-between;
+  font-family: var(--mono); font-size: 0.62rem; color: var(--text-muted);
+  margin-top: 6px;
+}
+
+/* ── Metrics Row ── */
+.metrics-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.metric-card {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 12px 14px;
+}
+.metric-label {
+  font-family: var(--mono); font-size: 0.62rem; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 5px;
+}
+.metric-value {
+  font-family: var(--mono); font-size: 1.1rem; font-weight: 600;
+}
+.metric-unit { font-size: 0.7rem; color: var(--text-muted); margin-left: 3px; font-weight: 400; }
+.metric-pass { color: var(--pass); }
+.metric-fail { color: var(--fail); }
+.metric-accent { color: var(--accent); }
+
+/* ── Charts Grid ── */
+.charts-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+}
+.chart-card {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 18px;
+}
+.chart-card-title {
+  font-family: var(--mono); font-size: 0.66rem; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 14px;
+}
+.chart-card canvas { max-height: 210px; }
+
+@media (max-width: 768px) {
+  .charts-grid { grid-template-columns: 1fr; }
+  .metrics-row { grid-template-columns: 1fr 1fr; }
+}
