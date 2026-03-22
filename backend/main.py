@@ -78,7 +78,9 @@ def cleanup():
     if len(jobs)>50:
         for k in list(jobs.keys())[:len(jobs)-50]: del jobs[k]
 
-@app.get("/"); @app.head("/")
+
+@app.get("/")
+@app.head("/")
 def home(): return {"status":"MLC QA Backend is Live and listening."}
 
 @app.post("/auth/signup")
