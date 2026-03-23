@@ -147,11 +147,19 @@ async function runAnalysis() {
     const jobId=data.job_id; btn.textContent="Analysing...";
     resultsDiv.innerHTML=`<p>🔬 Analysis running<span id="dots">.</span></p>`;
     let dotCount=0; const dotAnim=setInterval(()=>{dotCount=(dotCount+1)%4;const d=document.getElementById("dots");if(d)d.textContent=".".repeat(dotCount+1);},500);
-    let attempts=0; const getDelay=a=>a<5?2000:a<15?3000:5000;
+    let attempts=0; let networkFails=0; const getDelay=a=>a<5?2000:a<15?3000:5000;
     const poll=async()=>{
       attempts++; if(attempts>60){clearInterval(dotAnim);resultsDiv.innerHTML=`<p>⚠️ Analysis taking longer than expected. Please try again.</p>`;btn.disabled=false;btn.textContent="Run Winston-Lutz Analysis";return;}
       try {
         const r=await fetch(`${BACKEND_URL}/result/${jobId}`,{headers:{"Authorization":`Bearer ${token}`}});
+        if (!r.ok) {
+          // HTTP error (e.g. 500) — server is up but something is wrong
+          networkFails=0;
+          if(r.status===404){clearInterval(dotAnim);resultsDiv.innerHTML=`<p class="result-fail">❌ Job not found. The server may have restarted — please re-upload and try again.</p>`;btn.disabled=false;btn.textContent="Run Winston-Lutz Analysis";}
+          else{setTimeout(poll,getDelay(attempts));}
+          return;
+        }
+        networkFails=0;
         const result=await r.json();
         if(result.status==="Processing"){setTimeout(poll,getDelay(attempts));}
         else if(result.status==="Success"){
@@ -192,13 +200,14 @@ async function runAnalysis() {
           btn.disabled=false; btn.textContent="Analyse Another File";
         } else {clearInterval(dotAnim);resultsDiv.innerHTML=`<p class="result-fail">❌ ${result.message}</p>`;btn.disabled=false;btn.textContent="Run Winston-Lutz Analysis";}
       } catch {
-        if (attempts < 8) {
+        networkFails++;
+        if (networkFails < 10) {
           const d = document.getElementById("dots");
-          if (d) d.textContent = " (server waking up…)";
-          setTimeout(poll, 5000);
+          if (d) d.textContent = ` (retrying… ${networkFails}/10)`;
+          setTimeout(poll, 6000);
         } else {
           clearInterval(dotAnim);
-          resultsDiv.innerHTML = `<p class="result-fail">❌ Lost connection after multiple retries. The server may be unavailable — please wait 60 seconds and try again.</p>`;
+          resultsDiv.innerHTML = `<p class="result-fail">❌ Cannot reach the server after 10 retries. Please wait 60 seconds, refresh the page, and try again.</p>`;
           btn.disabled = false; btn.textContent = "Run Winston-Lutz Analysis";
         }
       }
