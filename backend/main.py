@@ -297,7 +297,14 @@ def run_analysis(job_id, temp_path, user_email, filename):
                         "image_url":image_url,"chart_data":chart_data}
         save_analysis(user_email,"Picket Fence",filename,passed,summary,image_url)
     except Exception as e:
-        jobs[job_id] = {"status":"Error","message":f"Analysis Error: {str(e)}"}
+        msg = str(e)
+        if "not a valid DICOM" in msg or "Invalid tag" in msg or "read_file" in msg:
+            friendly = "The uploaded file does not appear to be a valid DICOM file."
+        elif "picket" in msg.lower() or "mlc" in msg.lower() or "leaf" in msg.lower():
+            friendly = "Could not detect a Picket Fence pattern in this image. Please verify the file is a Picket Fence DICOM."
+        else:
+            friendly = f"Analysis failed: {msg}"
+        jobs[job_id] = {"status": "Error", "message": friendly}
     finally:
         for p in [temp_path,plot_path]:
             try:
@@ -381,7 +388,16 @@ def run_winston_lutz(job_id, temp_path, user_email, filename):
                         "image_url":image_url,"chart_data":chart_data}
         save_analysis(user_email,"Winston-Lutz",filename,passed,summary,image_url)
     except Exception as e:
-        jobs[job_id] = {"status":"Error","message":f"Analysis Error: {str(e)}"}
+        msg = str(e)
+        if "not a valid DICOM" in msg or "Invalid tag" in msg:
+            friendly = "One or more uploaded files are not valid DICOM files."
+        elif "bb" in msg.lower() or "ball bearing" in msg.lower() or "no images" in msg.lower():
+            friendly = "Could not detect a BB marker in the images. Please verify these are Winston-Lutz DICOM files."
+        elif "zip" in msg.lower():
+            friendly = "Could not read the ZIP file. Ensure it contains valid DICOM images."
+        else:
+            friendly = f"Analysis failed: {msg}"
+        jobs[job_id] = {"status": "Error", "message": friendly}
     finally:
         for p in [temp_path,plot_path]:
             try:
@@ -569,7 +585,16 @@ def run_starshot(job_id, temp_path, user_email, filename):
                       "image_url":image_url,"chart_data":chart_data}
         save_analysis(user_email,"Starshot",filename,passed,summary,image_url)
     except Exception as e:
-        jobs[job_id]={"status":"Error","message":f"Analysis Error: {str(e)}"}
+        msg = str(e)
+        if "not a valid DICOM" in msg or "Invalid tag" in msg:
+            friendly = "The uploaded file does not appear to be a valid DICOM file."
+        elif "star" in msg.lower() or "spoke" in msg.lower() or "circle" in msg.lower():
+            friendly = "Could not detect a Starshot pattern in this image. Please verify the file is a Starshot DICOM."
+        elif "zip" in msg.lower():
+            friendly = "Could not read the ZIP file. Ensure it contains valid DICOM images."
+        else:
+            friendly = f"Analysis failed: {msg}"
+        jobs[job_id] = {"status": "Error", "message": friendly}
     finally:
         for p in [temp_path,plot_path]:
             try:
