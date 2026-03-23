@@ -41,11 +41,27 @@ def upload_plot(image_path, fname):
                        headers=sb_storage_headers(), content=b)
         return f"{SUPABASE_URL}/storage/v1/object/public/plots/{fname}" if r.status_code in (200,201) else None
     except: return None
-def save_analysis(email, test_type, filename, passed, summary, image_url=None):
+def save_analysis(email, test_type, filename, passed, summary, image_url=None, chart_data=None, job_id=None):
     with httpx.Client() as c:
         c.post(f"{SUPABASE_URL}/rest/v1/analyses", headers=sb_headers(),
                json={"user_email":email,"test_type":test_type,"filename":filename,
-                     "passed":passed,"summary":summary,"image_url":image_url})
+                     "passed":passed,"summary":summary,"image_url":image_url,
+                     "chart_data":chart_data,"job_id":job_id})
+
+def get_job_result(job_id):
+    with httpx.Client() as c:
+        r = c.get(f"{SUPABASE_URL}/rest/v1/analyses?job_id=eq.{job_id}&limit=1",
+                  headers=sb_headers())
+    if r.status_code == 200 and r.json():
+        row = r.json()[0]
+        return {
+            "status": "Success",
+            "passed": row.get("passed"),
+            "analysis_summary": row.get("summary"),
+            "image_url": row.get("image_url"),
+            "chart_data": row.get("chart_data") or {},
+        }
+    return None
 def get_user_analyses(email):
     with httpx.Client() as c:
         r = c.get(f"{SUPABASE_URL}/rest/v1/analyses?user_email=eq.{email}&order=created_at.desc&limit=50",
@@ -72,6 +88,19 @@ class LoginRequest(BaseModel): email:str; password:str
 app = FastAPI()
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=True,
                    allow_methods=["*"],allow_headers=["*"])
+
+# Safety net: ensure CORS headers are present even when an unhandled exception
+# causes FastAPI to return a 500 before the middleware runs.
+from fastapi.responses import JSONResponse
+from fastapi.requests import Request
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"status": "Error", "message": "An unexpected server error occurred."},
+        headers={"Access-Control-Allow-Origin": "*"},
+    )
+
 jobs = {}
 
 def cleanup():
@@ -106,7 +135,14 @@ def get_history(u=Depends(get_current_user)): return {"analyses":get_user_analys
 
 @app.get("/result/{job_id}")
 def get_result(job_id, u=Depends(get_current_user)):
-    return jobs.get(job_id, {"status":"Error","message":"Job ID not found."})
+    # Check in-memory first (job still running or just finished)
+    if job_id in jobs:
+        return jobs[job_id]
+    # Fallback: check Supabase (covers server restarts wiping jobs{})
+    db_result = get_job_result(job_id)
+    if db_result:
+        return db_result
+    return {"status": "Error", "message": "Job not found. The server may have restarted — please re-upload your file."}
 
 # ── DEBUG endpoint — call this to inspect pylinac attribute names live ──
 @app.post("/debug/pf")
@@ -181,104 +217,102 @@ async def debug_ss(file: UploadFile = File(...), u=Depends(get_current_user)):
 # PICKET FENCE — robust extraction using results_data()
 # ═══════════════════════════════════════════════════════════════
 def _extract_pf_chart_data(pf):
-    import numpy as np
+    import numpy as np, re
+
+    leaf_max     = []
+    picket_means = []
+    max_err      = None
+    mean_err     = None
+    failed       = 0
+
+    # ── Strategy 1: pf.mlc — the stable Pylinac internal structure ──
+    # pf.mlc is a list of Picket objects; each Picket has .mlc_meas,
+    # a list of MLCMeas objects with a .error attribute (signed, mm).
+    try:
+        for picket in pf.mlc:
+            errs = []
+            for meas in picket.mlc_meas:
+                try: errs.append(abs(float(meas.error)))
+                except: pass
+            if errs:
+                picket_means.append(round(float(np.mean(errs)), 4))
+                if not leaf_max:
+                    leaf_max = errs[:]
+                else:
+                    leaf_max = [max(leaf_max[i], errs[i]) if i < len(errs) else leaf_max[i]
+                                for i in range(len(leaf_max))]
+    except Exception:
+        pass
+
+    # ── Strategy 2: results_data() pickets ──
+    if not leaf_max:
+        try:
+            rd = pf.results_data()
+            if hasattr(rd, "pickets") and rd.pickets:
+                for pk in rd.pickets:
+                    errs = None
+                    for attr in ["leaf_errors", "errors", "mlc_errors", "offsets"]:
+                        if hasattr(pk, attr):
+                            val = getattr(pk, attr)
+                            if hasattr(val, "__len__"):
+                                errs = [abs(float(v)) for v in val]; break
+                    if errs:
+                        picket_means.append(round(float(np.mean(errs)), 4))
+                        if not leaf_max:
+                            leaf_max = errs[:]
+                        else:
+                            leaf_max = [max(leaf_max[i], errs[i]) if i < len(errs) else leaf_max[i]
+                                        for i in range(len(leaf_max))]
+        except Exception:
+            pass
+
+    # ── Top-level scalar metrics: try results_data() first, then parse text ──
     try:
         rd = pf.results_data()
-
-        # ── Try pickets from results_data ──
-        leaf_max    = []
-        picket_means = []
-
-        if hasattr(rd, "pickets") and rd.pickets:
-            pickets = rd.pickets
-            n_pickets = len(pickets)
-
-            # Each picket has leaf_errors or similar
-            for pk in pickets:
-                pk_attrs = dir(pk)
-                # Try various known attribute names across pylinac versions
-                errs = None
-                for attr in ["leaf_errors","errors","mlc_errors","error","offsets"]:
-                    if attr in pk_attrs:
-                        val = getattr(pk, attr)
-                        if hasattr(val,"__len__"):
-                            errs = [abs(float(v)) for v in val]
-                            break
-                        else:
-                            errs = [abs(float(val))]
-                            break
-                if errs:
-                    picket_means.append(round(float(np.mean(errs)), 4))
-                    if not leaf_max:
-                        leaf_max = errs
-                    else:
-                        leaf_max = [max(leaf_max[i], errs[i]) if i < len(errs) else leaf_max[i]
-                                    for i in range(len(leaf_max))]
-                else:
-                    # Try mean_error on picket object
-                    for attr in ["mean_error","max_error","error"]:
-                        if attr in pk_attrs:
-                            picket_means.append(round(abs(float(getattr(pk, attr))), 4))
-                            break
-
-        # ── Top-level metrics ──
-        max_err  = None
-        mean_err = None
-        failed   = 0
-
-        for attr in ["max_error","absolute_median_error","max_leaf_error"]:
+        for attr in ["max_error", "absolute_median_error", "max_leaf_error"]:
             if hasattr(rd, attr):
-                v = getattr(rd, attr)
-                try: max_err = round(float(v), 4); break
+                try: max_err = round(float(getattr(rd, attr)), 4); break
                 except: pass
-
-        for attr in ["mean_error","absolute_median_error","median_error"]:
+        for attr in ["mean_error", "absolute_median_error", "median_error"]:
             if hasattr(rd, attr):
-                v = getattr(rd, attr)
-                try: mean_err = round(float(v), 4); break
+                try: mean_err = round(float(getattr(rd, attr)), 4); break
                 except: pass
-
-        for attr in ["num_failed_leaves","failed_leaves","num_failures"]:
+        for attr in ["num_failed_leaves", "failed_leaves", "num_failures"]:
             if hasattr(rd, attr):
                 try: failed = int(getattr(rd, attr)); break
                 except: pass
+    except Exception:
+        pass
 
-        # Final fallback: parse from pf.results() text
-        if max_err is None:
-            import re
-            txt = pf.results()
-            m = re.search(r"Max Error:\s*([\d.]+)\s*mm", txt)
-            if m: max_err = round(float(m.group(1)), 4)
-            m2 = re.search(r"(?:median|mean).*?([\d.]+)\s*mm", txt, re.IGNORECASE)
-            if m2: mean_err = round(float(m2.group(1)), 4)
-
-        if max_err is None: max_err = 0.0
-        if mean_err is None: mean_err = max_err * 0.5
-
-        return {
-            "leaf_max_errors":    [round(v,4) for v in leaf_max],
-            "picket_mean_errors": picket_means,
-            "max_error":          max_err,
-            "mean_error":         mean_err,
-            "failed_leaves":      failed,
-            "n_leaves":           len(leaf_max),
-            "n_pickets":          len(picket_means),
-        }
-    except Exception as e:
-        # Last resort: parse results text
+    # ── Fallback: parse pf.results() summary text ──
+    if max_err is None:
         try:
-            import re
             txt = pf.results()
-            max_err = 0.0
             m = re.search(r"Max Error:\s*([\d.]+)\s*mm", txt)
             if m: max_err = round(float(m.group(1)), 4)
-            return {"leaf_max_errors":[],"picket_mean_errors":[],
-                    "max_error":max_err,"mean_error":max_err*0.5,
-                    "failed_leaves":0,"parse_fallback":True,"error":str(e)}
-        except Exception as e2:
-            return {"leaf_max_errors":[],"picket_mean_errors":[],
-                    "max_error":0,"mean_error":0,"failed_leaves":0,
-                    "error":f"{e} / {e2}"}
+            m2 = re.search(r"(?:median|mean)[^\d]*([\d.]+)\s*mm", txt, re.IGNORECASE)
+            if m2: mean_err = round(float(m2.group(1)), 4)
+            m3 = re.search(r"Leaves passing.*?([\d.]+)\s*%", txt, re.IGNORECASE)
+            if m3:
+                pct = float(m3.group(1))
+                # estimate failed count from leaf_max length
+                n = len(leaf_max) if leaf_max else 60
+                failed = round(n * (1 - pct / 100))
+        except Exception:
+            pass
+
+    if max_err  is None: max_err  = round(max(leaf_max), 4) if leaf_max else 0.0
+    if mean_err is None: mean_err = round(float(np.mean(leaf_max)), 4) if leaf_max else 0.0
+
+    return {
+        "leaf_max_errors":    [round(v, 4) for v in leaf_max],
+        "picket_mean_errors": picket_means,
+        "max_error":          max_err,
+        "mean_error":         mean_err,
+        "failed_leaves":      failed,
+        "n_leaves":           len(leaf_max),
+        "n_pickets":          len(picket_means),
+    }
 
 def run_analysis(job_id, temp_path, user_email, filename):
     plot_path = None
@@ -295,7 +329,7 @@ def run_analysis(job_id, temp_path, user_email, filename):
 
         jobs[job_id] = {"status":"Success","passed":passed,"analysis_summary":summary,
                         "image_url":image_url,"chart_data":chart_data}
-        save_analysis(user_email,"Picket Fence",filename,passed,summary,image_url)
+        save_analysis(user_email,"Picket Fence",filename,passed,summary,image_url,chart_data=chart_data,job_id=job_id)
     except Exception as e:
         msg = str(e)
         if "not a valid DICOM" in msg or "Invalid tag" in msg or "read_file" in msg:
@@ -386,7 +420,7 @@ def run_winston_lutz(job_id, temp_path, user_email, filename):
 
         jobs[job_id] = {"status":"Success","passed":passed,"analysis_summary":summary,
                         "image_url":image_url,"chart_data":chart_data}
-        save_analysis(user_email,"Winston-Lutz",filename,passed,summary,image_url)
+        save_analysis(user_email,"Winston-Lutz",filename,passed,summary,image_url,chart_data=chart_data,job_id=job_id)
     except Exception as e:
         msg = str(e)
         if "not a valid DICOM" in msg or "Invalid tag" in msg:
@@ -583,7 +617,7 @@ def run_starshot(job_id, temp_path, user_email, filename):
 
         jobs[job_id]={"status":"Success","passed":passed,"analysis_summary":summary,
                       "image_url":image_url,"chart_data":chart_data}
-        save_analysis(user_email,"Starshot",filename,passed,summary,image_url)
+        save_analysis(user_email,"Starshot",filename,passed,summary,image_url,chart_data=chart_data,job_id=job_id)
     except Exception as e:
         msg = str(e)
         if "not a valid DICOM" in msg or "Invalid tag" in msg:
