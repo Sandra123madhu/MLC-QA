@@ -151,30 +151,59 @@ async def debug_pf(file: UploadFile = File(...), u=Depends(get_current_user)):
         shutil.copyfileobj(file.file, tmp); path = tmp.name
     try:
         pf = PicketFence(path); pf.analyze(tolerance=0.5, action_tolerance=0.25)
-        info = {}
-        # Top-level attrs
-        info["pf_attrs"] = [a for a in dir(pf) if not a.startswith("_")]
-        # results_data
+        info = {"pf_attrs": [a for a in dir(pf) if not a.startswith("_")]}
+
+        # --- pf.mlc inspection ---
+        if hasattr(pf, "mlc"):
+            info["mlc_type"] = str(type(pf.mlc))
+            try:
+                info["mlc_len"] = len(pf.mlc)
+                if pf.mlc:
+                    pk0 = pf.mlc[0]
+                    info["mlc_pk0_type"] = str(type(pk0))
+                    info["mlc_pk0_attrs"] = [a for a in dir(pk0) if not a.startswith("_")]
+                    if hasattr(pk0, "mlc_meas"):
+                        info["mlc_meas_len"] = len(pk0.mlc_meas)
+                        if pk0.mlc_meas:
+                            m0 = pk0.mlc_meas[0]
+                            info["meas0_attrs"] = [a for a in dir(m0) if not a.startswith("_")]
+                            info["meas0_error"] = str(getattr(m0, "error", "NO ERROR ATTR"))
+                    # sample first 3 errors
+                    sample = []
+                    for meas in list(pk0.mlc_meas)[:3]:
+                        sample.append(str(getattr(meas, "error", "?")))
+                    info["mlc_pk0_meas_sample"] = sample
+            except Exception as e: info["mlc_error"] = str(e)
+        else:
+            info["mlc_present"] = False
+
+        # --- pf.pickets inspection ---
+        if hasattr(pf, "pickets"):
+            info["pickets_len"] = len(pf.pickets)
+            if pf.pickets:
+                pk = pf.pickets[0]
+                info["picket0_attrs"] = [a for a in dir(pk) if not a.startswith("_")]
+                info["picket0_sample"] = {a: str(getattr(pk, a, None))[:80]
+                                          for a in info["picket0_attrs"]}
+        else:
+            info["pickets_present"] = False
+
+        # --- results_data() inspection ---
         try:
             rd = pf.results_data()
-            info["rd_type"] = str(type(rd))
             info["rd_attrs"] = [a for a in dir(rd) if not a.startswith("_")]
-            # Picket details
             if hasattr(rd, "pickets"):
-                info["rd_pickets_type"] = str(type(rd.pickets))
-                info["rd_pickets_len"]  = len(rd.pickets)
+                info["rd_pickets_len"] = len(rd.pickets)
                 if rd.pickets:
-                    info["rd_picket0_attrs"] = [a for a in dir(rd.pickets[0]) if not a.startswith("_")]
                     p0 = rd.pickets[0]
-                    info["rd_picket0_sample"] = {
-                        a: str(getattr(p0,a,None))[:80] for a in info["rd_picket0_attrs"]
-                    }
+                    info["rd_picket0_attrs"] = [a for a in dir(p0) if not a.startswith("_")]
+                    info["rd_picket0_sample"] = {a: str(getattr(p0,a,None))[:80]
+                                                 for a in info["rd_picket0_attrs"]}
         except Exception as e: info["rd_error"] = str(e)
-        # pickets direct
-        if hasattr(pf,"pickets"):
-            info["pf_pickets_len"] = len(pf.pickets)
-            if pf.pickets:
-                info["pf_picket0_attrs"] = [a for a in dir(pf.pickets[0]) if not a.startswith("_")]
+
+        # --- what _extract_pf_chart_data actually returns ---
+        info["chart_data_extracted"] = _extract_pf_chart_data(pf)
+
         return info
     except Exception as e: return {"error": str(e)}
     finally:
@@ -217,7 +246,7 @@ async def debug_ss(file: UploadFile = File(...), u=Depends(get_current_user)):
 # PICKET FENCE — robust extraction using results_data()
 # ═══════════════════════════════════════════════════════════════
 def _extract_pf_chart_data(pf):
-    import numpy as np, re
+    import numpy as np
 
     leaf_max     = []
     picket_means = []
@@ -225,87 +254,65 @@ def _extract_pf_chart_data(pf):
     mean_err     = None
     failed       = 0
 
-    # ── Strategy 1: pf.mlc — the stable Pylinac internal structure ──
-    # pf.mlc is a list of Picket objects; each Picket has .mlc_meas,
-    # a list of MLCMeas objects with a .error attribute (signed, mm).
-    try:
-        for picket in pf.mlc:
-            errs = []
-            for meas in picket.mlc_meas:
-                try: errs.append(abs(float(meas.error)))
-                except: pass
-            if errs:
-                picket_means.append(round(float(np.mean(errs)), 4))
-                if not leaf_max:
-                    leaf_max = errs[:]
-                else:
-                    leaf_max = [max(leaf_max[i], errs[i]) if i < len(errs) else leaf_max[i]
-                                for i in range(len(leaf_max))]
-    except Exception:
-        pass
-
-    # ── Strategy 2: results_data() pickets ──
-    if not leaf_max:
-        try:
-            rd = pf.results_data()
-            if hasattr(rd, "pickets") and rd.pickets:
-                for pk in rd.pickets:
-                    errs = None
-                    for attr in ["leaf_errors", "errors", "mlc_errors", "offsets"]:
-                        if hasattr(pk, attr):
-                            val = getattr(pk, attr)
-                            if hasattr(val, "__len__"):
-                                errs = [abs(float(v)) for v in val]; break
-                    if errs:
-                        picket_means.append(round(float(np.mean(errs)), 4))
-                        if not leaf_max:
-                            leaf_max = errs[:]
-                        else:
-                            leaf_max = [max(leaf_max[i], errs[i]) if i < len(errs) else leaf_max[i]
-                                        for i in range(len(leaf_max))]
-        except Exception:
-            pass
-
-    # ── Top-level scalar metrics: try results_data() first, then parse text ──
     try:
         rd = pf.results_data()
-        for attr in ["max_error", "absolute_median_error", "max_leaf_error"]:
-            if hasattr(rd, attr):
-                try: max_err = round(float(getattr(rd, attr)), 4); break
-                except: pass
-        for attr in ["mean_error", "absolute_median_error", "median_error"]:
-            if hasattr(rd, attr):
-                try: mean_err = round(float(getattr(rd, attr)), 4); break
-                except: pass
-        for attr in ["num_failed_leaves", "failed_leaves", "num_failures"]:
-            if hasattr(rd, attr):
-                try: failed = int(getattr(rd, attr)); break
-                except: pass
+
+        # ── Scalars (exact attr names from Pylinac 3.42 PFResult) ──
+        if hasattr(rd, "max_error_mm"):
+            try: max_err = round(float(rd.max_error_mm), 4)
+            except: pass
+        if hasattr(rd, "absolute_median_error_mm"):
+            try: mean_err = round(float(rd.absolute_median_error_mm), 4)
+            except: pass
+        if hasattr(rd, "failed_leaves"):
+            try: failed = int(rd.failed_leaves)
+            except: pass
+
+        # ── Per-leaf max errors across all pickets ──
+        if hasattr(rd, "mlc_errors_by_leaf"):
+            val = rd.mlc_errors_by_leaf
+            # may be a dict {leaf_num: error} or a list
+            if isinstance(val, dict):
+                leaf_max = [round(abs(float(v)), 4) for v in val.values()]
+            elif hasattr(val, "__len__"):
+                leaf_max = [round(abs(float(v)), 4) for v in val]
+
+        # ── Per-picket mean errors using pf.pickets[].mlc_meas ──
+        if hasattr(pf, "pickets") and pf.pickets:
+            for picket in pf.pickets:
+                if hasattr(picket, "mlc_meas") and picket.mlc_meas:
+                    errs = []
+                    for meas in picket.mlc_meas:
+                        # try .error, .error_mm, .offset
+                        for attr in ["error", "error_mm", "offset"]:
+                            raw = getattr(meas, attr, None)
+                            if raw is not None:
+                                try:
+                                    errs.append(abs(float(raw)))
+                                    break
+                                except: pass
+                    if errs:
+                        picket_means.append(round(float(np.mean(errs)), 4))
+
     except Exception:
         pass
 
-    # ── Fallback: parse pf.results() summary text ──
+    # ── Text fallback for scalars only ──
     if max_err is None:
         try:
+            import re
             txt = pf.results()
             m = re.search(r"Max Error:\s*([\d.]+)\s*mm", txt)
             if m: max_err = round(float(m.group(1)), 4)
             m2 = re.search(r"(?:median|mean)[^\d]*([\d.]+)\s*mm", txt, re.IGNORECASE)
             if m2: mean_err = round(float(m2.group(1)), 4)
-            m3 = re.search(r"Leaves passing.*?([\d.]+)\s*%", txt, re.IGNORECASE)
-            if m3:
-                pct = float(m3.group(1))
-                # estimate failed count from leaf_max length
-                n = len(leaf_max) if leaf_max else 60
-                failed = round(n * (1 - pct / 100))
-        except Exception:
-            pass
+        except: pass
 
     if max_err  is None: max_err  = round(max(leaf_max), 4) if leaf_max else 0.0
     if mean_err is None: mean_err = round(float(np.mean(leaf_max)), 4) if leaf_max else 0.0
 
     return {
-        "leaf_max_errors":    [round(v, 4) for v in leaf_max],
+        "leaf_max_errors":    leaf_max,
         "picket_mean_errors": picket_means,
         "max_error":          max_err,
         "mean_error":         mean_err,
