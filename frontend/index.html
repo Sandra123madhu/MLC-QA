@@ -496,7 +496,7 @@
   <div class="nav-center">
     <a href="#features">Features</a>
     <a href="#about">About</a>
-    <a href="login.html">Docs</a>
+    <a href="#features">Docs</a>
   </div>
   <div class="nav-right">
     <a href="login.html" class="btn-ghost">Log In</a>
@@ -770,7 +770,7 @@
       <div class="feat-num">06</div>
       <div class="feat-icon">🚀</div>
       <h3>More Tests Coming</h3>
-      <p>Winston-Lutz, Star Shot, VMAT and CatPhan analysis modules currently in development.</p>
+      <p>VMAT and CatPhan analysis modules in development. Winston-Lutz and Star Shot are live now.</p>
     </div>
   </div>
 </section>
@@ -783,9 +783,14 @@
 </section>
 
 <footer>
-  <span>© 2025 MLC QA PLATFORM · BUILT WITH PYLINAC</span>
+  <span id="footer-copy">© 2026 MLC QA PLATFORM · BUILT WITH PYLINAC</span>
   <span>FOR CLINICAL PHYSICS USE ONLY</span>
 </footer>
+
+<script>
+document.getElementById('footer-copy').textContent =
+  `© ${new Date().getFullYear()} MLC QA PLATFORM · BUILT WITH PYLINAC`;
+</script>
 
 <script>
 // ── PARTICLE ANIMATION ──────────────────────────────────────────────────────
