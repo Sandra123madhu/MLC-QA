@@ -209,7 +209,17 @@ async function runAnalysis(){
           document.getElementById("pdfSection").style.display="block";
           btn.disabled=false;btn.textContent="Analyse Another File";
         }else{clearInterval(dotAnim);resultsDiv.innerHTML=`<p class="result-fail">❌ ${result.message}</p>`;btn.disabled=false;btn.textContent="Run Starshot Analysis";}
-      }catch{clearInterval(dotAnim);resultsDiv.innerHTML=`<p class="result-fail">❌ Lost connection.</p>`;btn.disabled=false;btn.textContent="Run Starshot Analysis";}
+      } catch {
+        if (attempts < 8) {
+          const d = document.getElementById("dots");
+          if (d) d.textContent = " (server waking up…)";
+          setTimeout(poll, 5000);
+        } else {
+          clearInterval(dotAnim);
+          resultsDiv.innerHTML = `<p class="result-fail">❌ Lost connection after multiple retries. The server may be unavailable — please wait 60 seconds and try again.</p>`;
+          btn.disabled = false; btn.textContent = "Run Starshot Analysis";
+        }
+      }
     };
     setTimeout(poll,getDelay(0));
   }catch(err){resultsDiv.innerHTML=`<p class="result-fail">❌ ${err.name==="AbortError"?"Upload timed out.":"Unexpected error."}</p>`;btn.disabled=false;btn.textContent="Run Starshot Analysis";}
