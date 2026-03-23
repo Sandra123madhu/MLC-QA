@@ -269,27 +269,37 @@ def _extract_pf_chart_data(pf):
             except: pass
 
         # ── Per-leaf max errors across all pickets ──
-        if hasattr(rd, "mlc_errors_by_leaf"):
-            val = rd.mlc_errors_by_leaf
-            # may be a dict {leaf_num: error} or a list
-            if isinstance(val, dict):
-                leaf_max = [round(abs(float(v)), 4) for v in val.values()]
-            elif hasattr(val, "__len__"):
-                leaf_max = [round(abs(float(v)), 4) for v in val]
+        for attr_name in ["mlc_errors_by_leaf", "mlc_error", "leaf_errors", "errors"]:
+            if hasattr(rd, attr_name):
+                val = getattr(rd, attr_name)
+                if isinstance(val, dict):
+                    leaf_max = [round(abs(float(v)), 4) for v in val.values()]
+                    break
+                elif hasattr(val, "__len__") and not isinstance(val, (str, bool)):
+                    try:
+                        leaf_max = [round(abs(float(v)), 4) for v in val]
+                        if leaf_max: break
+                    except: pass
 
-        # ── Per-picket mean errors using pf.pickets[].mlc_meas ──
-        if hasattr(pf, "pickets") and pf.pickets:
+        # ── Per-picket mean errors: try rd.pickets first, then pf.pickets ──
+        if hasattr(rd, "pickets") and rd.pickets:
+            for pk in rd.pickets:
+                for attr in ["mean_error", "mean_error_mm", "error", "max_error"]:
+                    raw = getattr(pk, attr, None)
+                    if raw is not None:
+                        try: picket_means.append(round(abs(float(raw)), 4)); break
+                        except: pass
+
+        if not picket_means and hasattr(pf, "pickets") and pf.pickets:
             for picket in pf.pickets:
-                if hasattr(picket, "mlc_meas") and picket.mlc_meas:
+                meas_list = getattr(picket, "mlc_meas", None) or getattr(picket, "meas", None)
+                if meas_list:
                     errs = []
-                    for meas in picket.mlc_meas:
-                        # try .error, .error_mm, .offset
+                    for meas in meas_list:
                         for attr in ["error", "error_mm", "offset"]:
                             raw = getattr(meas, attr, None)
                             if raw is not None:
-                                try:
-                                    errs.append(abs(float(raw)))
-                                    break
+                                try: errs.append(abs(float(raw))); break
                                 except: pass
                     if errs:
                         picket_means.append(round(float(np.mean(errs)), 4))
