@@ -47,6 +47,38 @@
     <strong>Note:</strong> Upload <strong>2 or more .dcm files</strong> (one per gantry angle) or a single <strong>.zip</strong> archive. A minimum of 2 images is required for analysis.
   </div>
 
+  <!-- ── Wrong-test warning modal (shared) ── -->
+  <div id="wrongTestModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(6,12,24,0.82);backdrop-filter:blur(4px);align-items:center;justify-content:center;">
+    <div style="background:var(--surface);border:1px solid rgba(201,64,80,0.45);border-left:4px solid var(--fail);border-radius:var(--r-lg);padding:32px 28px;max-width:480px;width:92%;box-shadow:0 8px 48px rgba(0,0,0,0.55);">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;">
+        <div style="width:46px;height:46px;border-radius:50%;background:rgba(201,64,80,0.15);border:1.5px solid rgba(201,64,80,0.4);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0;">&#9888;</div>
+        <div>
+          <div style="font-family:var(--mono);font-size:0.95rem;font-weight:600;color:var(--fail);letter-spacing:0.05em;">WRONG TEST FILE DETECTED</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px;font-family:var(--mono);">File type mismatch &mdash; analysis blocked</div>
+        </div>
+      </div>
+      <p style="font-size:0.85rem;color:var(--text-2);line-height:1.7;margin-bottom:10px;">
+        The selected file appears to be a <strong id="wtm-detected-name" style="color:var(--accent);">&#8230;</strong> image, not a <strong id="wtm-page-name" style="color:var(--text-1);">&#8230;</strong> file.
+      </p>
+      <p style="font-size:0.85rem;color:var(--text-2);line-height:1.7;margin-bottom:22px;">
+        Running the wrong analysis will produce <strong style="color:var(--fail);">clinically meaningless results</strong>. Please upload this file on the correct page:
+      </p>
+      <a id="wtm-correct-link" href="#" style="display:flex;align-items:center;gap:12px;padding:13px 16px;background:rgba(43,159,212,0.08);border:1px solid var(--accent-border);border-radius:var(--r);text-decoration:none;margin-bottom:20px;">
+        <span id="wtm-correct-icon" style="font-size:1.2rem;">&#128194;</span>
+        <div>
+          <div id="wtm-correct-label" style="font-size:0.85rem;font-weight:600;color:var(--accent);">Go to correct test</div>
+          <div id="wtm-correct-sub"   style="font-size:0.74rem;color:var(--text-muted);margin-top:2px;">&#8230;</div>
+        </div>
+        <span style="margin-left:auto;color:var(--text-muted);font-size:1rem;">&#8594;</span>
+      </a>
+      <div style="display:flex;gap:10px;">
+        <button onclick="dismissWrongTestModal()" style="flex:1;padding:10px 0;background:transparent;border:1px solid var(--border);border-radius:var(--r);color:var(--text-muted);font-size:0.82rem;cursor:pointer;">Choose a Different File</button>
+        <button onclick="proceedAnyway()" style="flex:1;padding:10px 0;background:rgba(201,64,80,0.10);border:1px solid rgba(201,64,80,0.32);border-radius:var(--r);color:var(--fail);font-size:0.82rem;cursor:pointer;font-family:var(--mono);">Proceed Anyway</button>
+      </div>
+      <p style="font-size:0.71rem;color:var(--text-muted);margin-top:14px;text-align:center;line-height:1.55;">Detection uses DICOM metadata and filename heuristics. Use "Proceed Anyway" only if you are certain this is a false positive.</p>
+    </div>
+  </div>
+
   <div class="upload-card">
     <div class="upload-zone" id="uploadZone">
       <input type="file" id="wlFile" accept=".dcm,.zip" multiple onchange="onFileSelected(this)"/>
@@ -108,15 +140,33 @@ fetch(`${BACKEND_URL}/auth/me`, { headers: { "Authorization": `Bearer ${token}` 
   } catch { el.innerHTML = `<div class="status-dot-sm dot-warn"></div><span>Server waking up — wait ~60s</span>`; setTimeout(() => location.reload(), 30000); }
 })();
 
-function onFileSelected(input) {
-  const label = document.getElementById("fileLabel"); const btn = document.getElementById("analyzeBtn"); const count = input.files.length;
+let _wrongFileConfirmed = false;
+
+async function onFileSelected(input) {
+  const label = document.getElementById("fileLabel");
+  const btn   = document.getElementById("analyzeBtn");
+  const count = input.files.length;
+  _wrongFileConfirmed = false;
+
   if (count === 0) { label.textContent = ""; btn.disabled = true; return; }
+
+  // Check DCM files for wrong-test type before accepting
+  const dcmFiles = Array.from(input.files).filter(f => f.name.toLowerCase().endsWith(".dcm"));
+  if (dcmFiles.length > 0) {
+    const detected = await detectDicomType(dcmFiles[0]);
+    if (detected !== "winston_lutz" && detected !== "unknown") {
+      btn.disabled = true;
+      showWrongTestModal({ detectedType: detected, pageType: "winston_lutz", analyzeBtn: btn });
+      return;
+    }
+  }
+
   if (count === 1) {
     const ext = input.files[0].name.split(".").pop().toLowerCase();
-    if (ext === "zip") { label.textContent = `Selected: ${input.files[0].name}`; btn.disabled = false; }
-    else { label.innerHTML = `<span style="color:var(--warn)">⚠ Only 1 file selected — minimum 2 DICOM images required</span>`; btn.disabled = true; }
+    if (ext === "zip") { label.textContent = "Selected: " + input.files[0].name; btn.disabled = false; }
+    else { label.innerHTML = '<span style="color:var(--warn)">&#9888; Only 1 file selected — minimum 2 DICOM images required</span>'; btn.disabled = true; }
   } else {
-    label.textContent = `Selected: ${count} files`;
+    label.textContent = "Selected: " + count + " files";
     btn.disabled = false;
   }
 }
@@ -133,6 +183,12 @@ async function runAnalysis() {
   if (files.length===1 && files[0].name.toLowerCase().endsWith(".zip")) { formData.append("file",files[0]); formData.append("upload_type","zip"); }
   else {
     if (files.find(f=>!f.name.toLowerCase().endsWith(".dcm"))) { resultsDiv.innerHTML=`<p class="result-fail">❌ All files must be .dcm when uploading multiple files.</p>`; return; }
+    if (!_wrongFileConfirmed) {
+      const detected = await detectDicomType(files[0]);
+      if (detected !== "winston_lutz" && detected !== "unknown") {
+        showWrongTestModal({ detectedType: detected, pageType: "winston_lutz", analyzeBtn: btn }); return;
+      }
+    }
     if (files.length<2) { resultsDiv.innerHTML=`<p class="result-fail">❌ Winston-Lutz requires at least 2 DICOM images.</p>`; return; }
     files.forEach(f=>formData.append("files",f)); formData.append("upload_type","multi");
   }
@@ -286,5 +342,7 @@ async function fetchImageAsBase64(url){const res=await fetch(url);const blob=awa
 function logout(){localStorage.removeItem("mlcqa_token");localStorage.removeItem("mlcqa_name");window.location.href="index.html";}
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <script src="dicom-detect.js"></script>
 </body>
 </html>
