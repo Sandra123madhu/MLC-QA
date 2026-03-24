@@ -150,7 +150,7 @@ async def debug_pf(file: UploadFile = File(...), u=Depends(get_current_user)):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".dcm", dir="/tmp") as tmp:
         shutil.copyfileobj(file.file, tmp); path = tmp.name
     try:
-        pf = PicketFence(path); pf.analyze(tolerance=0.5, action_tolerance=0.25)
+        pf = PicketFence(path); pf.analyze(tolerance=1.0, action_tolerance=0.5)
         info = {"pf_attrs": [a for a in dir(pf) if not a.startswith("_")]}
 
         # --- pf.mlc inspection ---
@@ -402,7 +402,7 @@ def run_analysis(job_id, temp_path, user_email, filename):
     plot_path = None
     try:
         pf = PicketFence(temp_path)
-        pf.analyze(tolerance=0.5, action_tolerance=0.25)
+        pf.analyze(tolerance=1.0, action_tolerance=0.5)
         summary    = pf.results()
         passed     = pf.passed
         chart_data = _extract_pf_chart_data(pf)
