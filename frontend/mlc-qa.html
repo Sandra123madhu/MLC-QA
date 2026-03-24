@@ -153,12 +153,9 @@ fetch(`${BACKEND_URL}/auth/me`, { headers: { "Authorization": `Bearer ${token}` 
   } catch { el.innerHTML = `<div class="status-dot-sm dot-warn"></div><span>Server waking up — wait ~60s</span>`; setTimeout(() => location.reload(), 30000); }
 })();
 
-let _wrongFileConfirmed = false;
-
 async function onFileSelected(input) {
   const label = document.getElementById("fileLabel");
   const btn   = document.getElementById("analyzeBtn");
-  _wrongFileConfirmed = false;
 
   if (input.files.length > 0) {
     const file = input.files[0];
@@ -187,7 +184,7 @@ async function runAnalysis() {
   const fileInput = document.getElementById("dicomFile"); const btn = document.getElementById("analyzeBtn"); const resultsDiv = document.getElementById("resultsBody");
   if (!fileInput.files.length) { alert("Please select a file first."); return; }
   if (!fileInput.files[0].name.toLowerCase().endsWith(".dcm")) { resultsDiv.innerHTML = `<p class="result-fail">&#10060; Only .dcm files are supported.</p>`; return; }
-  if (!_wrongFileConfirmed) {
+  if (!isWrongFileConfirmed()) {
     const detected = await detectDicomType(fileInput.files[0]);
     if (detected !== "picket_fence" && detected !== "unknown") {
       showWrongTestModal({ detectedType: detected, pageType: "picket_fence", analyzeBtn: btn });
