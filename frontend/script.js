@@ -1,6 +1,14 @@
 const BACKEND_URL = "https://mlc-qa.onrender.com";
 
-// --- FIX 1: Keep-alive ping every 10 minutes to prevent Render cold starts ---
+// --- Auth: redirect to login if no token found ---
+const token = localStorage.getItem("mlcqa_token");
+if (!token) { window.location.href = "login.html"; }
+
+function authHeaders() {
+    return { "Authorization": `Bearer ${localStorage.getItem("mlcqa_token")}` };
+}
+
+// --- Keep-alive ping every 10 minutes to prevent Render cold starts ---
 setInterval(() => {
     fetch(`${BACKEND_URL}/`).catch(() => {});
 }, 10 * 60 * 1000);
@@ -75,6 +83,7 @@ async function uploadFile() {
         try {
             response = await fetch(`${BACKEND_URL}/analyze`, {
                 method: 'POST',
+                headers: authHeaders(),
                 body: formData,
                 signal: controller.signal
             });
@@ -149,7 +158,9 @@ async function uploadFile() {
             }
 
             try {
-                const resultRes = await fetch(`${BACKEND_URL}/result/${jobId}`);
+                const resultRes = await fetch(`${BACKEND_URL}/result/${jobId}`, {
+                    headers: authHeaders()
+                });
                 const result = await resultRes.json();
 
                 if (result.status === "Processing") {
