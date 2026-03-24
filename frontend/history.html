@@ -369,73 +369,108 @@ async function downloadHistoryPDF(i) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const W = 210;
+  const M = 14;
 
-  doc.setFillColor(0, 212, 255);
-  doc.rect(0, 0, W, 18, "F");
+  // Header bar — dark background with accent stripe
+  doc.setFillColor(15, 30, 55);
+  doc.rect(0, 0, W, 26, "F");
+  doc.setFillColor(0, 175, 215);
+  doc.rect(0, 0, 5, 26, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
-  doc.setTextColor(4, 13, 26);
-  doc.text("MLC QA — " + a.test_type + " Report", 14, 12);
+  doc.setTextColor(255, 255, 255);
+  doc.text("MLC QA — " + a.test_type + " Report", M + 4, 12);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
-  doc.setTextColor(120, 140, 160);
+  doc.setTextColor(180, 210, 230);
   const dt = new Date(a.created_at).toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
-  doc.text("Date: " + dt, 14, 26);
-  doc.text("File: " + (a.filename || "—"), 14, 31);
+  doc.text("Date: " + dt, M + 4, 19);
+  doc.text("File: " + (a.filename || "—"), M + 4, 24);
 
-  const badgeColor = a.passed ? [0, 229, 160] : [255, 77, 109];
+  let y = 36;
+
+  // Pass/Fail badge
+  const badgeColor = a.passed ? [0, 168, 107] : [195, 45, 70];
   doc.setFillColor(...badgeColor);
-  doc.roundedRect(14, 37, 36, 10, 2, 2, "F");
+  doc.roundedRect(M, y, W - M * 2, 13, 2, 2, "F");
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.setTextColor(4, 13, 26);
-  doc.text(a.passed ? "✓  PASS" : "✗  FAIL", 22, 44);
+  doc.setFontSize(11);
+  doc.setTextColor(255, 255, 255);
+  doc.text(a.passed ? "✓  PASS" : "✗  FAIL", M + 5, y + 8);
+  y += 18;
 
-  doc.setDrawColor(14, 42, 74);
-  doc.line(14, 51, W - 14, 51);
-
-  let y = 57;
+  // Analysis image
   if (a.image_url) {
     try {
       const res  = await fetch(a.image_url);
       const blob = await res.blob();
-      const b64  = await new Promise((res, rej) => {
+      const b64  = await new Promise((resolve, reject) => {
         const r = new FileReader();
-        r.onloadend = () => res(r.result);
-        r.onerror = rej;
+        r.onloadend = () => resolve(r.result);
+        r.onerror = reject;
         r.readAsDataURL(blob);
       });
-      const imgW = W - 28;
-      const imgH = imgW * 0.45;
-      doc.addImage(b64, "PNG", 14, y, imgW, imgH);
-      y += imgH + 10;
-    } catch {}
+      const imgW = W - M * 2;
+      const imgH = imgW * 0.5;
+      doc.setDrawColor(180, 200, 220);
+      doc.setLineWidth(0.3);
+      doc.rect(M, y, imgW, imgH);
+      doc.addImage(b64, "PNG", M, y, imgW, imgH);
+      y += imgH + 5;
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(7.5);
+      doc.setTextColor(80, 105, 135);
+      doc.text("Figure: Pylinac " + (a.test_type || "") + " — Analyzed Image", M, y);
+      y += 9;
+    } catch { y += 4; }
   }
 
+  // Summary box — light background with dark text
+  const summaryLines = doc.splitTextToSize(a.summary || "", W - M * 2 - 10);
+  const boxH = summaryLines.length * 5.4 + 16;
+  doc.setFillColor(245, 248, 252);
+  doc.roundedRect(M, y, W - M * 2, boxH, 2, 2, "F");
+  doc.setDrawColor(200, 215, 230);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(M, y, W - M * 2, boxH, 2, 2, "S");
+  y += 7;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(0, 212, 255);
-  doc.text("ANALYSIS SUMMARY", 14, y);
-  y += 6;
-
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 40, 80);
+  doc.text("ANALYSIS SUMMARY", M + 5, y);
+  y += 7;
   doc.setFont("courier", "normal");
-  doc.setFontSize(7.5);
-  doc.setTextColor(180, 200, 210);
-  const lines = doc.splitTextToSize(a.summary || "", W - 28);
-  lines.forEach(line => {
-    if (y > 275) { doc.addPage(); y = 20; }
-    doc.text(line, 14, y);
-    y += 4.5;
+  doc.setFontSize(8.2);
+  doc.setTextColor(20, 45, 80);
+  summaryLines.forEach(line => {
+    if (y > 272) {
+      doc.addPage();
+      y = 18;
+      doc.setFillColor(245, 248, 252);
+      doc.roundedRect(M, y - 4, W - M * 2, 240, 2, 2, "F");
+      doc.setFont("courier", "normal");
+      doc.setFontSize(8.2);
+      doc.setTextColor(20, 45, 80);
+    }
+    doc.text(line, M + 5, y);
+    y += 5.4;
   });
 
+  // Footer on every page
   const pages = doc.internal.getNumberOfPages();
   for (let p = 1; p <= pages; p++) {
     doc.setPage(p);
+    doc.setFillColor(235, 241, 248);
+    doc.rect(0, 284, W, 13, "F");
+    doc.setDrawColor(180, 200, 220);
+    doc.setLineWidth(0.3);
+    doc.line(0, 284, W, 284);
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(7);
-    doc.setTextColor(80, 110, 130);
-    doc.text("MLC QA Platform · For clinical physics use only", 14, 290);
-    doc.text("Page " + p + " of " + pages, W - 30, 290);
+    doc.setTextColor(60, 85, 120);
+    doc.text("MLC QA Platform  ·  For clinical physics use only  ·  Not for diagnostic use", M, 291);
+    doc.text("Page " + p + " of " + pages, W - 28, 291);
   }
   doc.save("MLCQA_" + (a.filename || "report") + ".pdf");
 }
