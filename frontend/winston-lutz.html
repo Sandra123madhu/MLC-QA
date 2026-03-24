@@ -140,13 +140,10 @@ fetch(`${BACKEND_URL}/auth/me`, { headers: { "Authorization": `Bearer ${token}` 
   } catch { el.innerHTML = `<div class="status-dot-sm dot-warn"></div><span>Server waking up — wait ~60s</span>`; setTimeout(() => location.reload(), 30000); }
 })();
 
-let _wrongFileConfirmed = false;
-
 async function onFileSelected(input) {
   const label = document.getElementById("fileLabel");
   const btn   = document.getElementById("analyzeBtn");
   const count = input.files.length;
-  _wrongFileConfirmed = false;
 
   if (count === 0) { label.textContent = ""; btn.disabled = true; return; }
 
@@ -183,7 +180,7 @@ async function runAnalysis() {
   if (files.length===1 && files[0].name.toLowerCase().endsWith(".zip")) { formData.append("file",files[0]); formData.append("upload_type","zip"); }
   else {
     if (files.find(f=>!f.name.toLowerCase().endsWith(".dcm"))) { resultsDiv.innerHTML=`<p class="result-fail">❌ All files must be .dcm when uploading multiple files.</p>`; return; }
-    if (!_wrongFileConfirmed) {
+    if (!isWrongFileConfirmed()) {
       const detected = await detectDicomType(files[0]);
       if (detected !== "winston_lutz" && detected !== "unknown") {
         showWrongTestModal({ detectedType: detected, pageType: "winston_lutz", analyzeBtn: btn }); return;
