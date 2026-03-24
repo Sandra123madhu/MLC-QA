@@ -138,12 +138,10 @@ fetch(`${BACKEND_URL}/auth/me`,{headers:{"Authorization":`Bearer ${token}`}})
 })();
 
 let _autoRadius=null;
-let _wrongFileConfirmed=false;
 
 async function onFileSelected(input){
   const label = document.getElementById("fileLabel");
   const btn   = document.getElementById("analyzeBtn");
-  _wrongFileConfirmed = false;
 
   if (input.files.length > 0) {
     const file = input.files[0];
@@ -206,7 +204,7 @@ async function runAnalysis(){
   if(!["dcm","zip"].includes(ext)){resultsDiv.innerHTML=`<p class="result-fail">❌ Only .dcm or .zip files are supported.</p>`;return;}
 
   // Second-pass safety check — re-run detection in case user bypassed the onFileSelected guard
-  if (!_wrongFileConfirmed && ext === "dcm") {
+  if (!isWrongFileConfirmed() && ext === "dcm") {
     const detected = await detectDicomType(file);
     if (detected !== "starshot" && detected !== "unknown") {
       showWrongTestModal({ detectedType: detected, pageType: "starshot", analyzeBtn: btn }); return;
