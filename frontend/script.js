@@ -2,56 +2,96 @@ const BACKEND_URL = "https://mlc-qa.onrender.com";
 
 // --- Auth: redirect to login if no token found ---
 const token = localStorage.getItem("mlcqa_token");
-if (!token) { window.location.href = "login.html"; }
+const isAuthPage = window.location.pathname.includes("login.html") || window.location.pathname.includes("signup.html") || window.location.pathname.endsWith("/");
 
-function authHeaders() {
-    return { "Authorization": `Bearer ${localStorage.getItem("mlcqa_token")}` };
+if (!token && !isAuthPage) { 
+    window.location.href = "login.html"; 
 }
 
-// --- Keep-alive ping every 10 minutes to prevent Render cold starts ---
-setInterval(() => {
+function authHeaders() {
+    return { 
+        "Authorization": `Bearer ${localStorage.getItem("mlcqa_token")}`,
+        "Content-Type": "application/json"
+    };
+}
+
+function logout() {
+    localStorage.removeItem("mlcqa_token");
+    localStorage.removeItem("mlcqa_name");
+    window.location.href = "login.html";
+}
+
+// --- Keep-alive ping every 14 minutes to prevent Render cold starts ---
+function startKeepAlive() {
+  setInterval(() => {
+    console.log("Keep-alive ping...");
     fetch(`${BACKEND_URL}/`).catch(() => {});
-}, 10 * 60 * 1000);
+  }, 14 * 60 * 1000);
+}
+startKeepAlive();
 
 
-// --- FIX 2: Wake-up check on page load with visible user feedback ---
-window.addEventListener('load', () => {
-    const statusDiv = document.getElementById('results');
-    const uploadBtn = document.getElementById('uploadBtn');
+// --- Universal Server Status Check ---
+async function checkServer(elementId, btnId) {
+    const el = document.getElementById(elementId);
+    const btn = btnId ? document.getElementById(btnId) : null;
+    
+    if (!el) return;
+    
+    el.innerHTML = `<div class="status-dot-sm dot-warn"></div><span>Checking server status...</span>`;
+    if (btn) btn.disabled = true;
 
-    if (uploadBtn) uploadBtn.disabled = true;
-    if (statusDiv) statusDiv.innerHTML = `<p style="color: #aaa;">⏳ Connecting to analysis server, please wait...</p>`;
+    async function ping() {
+        try {
+            const start = Date.now();
+            const res = await fetch(`${BACKEND_URL}/`);
+            if (res.ok) {
+                el.innerHTML = `<div class="status-dot-sm dot-ok"></div><span>Server online</span>`;
+                if (btn) btn.disabled = false;
+                return true;
+            }
+        } catch (e) {}
+        return false;
+    }
 
-    let wakeAttempts = 0;
-    const maxWakeAttempts = 20;
+    if (await ping()) return;
 
-    const wakeUp = () => {
-        fetch(`${BACKEND_URL}/`)
-            .then(res => {
-                if (res.ok) {
-                    if (uploadBtn) uploadBtn.disabled = false;
-                    if (statusDiv) statusDiv.innerHTML = `<p style="color: green;">✅ Server is ready. You may upload your file.</p>`;
-                } else {
-                    retry();
-                }
-            })
-            .catch(() => retry());
-    };
-
-    const retry = () => {
-        wakeAttempts++;
-        if (wakeAttempts < maxWakeAttempts) {
-            if (statusDiv) statusDiv.innerHTML = `<p style="color: #aaa;">⏳ Server is waking up... (${wakeAttempts * 5}s elapsed, please wait up to 90s)</p>`;
-            setTimeout(wakeUp, 5000);
-        } else {
-            if (uploadBtn) uploadBtn.disabled = false;
-            if (statusDiv) statusDiv.innerHTML = `<p style="color: orange;">⚠️ Server is slow to respond. You can still try uploading.</p>`;
+    // If not immediately online, start "waking up" countdown
+    let seconds = 60;
+    el.innerHTML = `<div class="status-dot-sm dot-warn" style="animation:blink 1s infinite"></div>
+                    <span>Server waking up... (~${seconds}s)</span>`;
+    
+    const interval = setInterval(async () => {
+        seconds -= 2;
+        if (seconds <= 0) seconds = 5; // keep it low but non-zero
+        
+        el.innerHTML = `<div class="status-dot-sm dot-warn" style="animation:blink 1s infinite"></div>
+                        <span>Server waking up... (~${seconds}s)</span>`;
+        
+        if (await ping()) {
+            clearInterval(interval);
         }
-    };
+    }, 2000);
+}
 
-    wakeUp();
+// Auto-run check on pages that have the serverStatus element
+window.addEventListener('DOMContentLoaded', () => {
+    if (document.getElementById('serverStatus')) {
+        checkServer('serverStatus', 'analyzeBtn' || 'loginBtn');
+    }
 });
 
+
+function togglePassword(inputId, iconEl) {
+    const input = document.getElementById(inputId);
+    if (input.type === "password") {
+        input.type = "text";
+        iconEl.textContent = "👁️";
+    } else {
+        input.type = "password";
+        iconEl.textContent = "🙈";
+    }
+}
 
 async function uploadFile() {
     const fileInput = document.getElementById('dicomFile');
