@@ -54,6 +54,29 @@
   </div>
 
   <div class="section-head">
+    <h2>Performance Stats</h2>
+    <p>Live metrics from your analysis history</p>
+  </div>
+  <div class="metrics-row" style="margin-bottom: 40px;">
+    <div class="metric-card">
+      <div class="metric-label">Total Tests Run</div>
+      <div class="metric-value metric-accent" id="stats-total">—</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Pass Rate</div>
+      <div class="metric-value metric-pass" id="stats-pass">—</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Fails Detected</div>
+      <div class="metric-value metric-fail" id="stats-fail">—</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Last Activity</div>
+      <div class="metric-value" id="stats-last" style="font-size: 0.85rem; padding-top: 4px;">—</div>
+    </div>
+  </div>
+
+  <div class="section-head">
     <h2>Analysis Modules</h2>
     <p>Select a test to run your QA analysis</p>
   </div>
@@ -89,27 +112,41 @@
 </main>
 
 <script>
-const BACKEND_URL = "https://mlc-qa.onrender.com";
-const token = localStorage.getItem("mlcqa_token");
-const name  = localStorage.getItem("mlcqa_name");
-if (!token) { window.location.href = "login.html"; }
-if (name) {
-  document.getElementById("userName").textContent = name;
-  document.getElementById("sidebarName").textContent = name;
-  document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
+// BACKEND_URL, token, and auth redirect are now handled/available via script.js
+const tokenVal = localStorage.getItem("mlcqa_token");
+const nameVal  = localStorage.getItem("mlcqa_name");
+
+if (nameVal) {
+  document.getElementById("userName").textContent = nameVal;
+  document.getElementById("sidebarName").textContent = nameVal;
+  document.getElementById("avatarInitial").textContent = nameVal.charAt(0).toUpperCase();
 }
-fetch(`${BACKEND_URL}/auth/me`, { headers: { "Authorization": `Bearer ${token}` } })
-  .then(r => { if (!r.ok) logout(); return r.json(); })
-  .then(d => {
-    document.getElementById("userName").textContent = d.name;
-    document.getElementById("sidebarName").textContent = d.name;
-    document.getElementById("avatarInitial").textContent = d.name.charAt(0).toUpperCase();
-    localStorage.setItem("mlcqa_name", d.name);
-  }).catch(() => {});
-function logout() {
-  localStorage.removeItem("mlcqa_token"); localStorage.removeItem("mlcqa_name");
-  window.location.href = "index.html";
+
+async function loadStats() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/history`, { headers: authHeaders() });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.analyses || data.analyses.length === 0) return;
+
+    const total = data.analyses.length;
+    const passed = data.analyses.filter(a => a.passed).length;
+    const failed = total - passed;
+    const passRate = ((passed / total) * 100).toFixed(1);
+
+    const last = data.analyses[0];
+    const lastDate = new Date(last.created_at).toLocaleDateString("en-GB", { day:'2-digit', month:'short' });
+
+    document.getElementById("stats-total").textContent = total;
+    document.getElementById("stats-pass").textContent  = `${passRate}%`;
+    document.getElementById("stats-fail").textContent  = failed;
+    document.getElementById("stats-last").textContent  = `${lastDate} (${last.test_type})`;
+  } catch (err) {
+    console.error("Stats error:", err);
+  }
 }
+
+document.addEventListener("DOMContentLoaded", loadStats);
 </script>
 </body>
 </html>
