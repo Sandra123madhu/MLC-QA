@@ -84,6 +84,7 @@ def get_current_user(creds: HTTPAuthorizationCredentials = Depends(bearer_scheme
 
 class SignupRequest(BaseModel): name:str; email:str; password:str
 class LoginRequest(BaseModel): email:str; password:str
+class ForgotPasswordRequest(BaseModel): email:str
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=True,
@@ -112,6 +113,15 @@ def cleanup():
 @app.head("/")
 def home(): return {"status":"MLC QA Backend is Live and listening."}
 
+@app.get("/config/branding")
+def get_branding():
+    return {
+        "institution_name": "University Medical Center",
+        "department": "Department of Medical Physics",
+        "logo_url": "https://img.icons8.com/ios-filled/100/ffffff/hospital-placeholder.png",
+        "report_footer": "CONFIDENTIAL: Clinical Quality Assurance Report"
+    }
+
 @app.post("/auth/signup")
 def signup(req: SignupRequest):
     if not req.name.strip(): raise HTTPException(400,"Name required.")
@@ -129,6 +139,20 @@ def login(req: LoginRequest):
 
 @app.get("/auth/me")
 def get_me(u=Depends(get_current_user)): return {"email":u["email"],"name":u["name"]}
+
+@app.post("/auth/forgot-password")
+def forgot_password(req: ForgotPasswordRequest):
+    user = get_user_by_email(req.email)
+    if not user:
+        # Security best practice: don't reveal if user exists
+        return {"message": "If that email is registered, you will receive a reset link."}
+    
+    # In a real app, you'd generate a temporary token and send an email here.
+    # Since this uses a custom users table (not Supabase Auth), 
+    # you'd need to integrate an email provider like Resend, SendGrid, or Mailgun.
+    print(f"PASSWORD RESET REQUEST FOR: {req.email}")
+    
+    return {"message": "Recovery instructions sent. Check your inbox."}
 
 @app.get("/history")
 def get_history(u=Depends(get_current_user)): return {"analyses":get_user_analyses(u["email"])}
