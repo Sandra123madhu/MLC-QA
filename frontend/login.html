@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Sign In — MLC QA</title>
   <link rel="stylesheet" href="style.css"/>
+  <script src="script.js"></script>
 </head>
 <body>
 <div class="auth-page">
@@ -26,8 +27,11 @@
   </div>
   <div class="field">
     <label>Password</label>
-    <input type="password" id="password" placeholder="••••••••" autocomplete="current-password"/>
-    <div style="text-align:right;margin-top:5px"><a href="#" style="font-size:0.75rem;color:var(--text-muted);font-family:var(--mono)">Forgot password?</a></div>
+    <div class="password-wrapper">
+      <input type="password" id="password" placeholder="••••••••" autocomplete="current-password"/>
+      <span class="toggle-password" onclick="togglePassword('password', this)">🙈</span>
+    </div>
+    <div style="text-align:right;margin-top:5px"><a href="#" onclick="showForgotPrompt()" style="font-size:0.75rem;color:var(--text-muted);font-family:var(--mono)">Forgot password?</a></div>
   </div>
   <button class="btn-auth" id="loginBtn" onclick="doLogin()">Sign In</button>
   <div class="auth-divider">— or —</div>
@@ -35,17 +39,8 @@
 </div>
 </div>
 <script>
-const BACKEND_URL = "https://mlc-qa.onrender.com";
+// BACKEND_URL and auth redirect are now in script.js
 if (localStorage.getItem("mlcqa_token")) { window.location.href = "dashboard.html"; }
-(async () => {
-  const el = document.getElementById("serverStatus");
-  try {
-    const r = await fetch(`${BACKEND_URL}/`);
-    el.innerHTML = r.ok
-      ? `<div class="status-dot-sm dot-ok"></div><span>Server online</span>`
-      : `<div class="status-dot-sm dot-warn"></div><span>Server degraded</span>`;
-  } catch { el.innerHTML = `<div class="status-dot-sm dot-warn"></div><span>Server waking up — please wait ~60s</span>`; }
-})();
 document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
 async function doLogin() {
   const email = document.getElementById("email").value.trim();
@@ -63,6 +58,31 @@ async function doLogin() {
     localStorage.setItem("mlcqa_name", data.name);
     window.location.href = "dashboard.html";
   } catch { msg.className="msg error"; msg.textContent="Server unreachable. Wait 30–60 seconds and try again."; btn.disabled=false; btn.textContent="Sign In"; }
+}
+
+async function showForgotPrompt() {
+  const email = prompt("Enter your email address to reset your password:");
+  if (!email) return;
+  const msg = document.getElementById("msg");
+  msg.className = "msg"; msg.textContent = "Processing request...";
+  try {
+    const res = await fetch(`${BACKEND_URL}/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      msg.className = "msg success";
+      msg.textContent = "Recovery instructions sent (if account exists). Check your email.";
+    } else {
+      msg.className = "msg error";
+      msg.textContent = data.detail || "Error sending recovery email.";
+    }
+  } catch (err) {
+    msg.className = "msg error";
+    msg.textContent = "Connection failed. Please try again.";
+  }
 }
 </script>
 </body>
