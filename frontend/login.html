@@ -48,7 +48,18 @@ async function doLogin() {
   const btn = document.getElementById("loginBtn");
   const msg = document.getElementById("msg");
   msg.className = "msg"; msg.textContent = "";
+
   if (!email || !password) { msg.className = "msg error"; msg.textContent = "Please enter your email and password."; return; }
+
+  // FIX: If the button is still disabled the server hasn't confirmed it's
+  // online yet. Show a helpful message instead of a confusing network error.
+  const statusEl = document.getElementById("serverStatus");
+  if (btn.disabled || (statusEl && statusEl.textContent.includes("waking"))) {
+    msg.className = "msg error";
+    msg.textContent = "Server is still starting up. Please wait until the status shows 'Server online'.";
+    return;
+  }
+
   btn.disabled = true; btn.textContent = "Signing in...";
   try {
     const res = await fetch(`${BACKEND_URL}/auth/login`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({email,password}) });
