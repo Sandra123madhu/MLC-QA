@@ -235,9 +235,11 @@
 </main>
 
 <script>
-const BACKEND_URL = "https://mlc-qa-1.onrender.com";
-const token = localStorage.getItem("mlcqa_token");
-const name  = localStorage.getItem("mlcqa_name");
+// Redundant BACKEND_URL and names removed, now handled globals from script.js
+if (name) {
+  document.getElementById("sidebarName").textContent = name;
+  document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
+}
 
 if (!token) { window.location.href = "login.html"; }
 
