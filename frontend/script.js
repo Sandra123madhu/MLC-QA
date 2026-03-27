@@ -1,8 +1,24 @@
-const BACKEND_URL = (window.location.hostname === "localhost" || 
-                     window.location.hostname === "127.0.0.1" || 
-                     window.location.protocol === "file:") 
-                    ? "http://127.0.0.1:10000" 
-                    : "https://mlc-qa-1.onrender.com";
+function getBackendUrl() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('backend') === 'local') return "http://127.0.0.1:10000";
+    if (params.get('backend') === 'prod')  return "https://mlc-qa-1.onrender.com";
+
+    const h = window.location.hostname;
+    const p = window.location.protocol;
+
+    // Local detection: localhost, 127.0.0.1, empty (file://), or private IP ranges
+    const isLocal = h === "localhost" || 
+                    h === "127.0.0.1" || 
+                    h === "" || 
+                    p === "file:" ||
+                    h.startsWith("192.168.") || 
+                    h.startsWith("10.") || 
+                    h.startsWith("172.");
+
+    return isLocal ? "http://127.0.0.1:10000" : "https://mlc-qa-1.onrender.com";
+}
+const BACKEND_URL = getBackendUrl();
+console.log("Using backend:", BACKEND_URL);
 
 // --- Auth: redirect to login if no token found ---
 const token = localStorage.getItem("mlcqa_token");
