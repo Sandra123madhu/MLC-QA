@@ -1,29 +1,4 @@
-function getBackendUrl() {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('backend') === 'local') return "http://127.0.0.1:10000";
-    if (params.get('backend') === 'prod')  return "https://mlc-qa-1.onrender.com";
-
-    const h = (window.location.hostname || "").toLowerCase();
-    const p = (window.location.protocol || "").toLowerCase();
-
-    // Local detection: localhost, 127.0.0.1, [::1], empty (file://), or private IP ranges
-    const isLocal = h === "localhost" || 
-                    h === "127.0.0.1" || 
-                    h === "::1" ||
-                    h === "" || 
-                    p === "file:" ||
-                    h.startsWith("192.168.") || 
-                    h.startsWith("10.") || 
-                    h.startsWith("172.");
-
-    const url = isLocal ? "http://127.0.0.1:10000" : "https://mlc-qa-1.onrender.com";
-    
-    // Debug info for the user if they open console
-    console.log("Environment detection:", { hostname: h, protocol: p, isLocal, detectedBackend: url });
-    return url;
-}
-window.BACKEND_URL = getBackendUrl();
-console.log("Using backend:", window.BACKEND_URL);
+const BACKEND_URL = "https://mlc-qa-1.onrender.com";
 
 // --- Auth: redirect to login if no token found ---
 const token = localStorage.getItem("mlcqa_token");
@@ -64,15 +39,13 @@ async function checkServer(elementId, btnId) {
     if (!el) return;
     
     el.innerHTML = `<div class="status-dot-sm dot-warn"></div><span>Checking server status...</span>`;
-    if (btn) btn.disabled = true;
+    // Do NOT disable the button — let the user try to login even while server wakes up
 
     async function ping() {
         try {
-            const start = Date.now();
-            const res = await fetch(`${BACKEND_URL}/`);
+            const res = await fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(5000) });
             if (res.ok) {
                 el.innerHTML = `<div class="status-dot-sm dot-ok"></div><span>Server online</span>`;
-                if (btn) btn.disabled = false;
                 return true;
             }
         } catch (e) {}
@@ -81,17 +54,18 @@ async function checkServer(elementId, btnId) {
 
     if (await ping()) return;
 
-    // If not immediately online, start "waking up" countdown
+    // If not immediately online, start "waking up" countdown but keep button usable
     let seconds = 60;
+    if (btn) btn.disabled = false;
     el.innerHTML = `<div class="status-dot-sm dot-warn" style="animation:blink 1s infinite"></div>
-                    <span>Server waking up... (~${seconds}s)</span>`;
+                    <span>Server waking up... (~${seconds}s) — you can still try signing in</span>`;
     
     const interval = setInterval(async () => {
         seconds -= 2;
-        if (seconds <= 0) seconds = 5; // keep it low but non-zero
+        if (seconds <= 0) seconds = 5;
         
         el.innerHTML = `<div class="status-dot-sm dot-warn" style="animation:blink 1s infinite"></div>
-                        <span>Server waking up... (~${seconds}s)</span>`;
+                        <span>Server waking up... (~${seconds}s) — you can still try signing in</span>`;
         
         if (await ping()) {
             clearInterval(interval);
@@ -102,8 +76,10 @@ async function checkServer(elementId, btnId) {
 // Auto-run check on pages that have the serverStatus element
 window.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('serverStatus')) {
-        const btnId = document.getElementById('analyzeBtn') ? 'analyzeBtn' : 
-                      document.getElementById('loginBtn') ? 'loginBtn' : null;
+        // Pick whichever button exists on this page
+        const btnId = document.getElementById('loginBtn') ? 'loginBtn'
+                    : document.getElementById('analyzeBtn') ? 'analyzeBtn'
+                    : null;
         checkServer('serverStatus', btnId);
     }
 });
@@ -129,7 +105,6 @@ async function uploadFile() {
         return;
     }
 
-    // FIX 3: Validate file type before uploading
     const fileName = fileInput.files[0].name;
     if (!fileName.toLowerCase().endsWith('.dcm')) {
         statusDiv.innerHTML = `<p style="color: red;">❌ Please upload a valid DICOM (.dcm) file.</p>`;
@@ -142,7 +117,6 @@ async function uploadFile() {
     statusDiv.innerHTML = `<p>⏳ Uploading file to physics engine...</p>`;
 
     try {
-        // FIX 4: Upload timeout with AbortController (30s)
         const controller = new AbortController();
         const uploadTimeout = setTimeout(() => controller.abort(), 30000);
 
@@ -203,7 +177,6 @@ async function uploadFile() {
             if (dotsEl) dotsEl.textContent = '.'.repeat(dotCount + 1);
         }, 500);
 
-        // FIX 5: Adaptive polling — fast first, then slows down
         let attempts = 0;
         const maxAttempts = 60;
 
