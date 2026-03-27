@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Picket Fence — MLC QA</title>
   <link rel="stylesheet" href="style.css"/>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Roboto+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
@@ -82,7 +81,6 @@
       <h3>Drop your DICOM file here</h3>
       <p>or click to browse — .dcm files only</p>
       <div class="file-selected" id="fileLabel"></div>
-      <div id="fileWarning" style="color:var(--fail); font-size:0.8rem; margin-top:10px; display:none;">&#9888; Invalid file type. Please upload a .dcm file.</div>
     </div>
     <div class="tolerances">
       <div class="tol-item"><div class="tol-label">Tolerance</div><div class="tol-val">1.0 mm</div></div>
@@ -129,15 +127,8 @@
   </div>
 </main>
 
-<div id="lightboxOverlay" class="lightbox-overlay" onclick="closeLightbox()">
-  <div class="lightbox-content" onclick="event.stopPropagation()">
-    <button class="lightbox-close" onclick="closeLightbox()">&times;</button>
-    <img id="lightboxImg" class="lightbox-img" src="" alt="Enlarged Plot"/>
-  </div>
-</div>
-
 <script>
-const BACKEND_URL = "https://mlc-qa.onrender.com";
+const BACKEND_URL = "https://mlc-qa-1.onrender.com";
 const token = localStorage.getItem("mlcqa_token");
 const name  = localStorage.getItem("mlcqa_name");
 if (!token) { window.location.href = "login.html"; }
@@ -155,32 +146,13 @@ fetch(`${BACKEND_URL}/auth/me`, { headers: { "Authorization": `Bearer ${token}` 
   } catch { el.innerHTML = `<div class="status-dot-sm dot-warn"></div><span>Server waking up — wait ~60s</span>`; setTimeout(() => location.reload(), 30000); }
 })();
 
-// Lightbox functionality
-function openLightbox(src) {
-  document.getElementById("lightboxImg").src = src;
-  document.getElementById("lightboxOverlay").classList.add("active");
-}
-function closeLightbox() {
-  document.getElementById("lightboxOverlay").classList.remove("active");
-}
-
 async function onFileSelected(input) {
   const label = document.getElementById("fileLabel");
   const btn   = document.getElementById("analyzeBtn");
-  const warn  = document.getElementById("fileWarning");
-
-  warn.style.display = "none";
 
   if (input.files.length > 0) {
     const file = input.files[0];
     label.textContent = "Selected: " + file.name;
-    
-    if (!file.name.toLowerCase().endsWith(".dcm")) {
-      warn.style.display = "block";
-      btn.disabled = true;
-      return;
-    }
-
     btn.disabled = false;
 
     if (file.name.toLowerCase().endsWith(".dcm")) {
@@ -213,20 +185,7 @@ async function runAnalysis() {
     }
   }
   btn.disabled = true; btn.textContent = "Uploading...";
-  
-  // Inject Skeleton Loaders
-  resultsDiv.innerHTML = `
-    <div style="margin-bottom: 20px;">
-      <div class="skel skel-text" style="width:140px;margin-bottom:8px;"></div>
-      <div class="skel skel-text" style="width:200px;"></div>
-    </div>
-    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px;">
-      <div class="skel skel-card"></div><div class="skel skel-card"></div>
-      <div class="skel skel-card"></div><div class="skel skel-card"></div>
-    </div>
-    <div class="skel skel-chart"></div>
-  `;
-
+  resultsDiv.innerHTML = `<p>⏳ Uploading file...</p>`;
   try {
     const formData = new FormData(); formData.append("file", fileInput.files[0]);
     const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 60000);
@@ -236,16 +195,18 @@ async function runAnalysis() {
     if (data.status === "Error") { resultsDiv.innerHTML = `<p class="result-fail">❌ ${data.message}</p>`; btn.disabled=false; btn.textContent="Run Picket Fence Analysis"; return; }
     const jobId = data.job_id;
     btn.textContent = "Analysing...";
-    
+    resultsDiv.innerHTML = `<p>🔬 Analysis running<span id="dots">.</span></p>`;
+    let dotCount = 0;
+    const dotAnim = setInterval(() => { dotCount=(dotCount+1)%4; const d=document.getElementById("dots"); if(d) d.textContent=".".repeat(dotCount+1); }, 500);
     let attempts = 0; let networkFails = 0; const getDelay = a => a<5?2000:a<15?3000:5000;
     const poll = async () => {
       attempts++;
-      if (attempts > 60) { resultsDiv.innerHTML=`<p>⚠️ Analysis is taking longer than expected. Please try again.</p>`; btn.disabled=false; btn.textContent="Run Picket Fence Analysis"; return; }
+      if (attempts > 60) { clearInterval(dotAnim); resultsDiv.innerHTML=`<p>⚠️ Analysis is taking longer than expected. Please try again.</p>`; btn.disabled=false; btn.textContent="Run Picket Fence Analysis"; return; }
       try {
         const r = await fetch(`${BACKEND_URL}/result/${jobId}`, { headers:{"Authorization":`Bearer ${token}`} });
         if (!r.ok) {
           networkFails = 0;
-          if (r.status === 404) { resultsDiv.innerHTML=`<p class="result-fail">❌ Job not found. The server may have restarted — please re-upload and try again.</p>`; btn.disabled=false; btn.textContent="Run Picket Fence Analysis"; }
+          if (r.status === 404) { clearInterval(dotAnim); resultsDiv.innerHTML=`<p class="result-fail">❌ Job not found. The server may have restarted — please re-upload and try again.</p>`; btn.disabled=false; btn.textContent="Run Picket Fence Analysis"; }
           else { setTimeout(poll, getDelay(attempts)); }
           return;
         }
@@ -253,16 +214,17 @@ async function runAnalysis() {
         const result = await r.json();
         if (result.status === "Processing") { setTimeout(poll, getDelay(attempts)); }
         else if (result.status === "Success") {
+          clearInterval(dotAnim);
           const pass = result.passed; const imgUrl = result.image_url||null; const summary = result.analysis_summary||"";
           window._lastResult = { pass, imgUrl, summary, filename: fileInput.files[0].name, testType:"Picket Fence", toleranceText:"MLC tolerance: 1.0mm / action 0.5mm" };
-          
+          // Raw summary
           resultsDiv.innerHTML = "<pre>" + summary + "</pre>";
-          
+          // Verdict banner
           const banner = document.getElementById("verdictBanner");
           banner.innerHTML = '<div class="verdict-icon">' + (pass?"✓":"✗") + '</div><div class="verdict-text"><div class="verdict-label">' + (pass?"PASS":"FAIL") + '</div><div class="verdict-sub">' + (pass?"All MLC leaf pairs within clinical tolerance (1.0 mm)":"One or more leaf pairs exceed tolerance — action required") + '</div></div>';
           banner.className = "verdict-banner " + (pass?"verdict-pass":"verdict-fail");
           banner.style.display = "flex";
-          
+          // Gauge
           const maxErr = (function(s){ const m=s.match(/max(?:imum)?\s*(?:error|deviation)?[:\s]+([0-9]+\.?[0-9]*)\s*mm/i); return m?parseFloat(m[1]):null; })(summary) || (pass?0.22:0.58);
           const tol=1.0; const maxScale=Math.max(tol*1.6,maxErr*1.2);
           const fill=document.getElementById("gaugeFill");
@@ -273,36 +235,35 @@ async function runAnalysis() {
           document.getElementById("gaugeTolLabel").textContent="Tol: "+tol+" mm";
           document.getElementById("gaugeMaxLabel").textContent=maxScale.toFixed(2)+" mm";
           document.getElementById("gaugeSection").style.display="block";
-          
+          // Metrics
           const cd=result.chart_data||{};
           const realMax=cd.max_error!=null?cd.max_error:maxErr;
           const realMean=cd.mean_error!=null?cd.mean_error:(maxErr*0.5);
           const realFailed=cd.failed_leaves!=null?cd.failed_leaves:(pass?0:1);
           const mr=document.getElementById("metricsRow");
-          
           mr.innerHTML=[
-            {label:'Max MLC Error <span class="info-icon" data-tooltip="Maximum positional deviation detected across all leaf pairs">ⓘ</span>',val:realMax.toFixed(3),unit:"mm",cls:realMax>tol?"metric-fail":"metric-pass"},
-            {label:'Mean Error <span class="info-icon" data-tooltip="Average positional deviation across all tested leaf pairs">ⓘ</span>',val:realMean.toFixed(3),unit:"mm",cls:"metric-accent"},
-            {label:'Failed Leaves <span class="info-icon" data-tooltip="Number of leaf pairs exceeding the 1.0mm tolerance">ⓘ</span>',val:String(realFailed),cls:realFailed>0?"metric-fail":"metric-pass"},
-            {label:'Tolerance',val:"1.0",unit:"mm",cls:"metric-accent"}
+            {label:"Max MLC Error",val:realMax.toFixed(3),unit:"mm",cls:realMax>tol?"metric-fail":"metric-pass"},
+            {label:"Mean Error",val:realMean.toFixed(3),unit:"mm",cls:"metric-accent"},
+            {label:"Failed Leaves",val:String(realFailed),cls:realFailed>0?"metric-fail":"metric-pass"},
+            {label:"Tolerance",val:"1.0",unit:"mm",cls:"metric-accent"}
           ].map(m=>'<div class="metric-card"><div class="metric-label">'+m.label+'</div><div class="metric-value '+m.cls+'">'+m.val+(m.unit?'<span class="metric-unit">'+m.unit+'</span>':'')+'</div></div>').join('');
           mr.style.display="grid";
-          
-          if(imgUrl){
-            document.getElementById("plotSection").innerHTML=`<div class="plot-wrap" onclick="openLightbox('${imgUrl}')"><img src="${imgUrl}" alt="Picket Fence Plot" loading="lazy"/><div class="plot-label">Pylinac · Picket Fence Analysis (Click to Zoom)</div></div>`;
-            document.getElementById("plotSection").style.display="block";
-          }
-          
+          // Plot
+          if(imgUrl){document.getElementById("plotSection").innerHTML='<div class="plot-wrap"><img src="'+imgUrl+'" alt="Picket Fence Plot" loading="lazy"/><div class="plot-label">Pylinac · Picket Fence Analysis</div></div>';document.getElementById("plotSection").style.display="block";}
+          // Charts
           renderPFCharts(result.chart_data||{},tol);
           document.getElementById("chartsSection").style.display="block";
           document.getElementById("pdfSection").style.display="block";
           btn.disabled=false; btn.textContent="Analyse Another File";
-        } else { resultsDiv.innerHTML=`<p class="result-fail">❌ ${result.message}</p>`; btn.disabled=false; btn.textContent="Run Picket Fence Analysis"; }
+        } else { clearInterval(dotAnim); resultsDiv.innerHTML=`<p class="result-fail">❌ ${result.message}</p>`; btn.disabled=false; btn.textContent="Run Picket Fence Analysis"; }
       } catch {
         networkFails++;
         if (networkFails < 10) {
+          const d = document.getElementById("dots");
+          if (d) d.textContent = ` (retrying… ${networkFails}/10)`;
           setTimeout(poll, 6000);
         } else {
+          clearInterval(dotAnim);
           resultsDiv.innerHTML = `<p class="result-fail">❌ Cannot reach the server after 10 retries. Please wait 60 seconds, refresh the page, and try again.</p>`;
           btn.disabled = false; btn.textContent = "Run Picket Fence Analysis";
         }
@@ -316,6 +277,7 @@ async function runAnalysis() {
 let pfChart1=null;
 
 function renderPFCharts(cd, tol) {
+  // cd = chart_data from backend — real pylinac values
   const leafErrors = (cd.leaf_max_errors && cd.leaf_max_errors.length > 0) ? cd.leaf_max_errors : null;
   if (!leafErrors) {
     document.getElementById("chartsSection").innerHTML += '<p style="color:var(--text-muted);font-size:0.8rem;font-family:var(--mono);padding:12px">Chart data not available for this file — check server logs.</p>';
@@ -323,7 +285,7 @@ function renderPFCharts(cd, tol) {
   }
   const nLeaves = leafErrors.length;
   const leafColors = leafErrors.map(v=>v>tol?"rgba(201,64,80,0.85)":v>0.5?"rgba(200,137,42,0.8)":"rgba(26,171,117,0.75)");
-  const chartOpts={plugins:{legend:{labels:{color:"#8ba4c0",font:{family:"'Roboto Mono'",size:9}}}},scales:{x:{ticks:{color:"#546a85",font:{size:7},maxTicksLimit:15},grid:{color:"rgba(36,53,82,0.8)"}},y:{ticks:{color:"#546a85",font:{family:"'Roboto Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"Error (mm)",color:"#546a85",font:{size:9}}}}};
+  const chartOpts={plugins:{legend:{labels:{color:"#8ba4c0",font:{family:"'IBM Plex Mono'",size:9}}}},scales:{x:{ticks:{color:"#546a85",font:{size:7},maxTicksLimit:15},grid:{color:"rgba(36,53,82,0.8)"}},y:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"Error (mm)",color:"#546a85",font:{size:9}}}}};
   if(pfChart1) pfChart1.destroy();
   pfChart1=new Chart(document.getElementById("leafChart"),{
     type:"bar",
@@ -372,6 +334,7 @@ async function fetchImageAsBase64(url) {
 function logout() { localStorage.removeItem("mlcqa_token"); localStorage.removeItem("mlcqa_name"); window.location.href="index.html"; }
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="dicom-detect.js"></script>
+
+  <script src="dicom-detect.js"></script>
 </body>
 </html>
