@@ -3,22 +3,27 @@ function getBackendUrl() {
     if (params.get('backend') === 'local') return "http://127.0.0.1:10000";
     if (params.get('backend') === 'prod')  return "https://mlc-qa-1.onrender.com";
 
-    const h = window.location.hostname;
-    const p = window.location.protocol;
+    const h = (window.location.hostname || "").toLowerCase();
+    const p = (window.location.protocol || "").toLowerCase();
 
-    // Local detection: localhost, 127.0.0.1, empty (file://), or private IP ranges
+    // Local detection: localhost, 127.0.0.1, [::1], empty (file://), or private IP ranges
     const isLocal = h === "localhost" || 
                     h === "127.0.0.1" || 
+                    h === "::1" ||
                     h === "" || 
                     p === "file:" ||
                     h.startsWith("192.168.") || 
                     h.startsWith("10.") || 
                     h.startsWith("172.");
 
-    return isLocal ? "http://127.0.0.1:10000" : "https://mlc-qa-1.onrender.com";
+    const url = isLocal ? "http://127.0.0.1:10000" : "https://mlc-qa-1.onrender.com";
+    
+    // Debug info for the user if they open console
+    console.log("Environment detection:", { hostname: h, protocol: p, isLocal, detectedBackend: url });
+    return url;
 }
-const BACKEND_URL = getBackendUrl();
-console.log("Using backend:", BACKEND_URL);
+window.BACKEND_URL = getBackendUrl();
+console.log("Using backend:", window.BACKEND_URL);
 
 // --- Auth: redirect to login if no token found ---
 const token = localStorage.getItem("mlcqa_token");
@@ -97,7 +102,9 @@ async function checkServer(elementId, btnId) {
 // Auto-run check on pages that have the serverStatus element
 window.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('serverStatus')) {
-        checkServer('serverStatus', 'analyzeBtn' || 'loginBtn');
+        const btnId = document.getElementById('analyzeBtn') ? 'analyzeBtn' : 
+                      document.getElementById('loginBtn') ? 'loginBtn' : null;
+        checkServer('serverStatus', btnId);
     }
 });
 
