@@ -6,6 +6,7 @@
   <title>MLC QA — Medical Linac Analysis Platform</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <script src="script.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -518,9 +519,9 @@
       <a href="login.html" class="btn-outline">Sign In →</a>
     </div>
   </div>
-  <div class="live-badge">
+  <div class="live-badge" id="serverStatus">
     <div class="live-dot"></div>
-    System Online · mlc-qa-1.onrender.com
+    <span id="systemStatusText">Detecting system...</span>
   </div>
 </div>
 
@@ -758,6 +759,17 @@
 <script>
 document.getElementById('footer-copy').textContent =
   `© ${new Date().getFullYear()} MLC QA PLATFORM · BUILT WITH PYLINAC`;
+
+// Dynamic status check for the landing page hero section
+window.addEventListener('DOMContentLoaded', () => {
+  const statusText = document.getElementById('systemStatusText');
+  if (statusText) {
+    statusText.textContent = `Connecting to ${BACKEND_URL.replace('https://','').replace('http://','')}`;
+  }
+  if (document.getElementById('serverStatus')) {
+    checkServer('serverStatus', null);
+  }
+});
 </script>
 
 <script>
