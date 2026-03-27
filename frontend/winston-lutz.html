@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Winston-Lutz — MLC QA</title>
   <link rel="stylesheet" href="style.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Roboto+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
@@ -47,7 +48,6 @@
     <strong>Note:</strong> Upload <strong>2 or more .dcm files</strong> (one per gantry angle) or a single <strong>.zip</strong> archive. A minimum of 2 images is required for analysis.
   </div>
 
-  <!-- ── Wrong-test warning modal (shared) ── -->
   <div id="wrongTestModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(6,12,24,0.82);backdrop-filter:blur(4px);align-items:center;justify-content:center;">
     <div style="background:var(--surface);border:1px solid rgba(201,64,80,0.45);border-left:4px solid var(--fail);border-radius:var(--r-lg);padding:32px 28px;max-width:480px;width:92%;box-shadow:0 8px 48px rgba(0,0,0,0.55);">
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;">
@@ -86,6 +86,7 @@
       <h3>Drop DICOM files or ZIP archive here</h3>
       <p>Select multiple .dcm files or a single .zip — minimum 2 images required</p>
       <div class="file-selected" id="fileLabel"></div>
+      <div id="fileWarning" style="color:var(--fail); font-size:0.8rem; margin-top:10px; display:none;">&#9888; Invalid file types detected. Please upload only .dcm or .zip files.</div>
     </div>
     <div class="tolerances">
       <div class="tol-item"><div class="tol-label">Action Tolerance</div><div class="tol-val">1.0 mm</div></div>
@@ -121,6 +122,13 @@
   </div>
 </main>
 
+<div id="lightboxOverlay" class="lightbox-overlay" onclick="closeLightbox()">
+  <div class="lightbox-content" onclick="event.stopPropagation()">
+    <button class="lightbox-close" onclick="closeLightbox()">&times;</button>
+    <img id="lightboxImg" class="lightbox-img" src="" alt="Enlarged Plot"/>
+  </div>
+</div>
+
 <script>
 const BACKEND_URL = "https://mlc-qa.onrender.com";
 const token = localStorage.getItem("mlcqa_token");
@@ -140,15 +148,37 @@ fetch(`${BACKEND_URL}/auth/me`, { headers: { "Authorization": `Bearer ${token}` 
   } catch { el.innerHTML = `<div class="status-dot-sm dot-warn"></div><span>Server waking up — wait ~60s</span>`; setTimeout(() => location.reload(), 30000); }
 })();
 
+// Lightbox functionality
+function openLightbox(src) {
+  document.getElementById("lightboxImg").src = src;
+  document.getElementById("lightboxOverlay").classList.add("active");
+}
+function closeLightbox() {
+  document.getElementById("lightboxOverlay").classList.remove("active");
+}
+
 async function onFileSelected(input) {
   const label = document.getElementById("fileLabel");
   const btn   = document.getElementById("analyzeBtn");
+  const warn  = document.getElementById("fileWarning");
   const count = input.files.length;
+
+  warn.style.display = "none";
 
   if (count === 0) { label.textContent = ""; btn.disabled = true; return; }
 
+  // Check extensions
+  const files = Array.from(input.files);
+  const invalidFiles = files.filter(f => !f.name.toLowerCase().endsWith(".dcm") && !f.name.toLowerCase().endsWith(".zip"));
+  if (invalidFiles.length > 0) {
+    warn.style.display = "block";
+    btn.disabled = true;
+    label.textContent = "";
+    return;
+  }
+
   // Check DCM files for wrong-test type before accepting
-  const dcmFiles = Array.from(input.files).filter(f => f.name.toLowerCase().endsWith(".dcm"));
+  const dcmFiles = files.filter(f => f.name.toLowerCase().endsWith(".dcm"));
   if (dcmFiles.length > 0) {
     const detected = await detectDicomType(dcmFiles[0]);
     if (detected !== "winston_lutz" && detected !== "unknown") {
@@ -163,7 +193,13 @@ async function onFileSelected(input) {
     if (ext === "zip") { label.textContent = "Selected: " + input.files[0].name; btn.disabled = false; }
     else { label.innerHTML = '<span style="color:var(--warn)">&#9888; Only 1 file selected — minimum 2 DICOM images required</span>'; btn.disabled = true; }
   } else {
-    label.textContent = "Selected: " + count + " files";
+    // Show multi-file progress/list
+    let listHTML = `<ul style="list-style:none; padding:0; margin-top:8px; font-size:0.75rem; text-align:left; max-height:80px; overflow-y:auto; color:var(--text-2);">`;
+    files.forEach(f => {
+      listHTML += `<li>📄 ${f.name}</li>`;
+    });
+    listHTML += `</ul>`;
+    label.innerHTML = `<strong>Selected: ${count} files</strong>` + listHTML;
     btn.disabled = false;
   }
 }
@@ -190,7 +226,20 @@ async function runAnalysis() {
     files.forEach(f=>formData.append("files",f)); formData.append("upload_type","multi");
   }
   btn.disabled=true; btn.textContent=`Uploading ${files.length>1?files.length+" files":"file"}...`;
-  resultsDiv.innerHTML=`<p>⏳ Uploading...</p>`;
+  
+  // Inject Skeleton Loaders
+  resultsDiv.innerHTML = `
+    <div style="margin-bottom: 20px;">
+      <div class="skel skel-text" style="width:140px;margin-bottom:8px;"></div>
+      <div class="skel skel-text" style="width:200px;"></div>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px;">
+      <div class="skel skel-card"></div><div class="skel skel-card"></div>
+      <div class="skel skel-card"></div><div class="skel skel-card"></div>
+    </div>
+    <div class="skel skel-chart"></div>
+  `;
+
   try {
     const controller=new AbortController(); const timeout=setTimeout(()=>controller.abort(),60000);
     const res=await fetch(`${BACKEND_URL}/analyze/winston-lutz`,{method:"POST",headers:{"Authorization":`Bearer ${token}`},body:formData,signal:controller.signal});
@@ -198,17 +247,15 @@ async function runAnalysis() {
     const data=await res.json();
     if (data.status==="Error") { resultsDiv.innerHTML=`<p class="result-fail">❌ ${data.message}</p>`; btn.disabled=false; btn.textContent="Run Winston-Lutz Analysis"; return; }
     const jobId=data.job_id; btn.textContent="Analysing...";
-    resultsDiv.innerHTML=`<p>🔬 Analysis running<span id="dots">.</span></p>`;
-    let dotCount=0; const dotAnim=setInterval(()=>{dotCount=(dotCount+1)%4;const d=document.getElementById("dots");if(d)d.textContent=".".repeat(dotCount+1);},500);
+    
     let attempts=0; let networkFails=0; const getDelay=a=>a<5?2000:a<15?3000:5000;
     const poll=async()=>{
-      attempts++; if(attempts>60){clearInterval(dotAnim);resultsDiv.innerHTML=`<p>⚠️ Analysis taking longer than expected. Please try again.</p>`;btn.disabled=false;btn.textContent="Run Winston-Lutz Analysis";return;}
+      attempts++; if(attempts>60){resultsDiv.innerHTML=`<p>⚠️ Analysis taking longer than expected. Please try again.</p>`;btn.disabled=false;btn.textContent="Run Winston-Lutz Analysis";return;}
       try {
         const r=await fetch(`${BACKEND_URL}/result/${jobId}`,{headers:{"Authorization":`Bearer ${token}`}});
         if (!r.ok) {
-          // HTTP error (e.g. 500) — server is up but something is wrong
           networkFails=0;
-          if(r.status===404){clearInterval(dotAnim);resultsDiv.innerHTML=`<p class="result-fail">❌ Job not found. The server may have restarted — please re-upload and try again.</p>`;btn.disabled=false;btn.textContent="Run Winston-Lutz Analysis";}
+          if(r.status===404){resultsDiv.innerHTML=`<p class="result-fail">❌ Job not found. The server may have restarted — please re-upload and try again.</p>`;btn.disabled=false;btn.textContent="Run Winston-Lutz Analysis";}
           else{setTimeout(poll,getDelay(attempts));}
           return;
         }
@@ -216,14 +263,16 @@ async function runAnalysis() {
         const result=await r.json();
         if(result.status==="Processing"){setTimeout(poll,getDelay(attempts));}
         else if(result.status==="Success"){
-          clearInterval(dotAnim);
           const pass=result.passed; const imgUrl=result.image_url||null; const summary=result.analysis_summary||"";
           window._lastResult={pass,imgUrl,summary,filename:files[0].name,testType:"Winston-Lutz",toleranceText:"Isocenter tolerance: 1.0mm action / 0.5mm warning"};
+          
           resultsDiv.innerHTML="<pre>"+summary+"</pre>";
+          
           const banner=document.getElementById("verdictBanner");
           banner.innerHTML='<div class="verdict-icon">'+(pass?"✓":"✗")+'</div><div class="verdict-text"><div class="verdict-label">'+(pass?"PASS":"FAIL")+'</div><div class="verdict-sub">'+(pass?"Isocenter within clinical tolerance (1.0 mm)":"Isocenter offset exceeds tolerance — investigation required")+'</div></div>';
           banner.className="verdict-banner "+(pass?"verdict-pass":"verdict-fail");
           banner.style.display="flex";
+          
           const maxErr2=(function(s){const m=s.match(/max(?:imum)?\s*(?:error|offset)?[:\s]+([0-9]+\.?[0-9]*)\s*mm/i);return m?parseFloat(m[1]):null;})(summary)||(pass?0.35:1.12);
           const tol2=1.0; const ms2=Math.max(tol2*1.6,maxErr2*1.2);
           const fill2=document.getElementById("gaugeFill");
@@ -234,32 +283,36 @@ async function runAnalysis() {
           document.getElementById("gaugeTolLabel").textContent="Tol: "+tol2+" mm";
           document.getElementById("gaugeMaxLabel").textContent=ms2.toFixed(2)+" mm";
           document.getElementById("gaugeSection").style.display="block";
+          
           const cd2=result.chart_data||{};
           const realMax2=cd2.max_2d_error!=null?cd2.max_2d_error:maxErr2;
           const realMean2=cd2.mean_2d_error!=null?cd2.mean_2d_error:(maxErr2*0.6);
           const realIso=cd2.iso_radius!=null?cd2.iso_radius:(maxErr2*0.7);
           const mr2=document.getElementById("metricsRow");
+          
           mr2.innerHTML=[
-            {label:"Max 2D Offset",val:realMax2.toFixed(3),unit:"mm",cls:realMax2>tol2?"metric-fail":"metric-pass"},
-            {label:"Mean Offset",val:realMean2.toFixed(3),unit:"mm",cls:"metric-accent"},
-            {label:"3D Iso Radius",val:realIso.toFixed(3),unit:"mm",cls:realIso>tol2?"metric-fail":"metric-pass"},
-            {label:"Tolerance",val:"1.0",unit:"mm",cls:"metric-accent"}
+            {label:'Max 2D Offset <span class="info-icon" data-tooltip="Maximum 2D distance between radiation field center and the BB marker across all angles">ⓘ</span>',val:realMax2.toFixed(3),unit:"mm",cls:realMax2>tol2?"metric-fail":"metric-pass"},
+            {label:'Mean Offset <span class="info-icon" data-tooltip="Average 2D offset distance across all analyzed images">ⓘ</span>',val:realMean2.toFixed(3),unit:"mm",cls:"metric-accent"},
+            {label:'3D Iso Radius <span class="info-icon" data-tooltip="Radius of the 3D sphere that encompasses all analyzed isocenter intersections">ⓘ</span>',val:realIso.toFixed(3),unit:"mm",cls:realIso>tol2?"metric-fail":"metric-pass"},
+            {label:'Tolerance',val:"1.0",unit:"mm",cls:"metric-accent"}
           ].map(m=>'<div class="metric-card"><div class="metric-label">'+m.label+'</div><div class="metric-value '+m.cls+'">'+m.val+(m.unit?'<span class="metric-unit">'+m.unit+'</span>':'')+'</div></div>').join('');
           mr2.style.display="grid";
-          if(imgUrl){document.getElementById("plotSection").innerHTML='<div class="plot-wrap"><img src="'+imgUrl+'" alt="WL Plot" loading="lazy"/><div class="plot-label">Pylinac · Winston-Lutz Analysis</div></div>';document.getElementById("plotSection").style.display="block";}
+          
+          if(imgUrl){
+            document.getElementById("plotSection").innerHTML=`<div class="plot-wrap" onclick="openLightbox('${imgUrl}')"><img src="${imgUrl}" alt="WL Plot" loading="lazy"/><div class="plot-label">Pylinac · Winston-Lutz Analysis (Click to Zoom)</div></div>`;
+            document.getElementById("plotSection").style.display="block";
+          }
+          
           renderWLCharts(result.chart_data||{},tol2);
           document.getElementById("chartsSection").style.display="block";
           document.getElementById("pdfSection").style.display="block";
           btn.disabled=false; btn.textContent="Analyse Another File";
-        } else {clearInterval(dotAnim);resultsDiv.innerHTML=`<p class="result-fail">❌ ${result.message}</p>`;btn.disabled=false;btn.textContent="Run Winston-Lutz Analysis";}
+        } else {resultsDiv.innerHTML=`<p class="result-fail">❌ ${result.message}</p>`;btn.disabled=false;btn.textContent="Run Winston-Lutz Analysis";}
       } catch {
         networkFails++;
         if (networkFails < 10) {
-          const d = document.getElementById("dots");
-          if (d) d.textContent = ` (retrying… ${networkFails}/10)`;
           setTimeout(poll, 6000);
         } else {
-          clearInterval(dotAnim);
           resultsDiv.innerHTML = `<p class="result-fail">❌ Cannot reach the server after 10 retries. Please wait 60 seconds, refresh the page, and try again.</p>`;
           btn.disabled = false; btn.textContent = "Run Winston-Lutz Analysis";
         }
@@ -272,14 +325,13 @@ async function runAnalysis() {
 
 let wlChart1=null, wlChart2=null;
 function renderWLCharts(cd, tol) {
-  // cd = chart_data from backend — real pylinac per-image offsets
   const imgs = (cd.images || []);
   const labels = imgs.map(d=>d.gantry+"°");
   const gt  = imgs.map(d=>d.gt);
   const lt  = imgs.map(d=>d.lt);
   const e2d = imgs.map(d=>d.error_2d);
   const e2dColors = e2d.map(v=>v>tol?"rgba(201,64,80,0.85)":v>tol*0.6?"rgba(200,137,42,0.8)":"rgba(26,171,117,0.75)");
-  const cOpts={plugins:{legend:{labels:{color:"#8ba4c0",font:{family:"'IBM Plex Mono'",size:9}}}},scales:{x:{ticks:{color:"#546a85",font:{size:9}},grid:{color:"rgba(36,53,82,0.8)"}},y:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"}}}};
+  const cOpts={plugins:{legend:{labels:{color:"#8ba4c0",font:{family:"'Roboto Mono'",size:9}}}},scales:{x:{ticks:{color:"#546a85",font:{size:9}},grid:{color:"rgba(36,53,82,0.8)"}},y:{ticks:{color:"#546a85",font:{family:"'Roboto Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"}}}};
   if(wlChart1) wlChart1.destroy();
   wlChart1=new Chart(document.getElementById("wlAngleChart"),{
     type:"bar",
@@ -290,7 +342,7 @@ function renderWLCharts(cd, tol) {
     ]},
     options:{responsive:true,maintainAspectRatio:true,...cOpts,scales:{
       x:{ticks:{color:"#546a85",font:{size:9}},grid:{color:"rgba(36,53,82,0.8)"}},
-      y:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"Offset (mm)",color:"#546a85",font:{size:9}}}
+      y:{ticks:{color:"#546a85",font:{family:"'Roboto Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"Offset (mm)",color:"#546a85",font:{size:9}}}
     }}
   });
   const cx=gt.length?gt.reduce((a,b)=>a+b,0)/gt.length:0;
@@ -302,9 +354,9 @@ function renderWLCharts(cd, tol) {
       {label:"BB offset per image",data:gt.map((g,i)=>({x:g,y:lt[i]})),backgroundColor:e2dColors,pointRadius:7,pointStyle:"crossRot"},
       {label:"Centroid",data:[{x:cx,y:cy}],backgroundColor:"rgba(201,64,80,0.9)",pointRadius:10,pointStyle:"star"}
     ]},
-    options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{labels:{color:"#8ba4c0",font:{family:"'IBM Plex Mono'",size:9}}}},scales:{
-      x:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"GT (mm)",color:"#546a85",font:{size:9}}},
-      y:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"LT (mm)",color:"#546a85",font:{size:9}}}
+    options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{labels:{color:"#8ba4c0",font:{family:"'Roboto Mono'",size:9}}}},scales:{
+      x:{ticks:{color:"#546a85",font:{family:"'Roboto Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"GT (mm)",color:"#546a85",font:{size:9}}},
+      y:{ticks:{color:"#546a85",font:{family:"'Roboto Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"LT (mm)",color:"#546a85",font:{size:9}}}
     }}
   });
 }
@@ -339,7 +391,6 @@ async function fetchImageAsBase64(url){const res=await fetch(url);const blob=awa
 function logout(){localStorage.removeItem("mlcqa_token");localStorage.removeItem("mlcqa_name");window.location.href="index.html";}
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
-  <script src="dicom-detect.js"></script>
+<script src="dicom-detect.js"></script>
 </body>
 </html>
