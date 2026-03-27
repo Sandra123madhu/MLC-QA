@@ -121,14 +121,12 @@
 </main>
 
 <script>
-const BACKEND_URL = "https://mlc-qa-1.onrender.com";
-const token = localStorage.getItem("mlcqa_token");
-const name  = localStorage.getItem("mlcqa_name");
-if (!token) { window.location.href = "login.html"; }
-if (name) { document.getElementById("sidebarName").textContent = name; document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase(); }
-fetch(`${BACKEND_URL}/auth/me`, { headers: { "Authorization": `Bearer ${token}` } })
-  .then(r => { if (!r.ok) logout(); return r.json(); })
-  .then(d => { document.getElementById("sidebarName").textContent=d.name; document.getElementById("avatarInitial").textContent=d.name.charAt(0).toUpperCase(); localStorage.setItem("mlcqa_name",d.name); }).catch(() => {});
+// Redundant BACKEND_URL, token, name, and server status logic removed.
+// These are now handled globally in script.js.
+if (name) {
+  document.getElementById("sidebarName").textContent = name;
+  document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
+}
 
 (async () => {
   const el = document.getElementById("serverStatus");
