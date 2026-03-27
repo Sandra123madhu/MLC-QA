@@ -48,18 +48,7 @@ async function doLogin() {
   const btn = document.getElementById("loginBtn");
   const msg = document.getElementById("msg");
   msg.className = "msg"; msg.textContent = "";
-
   if (!email || !password) { msg.className = "msg error"; msg.textContent = "Please enter your email and password."; return; }
-
-  // FIX: If the button is still disabled the server hasn't confirmed it's
-  // online yet. Show a helpful message instead of a confusing network error.
-  const statusEl = document.getElementById("serverStatus");
-  if (btn.disabled || (statusEl && statusEl.textContent.includes("waking"))) {
-    msg.className = "msg error";
-    msg.textContent = "Server is still starting up. Please wait until the status shows 'Server online'.";
-    return;
-  }
-
   btn.disabled = true; btn.textContent = "Signing in...";
   try {
     const res = await fetch(`${BACKEND_URL}/auth/login`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({email,password}) });
@@ -68,7 +57,13 @@ async function doLogin() {
     localStorage.setItem("mlcqa_token", data.access_token);
     localStorage.setItem("mlcqa_name", data.name);
     window.location.href = "dashboard.html";
-  } catch { msg.className="msg error"; msg.textContent="Server unreachable. Wait 30–60 seconds and try again."; btn.disabled=false; btn.textContent="Sign In"; }
+  } catch (err) { 
+    console.error("Login Error:", err);
+    msg.className="msg error"; 
+    msg.textContent = `Server unreachable at ${BACKEND_URL}. If running locally, ensure your backend is started.`; 
+    btn.disabled=false; 
+    btn.textContent="Sign In"; 
+  }
 }
 
 async function showForgotPrompt() {
