@@ -39,9 +39,9 @@
 </div>
 </div>
 <script>
-// BACKEND_URL and auth redirect are now in script.js
 if (localStorage.getItem("mlcqa_token")) { window.location.href = "dashboard.html"; }
 document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+
 async function doLogin() {
   const email = document.getElementById("email").value.trim();
   const password = document.getElementById("password").value;
@@ -57,21 +57,7 @@ async function doLogin() {
     localStorage.setItem("mlcqa_token", data.access_token);
     localStorage.setItem("mlcqa_name", data.name);
     window.location.href = "dashboard.html";
-  } catch (err) { 
-    console.error("Login Error:", err);
-    msg.className="msg error"; 
-    const isProd = BACKEND_URL.includes("onrender.com");
-    msg.innerHTML = `
-      <div style="font-weight:600;margin-bottom:8px">❌ Connection Failed</div>
-      <div style="font-size:0.8rem;line-height:1.4;margin-bottom:12px">
-        Detected Backend: <code style="background:rgba(255,255,255,0.1);padding:2px 4px;border-radius:3px">${BACKEND_URL}</code><br>
-        ${isProd ? 'Working locally? Please start your backend using <code>start_local.bat</code> or <a href="?backend=local" style="color:var(--cyan);text-decoration:underline">click here to switch to local mode</a>.' : 'Local backend not responding. Ensure <code>start_local.bat</code> is running.'}
-      </div>
-      <div style="font-size:0.75rem;color:rgba(255,255,255,0.6)">Tip: Try <b>Ctrl + F5</b> to refresh if you just made changes.</div>
-    `; 
-    btn.disabled=false; 
-    btn.textContent="Sign In"; 
-  }
+  } catch { msg.className="msg error"; msg.textContent="Server is waking up (Render cold start). Please wait 30–60 seconds and try again."; btn.disabled=false; btn.textContent="Sign In"; }
 }
 
 async function showForgotPrompt() {
