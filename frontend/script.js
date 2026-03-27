@@ -34,20 +34,30 @@ startKeepAlive();
 // --- Universal Server Status Check ---
 async function checkServer(elementId, btnId) {
     const el = document.getElementById(elementId);
+    // FIX: 'analyzeBtn' || 'loginBtn' always evaluates to 'analyzeBtn'.
+    // Now the caller passes the correct btnId, and we look it up properly.
     const btn = btnId ? document.getElementById(btnId) : null;
-    
+
     if (!el) return;
-    
+
     el.innerHTML = `<div class="status-dot-sm dot-warn"></div><span>Checking server status...</span>`;
     if (btn) btn.disabled = true;
 
     async function ping() {
         try {
-            const start = Date.now();
             const res = await fetch(`${BACKEND_URL}/`);
             if (res.ok) {
                 el.innerHTML = `<div class="status-dot-sm dot-ok"></div><span>Server online</span>`;
                 if (btn) btn.disabled = false;
+
+                // FIX: Clear any stale "Server unreachable" error that appeared
+                // while the user tried to log in before the server woke up.
+                const msg = document.getElementById('msg');
+                if (msg && msg.classList.contains('error')) {
+                    msg.className = 'msg';
+                    msg.textContent = '';
+                }
+
                 return true;
             }
         } catch (e) {}
@@ -56,28 +66,35 @@ async function checkServer(elementId, btnId) {
 
     if (await ping()) return;
 
-    // If not immediately online, start "waking up" countdown
+    // Server is cold-starting — show countdown and keep retrying
     let seconds = 60;
     el.innerHTML = `<div class="status-dot-sm dot-warn" style="animation:blink 1s infinite"></div>
                     <span>Server waking up... (~${seconds}s)</span>`;
-    
+
+    // FIX: Disable the login button while the server is waking up so the
+    // user cannot trigger the "Server unreachable" error in the first place.
+    if (btn) btn.disabled = true;
+
     const interval = setInterval(async () => {
         seconds -= 2;
-        if (seconds <= 0) seconds = 5; // keep it low but non-zero
-        
+        if (seconds <= 0) seconds = 5;
+
         el.innerHTML = `<div class="status-dot-sm dot-warn" style="animation:blink 1s infinite"></div>
                         <span>Server waking up... (~${seconds}s)</span>`;
-        
+
         if (await ping()) {
             clearInterval(interval);
         }
     }, 2000);
 }
 
-// Auto-run check on pages that have the serverStatus element
+// Auto-run check on pages that have the serverStatus element.
+// FIX: Pass the correct button id for each page instead of the broken
+// 'analyzeBtn' || 'loginBtn' expression (which always picked 'analyzeBtn').
 window.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('serverStatus')) {
-        checkServer('serverStatus', 'analyzeBtn' || 'loginBtn');
+        const btnId = document.getElementById('loginBtn') ? 'loginBtn' : 'analyzeBtn';
+        checkServer('serverStatus', btnId);
     }
 });
 
