@@ -21,8 +21,23 @@ import httpx
 SECRET_KEY   = os.environ.get("SECRET_KEY", "mlcqa-change-this-in-render")
 ALGORITHM    = "HS256"
 TOKEN_HOURS  = 24
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://swxrncaezcthahehhuu.supabase.co")
+
+# FIX: No hardcoded fallback URLs — both vars must be set as environment variables on Render.
+# Previously SUPABASE_URL had a hardcoded default (security risk) and SUPABASE_KEY had no
+# guard, so a missing key would silently send "Bearer None" to Supabase, failing all DB calls.
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+
+if not SUPABASE_URL:
+    raise RuntimeError(
+        "SUPABASE_URL environment variable is not set. "
+        "Add it in Render → Environment → Add Environment Variable."
+    )
+if not SUPABASE_KEY:
+    raise RuntimeError(
+        "SUPABASE_KEY environment variable is not set. "
+        "Add it in Render → Environment → Add Environment Variable."
+    )
 
 def sb_headers():
     return {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
