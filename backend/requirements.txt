@@ -9,3 +9,4 @@ cryptography
 pydantic
 httpx
 matplotlib
+bcrypt
