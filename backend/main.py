@@ -10,6 +10,12 @@ import bcrypt
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+# Pre-warm font cache so it doesn't block port binding on cold start
+try:
+    plt.plot([])
+    plt.close()
+except Exception:
+    pass
 import httpx
 
 SECRET_KEY   = os.environ.get("SECRET_KEY", "mlcqa-change-this-in-render")
