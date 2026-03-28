@@ -1,4 +1,4 @@
-const BACKEND_URL = "https://mlc-qa-1.onrender.com";
+const BACKEND_URL = "https://mlc-qa.onrender.com";
 
 // --- Auth: redirect to login if no token found ---
 const token = localStorage.getItem("mlcqa_token");
