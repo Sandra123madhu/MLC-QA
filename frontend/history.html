@@ -6,6 +6,8 @@
   <title>Analysis History — MLC QA</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400&display=swap" rel="stylesheet"/>
+  <!-- FIX: script.js was missing — BACKEND_URL, token, name, authHeaders(), logout() all come from here -->
+  <script src="script.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -235,23 +237,13 @@
 </main>
 
 <script>
-// Redundant BACKEND_URL and names removed, now handled globals from script.js
-if (name) {
-  document.getElementById("sidebarName").textContent = name;
-  document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
-}
+// token, name, BACKEND_URL, authHeaders(), logout() are all provided by script.js (loaded in <head>)
 
-if (!token) { window.location.href = "login.html"; }
-
-if (name) {
-  document.getElementById("sidebarName").textContent = name;
-  document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
-}
-
-function logout() {
-  localStorage.removeItem("mlcqa_token");
-  localStorage.removeItem("mlcqa_name");
-  window.location.href = "index.html";
+// Populate sidebar user info from globals set by script.js
+const _histName = localStorage.getItem("mlcqa_name");
+if (_histName) {
+  document.getElementById("sidebarName").textContent = _histName;
+  document.getElementById("avatarInitial").textContent = _histName.charAt(0).toUpperCase();
 }
 
 function formatDate(iso) {
@@ -341,7 +333,7 @@ function filterResults(type, btn) {
 async function loadHistory() {
   try {
     const res = await fetch(`${BACKEND_URL}/history`, {
-      headers: { "Authorization": `Bearer ${token}` }
+      headers: { "Authorization": `Bearer ${localStorage.getItem("mlcqa_token")}` }
     });
     if (res.status === 401) { logout(); return; }
     const data = await res.json();
