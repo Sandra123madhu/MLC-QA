@@ -199,6 +199,7 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-dim)
 .msg { padding:9px 14px; border-radius:var(--r); font-size:0.78rem; margin-bottom:16px; display:none; font-family:var(--mono); }
 .msg.error { background:var(--fail-dim); border:1px solid rgba(201,64,80,0.3); color:var(--fail); display:block; }
 .msg.success { background:var(--pass-dim); border:1px solid rgba(26,171,117,0.3); color:var(--pass); display:block; }
+.msg.warn { background:rgba(255,170,0,0.1); border:1px solid rgba(255,170,0,0.3); color:#ffaa00; display:block; }
 .btn-auth { width:100%; background:var(--accent); color:#fff; border:none; padding:11px; border-radius:var(--r); font-family:var(--font); font-weight:500; font-size:0.88rem; cursor:pointer; margin-top:10px; transition:all var(--t); }
 .btn-auth:hover:not(:disabled) { background:#3aaee0; box-shadow:0 4px 14px rgba(43,159,212,0.3); transform:translateY(-1px); }
 .btn-auth:disabled { opacity:0.4; cursor:not-allowed; }
