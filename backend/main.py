@@ -6,6 +6,7 @@ from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from pylinac import PicketFence, WinstonLutz, Starshot
 import os, shutil, tempfile, uuid, hashlib, hmac
+import bcrypt
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -68,8 +69,23 @@ def get_user_analyses(email):
                   headers=sb_headers())
     return r.json() if r.status_code==200 else []
 
-def hash_password(pw): return hmac.new(SECRET_KEY.encode(), pw.encode(), hashlib.sha256).hexdigest()
-def verify_password(plain, hashed): return hmac.compare_digest(hash_password(plain), hashed)
+def hash_password(pw: str) -> str:
+    return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+
+def verify_password(plain: str, hashed: str) -> bool:
+    try:
+        # bcrypt hashes start with $2b$ or $2a$
+        if hashed.startswith("$2b$") or hashed.startswith("$2a$"):
+            return bcrypt.checkpw(plain.encode(), hashed.encode())
+        # Legacy fallback: old hmac-based hash — try current SECRET_KEY
+        legacy = hmac.new(SECRET_KEY.encode(), plain.encode(), hashlib.sha256).hexdigest()
+        if hmac.compare_digest(legacy, hashed):
+            return True
+        # Also try the hardcoded default key (catches signup/login SECRET_KEY mismatch)
+        default = hmac.new(b"mlcqa-change-this-in-render", plain.encode(), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(default, hashed)
+    except Exception:
+        return False
 
 bearer_scheme = HTTPBearer()
 def create_token(email, name):
@@ -149,6 +165,19 @@ def login(req: LoginRequest):
     user = get_user_by_email(req.email)
     if not user or not verify_password(req.password, user["password"]):
         raise HTTPException(401,"Invalid email or password.")
+    # Auto-upgrade legacy hmac hash to bcrypt on first successful login
+    stored = user["password"]
+    if not (stored.startswith("$2b$") or stored.startswith("$2a$")):
+        new_hash = hash_password(req.password)
+        try:
+            with httpx.Client() as c:
+                c.patch(
+                    f"{SUPABASE_URL}/rest/v1/users?email=eq.{req.email}",
+                    headers=sb_headers(),
+                    json={"password": new_hash}
+                )
+        except Exception:
+            pass  # Non-fatal: user can still log in, upgrade retried next time
     return {"access_token":create_token(req.email,user["name"]),"token_type":"bearer","name":user["name"]}
 
 @app.get("/auth/me")
