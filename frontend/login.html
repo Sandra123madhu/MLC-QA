@@ -57,7 +57,41 @@ async function doLogin() {
     localStorage.setItem("mlcqa_token", data.access_token);
     localStorage.setItem("mlcqa_name", data.name);
     window.location.href = "dashboard.html";
-  } catch { msg.className="msg error"; msg.textContent="Server is waking up (Render cold start). Please wait 30–60 seconds and try again."; btn.disabled=false; btn.textContent="Sign In"; }
+  } catch (err) {
+    btn.disabled = false; btn.textContent = "Sign In";
+    // First, check if server is actually reachable before blaming cold start
+    try {
+      const ping = await fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(4000) });
+      if (ping.ok) {
+        // Server IS online — this was just a network blip, not a cold start
+        msg.className = "msg error";
+        msg.textContent = "Connection error. Please try again.";
+        return;
+      }
+    } catch (_) {}
+    // Server is genuinely unreachable — show waking up message and auto-retry
+    msg.className = "msg warn";
+    msg.textContent = "⏳ Server is starting up. Will notify you when ready...";
+    let retryCount = 0;
+    const retryInterval = setInterval(async () => {
+      retryCount++;
+      try {
+        const ping = await fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(4000) });
+        if (ping.ok) {
+          clearInterval(retryInterval);
+          msg.className = "msg success";
+          msg.textContent = "✅ Server is online! You can sign in now.";
+          const statusEl = document.getElementById("serverStatus");
+          if (statusEl) statusEl.innerHTML = `<div class="status-dot-sm dot-ok"></div><span>Server online</span>`;
+        }
+      } catch (_) {}
+      if (retryCount >= 30) {
+        clearInterval(retryInterval);
+        msg.className = "msg error";
+        msg.textContent = "Server took too long to respond. Please refresh and try again.";
+      }
+    }, 2000);
+  }
 }
 
 async function showForgotPrompt() {
