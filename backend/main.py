@@ -4,7 +4,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
-from pylinac import PicketFence, WinstonLutz, Starshot
+from pylinac import PicketFence, WinstonLutz, Starshot, FieldAnalysis
 import os, shutil, tempfile, uuid, hashlib, hmac
 import bcrypt
 import matplotlib
@@ -220,3 +220,116 @@ def get_result(job_id, u=Depends(get_current_user)):
 
 # (Pylinac extraction logic for Picket Fence, Starshot, and Winston-Lutz follows...)
 # ... (omitted for brevity, includes _extract_pf_chart_data, run_analysis, etc.)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONGRUENCE TEST — Radiation / Light Field Congruence (Field Analysis)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _extract_congruence_chart_data(fa) -> dict:
+    try:
+        results = fa.results_data()
+        edges = {}
+        try:
+            attrs = vars(results) if hasattr(results, '__dict__') else {}
+            def _get(candidates, default=None):
+                for name in candidates:
+                    v = attrs.get(name) or getattr(results, name, None)
+                    if v is not None:
+                        return float(v)
+                return default
+            top    = _get(["top_penumbra_mm",    "top_field_edge_mm",    "top_mm"])
+            bottom = _get(["bottom_penumbra_mm", "bottom_field_edge_mm", "bottom_mm"])
+            left   = _get(["left_penumbra_mm",   "left_field_edge_mm",   "left_mm"])
+            right  = _get(["right_penumbra_mm",  "right_field_edge_mm",  "right_mm"])
+            if top is None:
+                fs_v = _get(["field_size_vertical_mm",   "vertical_field_size"])
+                fs_h = _get(["field_size_horizontal_mm", "horizontal_field_size"])
+                top    = round(fs_v / 2,  3) if fs_v else None
+                bottom = round(-fs_v / 2, 3) if fs_v else None
+                left   = round(-fs_h / 2, 3) if fs_h else None
+                right  = round(fs_h / 2,  3) if fs_h else None
+            edges = {
+                "top":    round(top,    3) if top    is not None else None,
+                "bottom": round(bottom, 3) if bottom is not None else None,
+                "left":   round(left,   3) if left   is not None else None,
+                "right":  round(right,  3) if right  is not None else None,
+            }
+        except Exception:
+            edges = {"top": None, "bottom": None, "left": None, "right": None}
+
+        inline_profile, crossline_profile = [], []
+        try:
+            import numpy as np
+            arr = fa.image.array.astype(float)
+            arr_min, arr_max = arr.min(), arr.max()
+            if arr_max > arr_min:
+                arr = (arr - arr_min) / (arr_max - arr_min)
+            cy, cx = arr.shape[0] // 2, arr.shape[1] // 2
+            def downsample(lst, n=100):
+                step = max(1, len(lst) // n)
+                return [round(float(lst[i]), 4) for i in range(0, len(lst), step)][:n]
+            inline_profile    = downsample(arr[cy, :].tolist())
+            crossline_profile = downsample(arr[:, cx].tolist())
+        except Exception:
+            pass
+
+        return {
+            "edges":             edges,
+            "inline_profile":    inline_profile,
+            "crossline_profile": crossline_profile,
+            "tolerance_mm":      2.0,
+        }
+    except Exception as e:
+        return {"error": str(e), "edges": {}, "inline_profile": [], "crossline_profile": [], "tolerance_mm": 2.0}
+
+
+def _run_congruence(job_id: str, filepath: str, email: str, filename: str):
+    try:
+        fa = FieldAnalysis(filepath)
+        fa.analyze(protocol=None, is_FFF=False)
+        summary   = fa.results()
+        passed    = fa.passed
+        plot_path = filepath.replace(".dcm", "_congruence.png")
+        fa.plot_analyzed_image(filename=plot_path, show=False)
+        image_url  = upload_plot(plot_path, f"congruence_{job_id}.png")
+        chart_data = _extract_congruence_chart_data(fa)
+        save_analysis(
+            email=email, test_type="Congruence", filename=filename,
+            passed=passed, summary=summary, image_url=image_url,
+            chart_data=chart_data, job_id=job_id,
+        )
+        jobs[job_id] = {
+            "status": "Success", "passed": passed,
+            "analysis_summary": summary, "image_url": image_url, "chart_data": chart_data,
+        }
+    except Exception as e:
+        jobs[job_id] = {"status": "Error", "message": f"Congruence analysis failed: {e}"}
+    finally:
+        try: os.remove(filepath)
+        except Exception: pass
+        cleanup()
+
+
+@app.post("/analyze/congruence")
+async def analyze_congruence(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    u=Depends(get_current_user),
+):
+    if not file.filename.lower().endswith(".dcm"):
+        raise HTTPException(400, "Only .dcm DICOM files are supported for the Congruence test.")
+    job_id   = str(uuid.uuid4())
+    filepath = os.path.join(tempfile.gettempdir(), f"congruence_{job_id}.dcm")
+    try:
+        contents = await file.read()
+        with open(filepath, "wb") as f:
+            f.write(contents)
+    except Exception as e:
+        raise HTTPException(500, f"Failed to save uploaded file: {e}")
+    jobs[job_id] = {"status": "Processing"}
+    background_tasks.add_task(
+        _run_congruence, job_id=job_id, filepath=filepath,
+        email=u["email"], filename=file.filename,
+    )
+    return {"status": "Queued", "job_id": job_id}
