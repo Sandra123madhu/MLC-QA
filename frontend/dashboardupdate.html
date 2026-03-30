@@ -1,0 +1,53 @@
+<!-- 
+  DASHBOARD UPDATE — dashboard.html
+  Add this card inside the .cards-grid div, after the Starshot card.
+  Also update all OTHER sidebar navs (mlc-qa.html, winston-lutz.html,
+  starshot.html, history.html) by adding the Congruence nav-item.
+-->
+
+<!-- ── NEW CARD (add to .cards-grid in dashboard.html) ─────────────────── -->
+<a class="analysis-card fade-up" href="congruence.html">
+  <div class="card-top">
+    <div class="card-icon">⊞</div>
+    <span class="card-badge badge-live">Live</span>
+  </div>
+  <div class="card-title">Congruence Test</div>
+  <div class="card-desc">Verify radiation field and light field agreement by measuring edge offsets on all four sides against a ±2 mm clinical tolerance.</div>
+  <div class="card-arrow">Run Analysis →</div>
+</a>
+
+
+<!-- ── SIDEBAR NAV ITEM (add to ALL pages' sidebar navs) ───────────────── -->
+<!--
+  Copy this line into the sidebar <nav class="sidebar-nav"> of every page:
+    mlc-qa.html, winston-lutz.html, starshot.html, history.html, dashboard.html
+
+  Place it after the Starshot nav-item and before the History nav-item.
+  Set class="nav-item active" only on congruence.html itself (already done).
+-->
+<a class="nav-item" href="congruence.html"><span class="nav-icon">⊞</span> Congruence</a>
+
+
+<!-- ── DICOM DETECT UPDATE — dicom-detect.js ───────────────────────────── -->
+<!--
+  Add a "congruence" entry to the SIGNATURES object in dicom-detect.js
+  so the wrong-test modal can detect and redirect congruence files.
+
+  In the SIGNATURES object, add:
+
+  congruence: {
+    filename: [/congruence/i, /field[_\-\s]?analysis/i, /light[_\-\s]?field/i, /rad[_\-\s]?light/i, /field[_\-\s]?size/i],
+    header:   [/FieldAnalysis/i, /congruence/i, /light[_\-\s]?field/i, /radiation[_\-\s]?field/i, /field[_\-\s]?edge/i],
+  },
+
+  Also add "congruence" to the scores object in detectDicomType():
+    const scores = {
+      picket_fence:  scoreType("picket_fence",  filename, header),
+      starshot:      scoreType("starshot",       filename, header),
+      winston_lutz:  scoreType("winston_lutz",   filename, header),
+      congruence:    scoreType("congruence",     filename, header),   // <-- add this
+    };
+
+  And add "congruence" to the LABELS object in showWrongTestModal():
+    congruence: { name: "Congruence Test", icon: "⊞", href: "congruence.html" },
+-->
