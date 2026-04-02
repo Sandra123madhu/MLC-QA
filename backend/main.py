@@ -1,627 +1,345 @@
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks, Depends, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
-from jose import JWTError, jwt
-from datetime import datetime, timedelta
-from pylinac import PicketFence, WinstonLutz, Starshot, FieldAnalysis
-import os, shutil, tempfile, uuid, hashlib, hmac
-import bcrypt
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-# Pre-warm font cache so it doesn't block port binding on cold start
-try:
-    plt.plot([])
-    plt.close()
-except Exception:
-    pass
-import httpx
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Picket Fence — MLC QA</title>
+  <link rel="stylesheet" href="style.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <a href="dashboard.html" class="sidebar-logo">
+      <div class="logo-mark"><svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg></div>
+      <div class="logo-text">MLC<span>QA</span></div>
+    </a>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">Menu</div>
+    <a class="nav-item" href="dashboard.html"><span class="nav-icon">▦</span> Dashboard</a>
+    <a class="nav-item active" href="mlc-qa.html"><span class="nav-icon">⚡</span> Picket Fence</a>
+    <a class="nav-item" href="winston-lutz.html"><span class="nav-icon">◎</span> Winston-Lutz</a>
+    <a class="nav-item" href="starshot.html"><span class="nav-icon">✦</span> Starshot</a>
+    <a class="nav-item" href="congruence.html"><span class="nav-icon">⊞</span> Congruence</a>
+    <a class="nav-item" href="history.html"><span class="nav-icon">≡</span> History</a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="user-chip">
+      <div class="avatar" id="avatarInitial">?</div>
+      <div><div class="user-name" id="sidebarName">Loading...</div><div class="user-role">Medical Physicist</div></div>
+    </div>
+    <button class="logout-btn" onclick="logout()">Sign Out</button>
+  </div>
+</aside>
 
-SECRET_KEY   = os.environ.get("SECRET_KEY", "mlcqa-change-this-in-render")
-ALGORITHM    = "HS256"
-TOKEN_HOURS  = 24
+<main class="main">
+  <div class="page-header">
+    <div class="breadcrumb"><a href="dashboard.html">Dashboard</a> <span>/</span> Picket Fence MLC QA</div>
+    <h1>Picket Fence MLC QA</h1>
+    <p>Analyze multi-leaf collimator positioning accuracy against clinical tolerances</p>
+  </div>
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+  <div class="server-status" id="serverStatus">
+    <div class="status-dot-sm dot-warn"></div><span>Checking server...</span>
+  </div>
 
-if not SUPABASE_URL:
-    raise RuntimeError(
-        "SUPABASE_URL environment variable is not set. "
-        "Add it in Render → Environment → Add Environment Variable."
-    )
-if not SUPABASE_KEY:
-    raise RuntimeError(
-        "SUPABASE_KEY environment variable is not set. "
-        "Add it in Render → Environment → Add Environment Variable."
-    )
+  <div id="wrongTestModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(6,12,24,0.82);backdrop-filter:blur(4px);align-items:center;justify-content:center;">
+    <div style="background:var(--surface);border:1px solid rgba(201,64,80,0.45);border-left:4px solid var(--fail);border-radius:var(--r-lg);padding:32px 28px;max-width:480px;width:92%;box-shadow:0 8px 48px rgba(0,0,0,0.55);">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;">
+        <div style="width:46px;height:46px;border-radius:50%;background:rgba(201,64,80,0.15);border:1.5px solid rgba(201,64,80,0.4);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0;">&#9888;</div>
+        <div>
+          <div style="font-family:var(--mono);font-size:0.95rem;font-weight:600;color:var(--fail);letter-spacing:0.05em;">WRONG TEST FILE DETECTED</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px;font-family:var(--mono);">File type mismatch &mdash; analysis blocked</div>
+        </div>
+      </div>
+      <p style="font-size:0.85rem;color:var(--text-2);line-height:1.7;margin-bottom:10px;">
+        The selected file appears to be a <strong id="wtm-detected-name" style="color:var(--accent);">&#8230;</strong> image, not a <strong id="wtm-page-name" style="color:var(--text-1);">&#8230;</strong> file.
+      </p>
+      <p style="font-size:0.85rem;color:var(--text-2);line-height:1.7;margin-bottom:22px;">
+        Running the wrong analysis will produce <strong style="color:var(--fail);">clinically meaningless results</strong>. Please upload this file on the correct page:
+      </p>
+      <a id="wtm-correct-link" href="#" style="display:flex;align-items:center;gap:12px;padding:13px 16px;background:rgba(43,159,212,0.08);border:1px solid var(--accent-border);border-radius:var(--r);text-decoration:none;margin-bottom:20px;">
+        <span id="wtm-correct-icon" style="font-size:1.2rem;">&#128194;</span>
+        <div>
+          <div id="wtm-correct-label" style="font-size:0.85rem;font-weight:600;color:var(--accent);">Go to correct test</div>
+          <div id="wtm-correct-sub"   style="font-size:0.74rem;color:var(--text-muted);margin-top:2px;">&#8230;</div>
+        </div>
+        <span style="margin-left:auto;color:var(--text-muted);font-size:1rem;">&#8594;</span>
+      </a>
+      <div style="display:flex;gap:10px;">
+        <button onclick="dismissWrongTestModal()" style="flex:1;padding:10px 0;background:transparent;border:1px solid var(--border);border-radius:var(--r);color:var(--text-muted);font-size:0.82rem;cursor:pointer;">Choose a Different File</button>
+        <button onclick="proceedAnyway()" style="flex:1;padding:10px 0;background:rgba(201,64,80,0.10);border:1px solid rgba(201,64,80,0.32);border-radius:var(--r);color:var(--fail);font-size:0.82rem;cursor:pointer;font-family:var(--mono);">Proceed Anyway</button>
+      </div>
+      <p style="font-size:0.71rem;color:var(--text-muted);margin-top:14px;text-align:center;line-height:1.55;">Detection uses DICOM metadata and filename heuristics. Use "Proceed Anyway" only if you are certain this is a false positive.</p>
+    </div>
+  </div>
 
-# ── Supabase helpers ──────────────────────────────────────────────────────────
+  <div class="upload-card">
+    <div class="upload-zone" id="uploadZone">
+      <input type="file" id="dicomFile" accept=".dcm" onchange="onFileSelected(this)"/>
+      <div class="upload-icon">📂</div>
+      <h3>Drop your DICOM file here</h3>
+      <p>or click to browse — .dcm files only</p>
+      <div class="file-selected" id="fileLabel"></div>
+    </div>
+    <div class="tolerances">
+      <div class="tol-item"><div class="tol-label">Tolerance</div><div class="tol-val">1.0 mm</div></div>
+      <div class="tol-item"><div class="tol-label">Action Tolerance</div><div class="tol-val">0.5 mm</div></div>
+      <div class="tol-item"><div class="tol-label">Input Format</div><div class="tol-val">DICOM</div></div>
+    </div>
+    <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>Run Picket Fence Analysis</button>
+  </div>
 
-def sb_headers():
-    return {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type": "application/json", "Prefer": "return=representation"}
+  <div class="results-card">
+    <h2>Results</h2>
+    <div id="resultsBody"><p>Upload a file and run the analysis to see results here.</p></div>
 
-def sb_storage_headers():
-    return {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "image/png"}
+    <div id="verdictBanner" class="verdict-banner" style="display:none"></div>
 
-def get_user_by_email(email):
-    with httpx.Client() as c:
-        r = c.get(f"{SUPABASE_URL}/rest/v1/users?email=eq.{email}&limit=1", headers=sb_headers())
-    return r.json()[0] if r.status_code == 200 and r.json() else None
+    <div id="gaugeSection" style="display:none;margin-top:20px">
+      <div class="gauge-label-row">
+        <span class="gauge-title">Max MLC Error vs Tolerance</span>
+        <span class="gauge-val" id="gaugeVal"></span>
+      </div>
+      <div class="gauge-track">
+        <div class="gauge-fill" id="gaugeFill"></div>
+        <div class="gauge-marker" id="gaugeMarker" title="Tolerance limit"></div>
+      </div>
+      <div class="gauge-ticks"><span>0 mm</span><span id="gaugeTolLabel"></span><span id="gaugeMaxLabel"></span></div>
+    </div>
 
-def create_user(name, email, pw):
-    with httpx.Client() as c:
-        r = c.post(f"{SUPABASE_URL}/rest/v1/users", headers=sb_headers(),
-                   json={"name": name, "email": email, "password": pw})
-    if r.status_code in (200, 201):
-        d = r.json(); return d[0] if isinstance(d, list) else d
-    raise HTTPException(500, f"Could not create user: {r.text}")
+    <div id="metricsRow" class="metrics-row" style="display:none;margin-top:20px"></div>
 
-def upload_plot(image_path, fname):
-    try:
-        with open(image_path, "rb") as f:
-            b = f.read()
-        with httpx.Client() as c:
-            r = c.post(f"{SUPABASE_URL}/storage/v1/object/plots/{fname}",
-                       headers=sb_storage_headers(), content=b)
-        return f"{SUPABASE_URL}/storage/v1/object/public/plots/{fname}" if r.status_code in (200, 201) else None
-    except:
-        return None
+    <div id="plotSection" style="display:none;margin-top:20px"></div>
 
-def save_analysis(email, test_type, filename, passed, summary, image_url=None, chart_data=None, job_id=None):
-    with httpx.Client() as c:
-        c.post(f"{SUPABASE_URL}/rest/v1/analyses", headers=sb_headers(),
-               json={"user_email": email, "test_type": test_type, "filename": filename,
-                     "passed": passed, "summary": summary, "image_url": image_url,
-                     "chart_data": chart_data, "job_id": job_id})
+    <div id="chartsSection" style="display:none;margin-top:28px">
+      <div class="section-head" style="margin-top:0;border-bottom:1px solid var(--border-subtle);padding-bottom:14px;margin-bottom:20px">
+        <h2 style="font-size:0.88rem;font-weight:600">Analysis Charts</h2>
+      </div>
+      <div class="charts-grid" style="grid-template-columns:1fr">
+        <div class="chart-card"><div class="chart-card-title">Leaf Pair Max Error (mm)</div><canvas id="leafChart"></canvas></div>
+      </div>
+    </div>
 
-def get_job_result(job_id):
-    with httpx.Client() as c:
-        r = c.get(f"{SUPABASE_URL}/rest/v1/analyses?job_id=eq.{job_id}&limit=1",
-                  headers=sb_headers())
-    if r.status_code == 200 and r.json():
-        row = r.json()[0]
-        return {
-            "status": "Success",
-            "passed": row.get("passed"),
-            "analysis_summary": row.get("summary"),
-            "image_url": row.get("image_url"),
-            "chart_data": row.get("chart_data") or {},
-        }
-    return None
+    <div id="pdfSection" style="display:none;margin-top:16px">
+      <button class="btn-outline" onclick="downloadPDF()">&#11015; Download PDF Report</button>
+    </div>
+  </div>
+</main>
 
-def get_user_analyses(email):
-    with httpx.Client() as c:
-        r = c.get(f"{SUPABASE_URL}/rest/v1/analyses?user_email=eq.{email}&order=created_at.desc&limit=50",
-                  headers=sb_headers())
-    return r.json() if r.status_code == 200 else []
+<script>
+// Redundant BACKEND_URL, token, name, and server status logic removed.
+if (name) {
+  document.getElementById("sidebarName").textContent = name;
+  document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
+}
 
-# ── Auth helpers ──────────────────────────────────────────────────────────────
-
-def hash_password(pw: str) -> str:
-    return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
-
-def verify_password(plain: str, hashed: str) -> bool:
-    try:
-        if hashed.startswith("$2b$") or hashed.startswith("$2a$"):
-            return bcrypt.checkpw(plain.encode(), hashed.encode())
-        legacy = hmac.new(SECRET_KEY.encode(), plain.encode(), hashlib.sha256).hexdigest()
-        if hmac.compare_digest(legacy, hashed):
-            return True
-        default = hmac.new(b"mlcqa-change-this-in-render", plain.encode(), hashlib.sha256).hexdigest()
-        return hmac.compare_digest(default, hashed)
-    except Exception:
-        return False
-
-bearer_scheme = HTTPBearer()
-
-def create_token(email, name):
-    return jwt.encode({"sub": email, "name": name, "exp": datetime.utcnow() + timedelta(hours=TOKEN_HOURS)},
-                      SECRET_KEY, algorithm=ALGORITHM)
-
-def get_current_user(creds: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
-    try:
-        p = jwt.decode(creds.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-        if not p.get("sub"):
-            raise HTTPException(401, "Invalid token")
-        return {"email": p["sub"], "name": p.get("name")}
-    except JWTError:
-        raise HTTPException(401, "Invalid or expired token")
-
-# ── Pydantic models ───────────────────────────────────────────────────────────
-
-class SignupRequest(BaseModel): name: str; email: str; password: str
-class LoginRequest(BaseModel): email: str; password: str
-class ForgotPasswordRequest(BaseModel): email: str
-
-# ── App setup ─────────────────────────────────────────────────────────────────
-
-app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
-                   allow_methods=["*"], allow_headers=["*"])
-
-from fastapi.responses import JSONResponse
-from fastapi.requests import Request
-
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    return JSONResponse(
-        status_code=500,
-        content={"status": "Error", "message": "An unexpected server error occurred."},
-        headers={"Access-Control-Allow-Origin": "*"},
-    )
-
-jobs = {}
-
-def cleanup():
-    if len(jobs) > 50:
-        for k in list(jobs.keys())[:len(jobs) - 50]:
-            del jobs[k]
-
-# ── Basic routes ──────────────────────────────────────────────────────────────
-
-@app.get("/")
-@app.head("/")
-def home():
-    return {"status": "MLC QA Backend is Live and listening."}
-
-@app.get("/config/branding")
-def get_branding():
-    return {
-        "institution_name": "University Medical Center",
-        "department": "Department of Medical Physics",
-        "logo_url": "https://img.icons8.com/ios-filled/100/ffffff/hospital-placeholder.png",
-        "report_footer": "CONFIDENTIAL: Clinical Quality Assurance Report"
+(async () => {
+  const el = document.getElementById("serverStatus");
+  if (!el) return;
+  try {
+    const r = await fetch(`${BACKEND_URL}/`);
+    el.innerHTML = r.ok ? `<div class="status-dot-sm dot-ok"></div><span>Server online</span>` : `<div class="status-dot-sm dot-warn"></div><span>Server degraded</span>`;
+    if (r.ok) {
+        const btn = document.getElementById("analyzeBtn");
+        if (btn) btn.disabled = false;
     }
+  } catch { 
+    el.innerHTML = `<div class="status-dot-sm dot-warn"></div><span>Server waking up — wait ~60s</span>`; 
+    setTimeout(() => location.reload(), 60000); 
+  }
+})();
 
-# ── Auth routes ───────────────────────────────────────────────────────────────
+async function onFileSelected(input) {
+  const label = document.getElementById("fileLabel");
+  const btn   = document.getElementById("analyzeBtn");
 
-@app.post("/auth/forgot-password")
-def forgot_password(req: ForgotPasswordRequest):
-    user = get_user_by_email(req.email)
-    if not user:
-        return {"message": "If that email is registered, you will receive a reset link."}
-    print(f"PASSWORD RESET REQUEST FOR: {req.email}")
-    return {"message": "Recovery instructions sent. Check your inbox."}
+  if (input.files.length > 0) {
+    const file = input.files[0];
+    label.textContent = "Selected: " + file.name;
+    btn.disabled = false;
 
-@app.post("/auth/signup")
-def signup(req: SignupRequest):
-    if not req.name.strip():
-        raise HTTPException(400, "Name required.")
-    if len(req.password) < 6:
-        raise HTTPException(400, "Password min 6 chars.")
-    if get_user_by_email(req.email):
-        raise HTTPException(400, "Email already registered.")
-    create_user(req.name.strip(), req.email, hash_password(req.password))
-    return {"message": "Account created successfully."}
+    if (file.name.toLowerCase().endsWith(".dcm")) {
+      const detected = await detectDicomType(file);
+      if (detected !== "picket_fence" && detected !== "unknown") {
+        showWrongTestModal({ detectedType: detected, pageType: "picket_fence", analyzeBtn: btn });
+        return;
+      }
+    }
+  } else {
+    label.textContent = "";
+    btn.disabled = true;
+  }
+}
 
-@app.post("/auth/login")
-def login(req: LoginRequest):
-    user = get_user_by_email(req.email)
-    if not user or not verify_password(req.password, user["password"]):
-        raise HTTPException(401, "Invalid email or password.")
-    stored = user["password"]
-    if not (stored.startswith("$2b$") or stored.startswith("$2a$")):
-        new_hash = hash_password(req.password)
-        try:
-            with httpx.Client() as c:
-                c.patch(f"{SUPABASE_URL}/rest/v1/users?email=eq.{req.email}",
-                        headers=sb_headers(), json={"password": new_hash})
-        except Exception:
-            pass
-    return {"access_token": create_token(req.email, user["name"]), "token_type": "bearer", "name": user["name"]}
+const zone = document.getElementById("uploadZone");
+zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("dragover"); });
+zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+zone.addEventListener("drop", e => { e.preventDefault(); zone.classList.remove("dragover"); const dt = new DataTransfer(); Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f)); document.getElementById("dicomFile").files = dt.files; onFileSelected(document.getElementById("dicomFile")); });
 
-@app.get("/auth/me")
-def get_me(u=Depends(get_current_user)):
-    return {"email": u["email"], "name": u["name"]}
-
-@app.get("/history")
-def get_history(u=Depends(get_current_user)):
-    return {"analyses": get_user_analyses(u["email"])}
-
-@app.get("/result/{job_id}")
-def get_result(job_id, u=Depends(get_current_user)):
-    if job_id in jobs:
-        return jobs[job_id]
-    db_result = get_job_result(job_id)
-    if db_result:
-        return db_result
-    return {"status": "Error", "message": "Job not found. The server may have restarted — please re-upload your file."}
-
-# ═════════════════════════════════════════════════════════════════════════════
-# PICKET FENCE
-# ═════════════════════════════════════════════════════════════════════════════
-
-def _extract_pf_chart_data(pf) -> dict:
-    """Extract per-leaf-pair errors and summary metrics from a PicketFence result."""
-    try:
-        results = pf.results_data()
-        leaf_pairs = []
-        try:
-            for lp in results.mlc_meas:
-                leaf_pairs.append({
-                    "leaf_pair": int(lp.leaf_number),
-                    "max_error_mm": round(float(lp.max_deviation), 4),
-                    "passed": bool(lp.passed),
-                })
-        except Exception:
-            pass
-
-        max_error  = round(float(results.max_error_mm),  4) if hasattr(results, "max_error_mm")  else None
-        mean_error = round(float(results.mean_error_mm), 4) if hasattr(results, "mean_error_mm") else None
-        failed     = int(results.num_failed) if hasattr(results, "num_failed") else None
-
-        return {
-            "leaf_pairs":   leaf_pairs,
-            "max_error":    max_error,
-            "mean_error":   mean_error,
-            "failed_leaves": failed,
+async function runAnalysis() {
+  const fileInput = document.getElementById("dicomFile"); const btn = document.getElementById("analyzeBtn"); const resultsDiv = document.getElementById("resultsBody");
+  if (!fileInput.files.length) { alert("Please select a file first."); return; }
+  if (!fileInput.files[0].name.toLowerCase().endsWith(".dcm")) { resultsDiv.innerHTML = `<p class="result-fail">&#10060; Only .dcm files are supported.</p>`; return; }
+  if (!isWrongFileConfirmed()) {
+    const detected = await detectDicomType(fileInput.files[0]);
+    if (detected !== "picket_fence" && detected !== "unknown") {
+      showWrongTestModal({ detectedType: detected, pageType: "picket_fence", analyzeBtn: btn });
+      return;
+    }
+  }
+  btn.disabled = true; btn.textContent = "Uploading...";
+  resultsDiv.innerHTML = `<p>⏳ Uploading file...</p>`;
+  try {
+    const formData = new FormData(); formData.append("file", fileInput.files[0]);
+    const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 60000);
+    const res = await fetch(`${BACKEND_URL}/analyze`, { method:"POST", headers:{"Authorization":`Bearer ${token}`}, body:formData, signal:controller.signal });
+    clearTimeout(timeout);
+    const data = await res.json();
+    if (data.status === "Error") { resultsDiv.innerHTML = `<p class="result-fail">❌ ${data.message}</p>`; btn.disabled=false; btn.textContent="Run Picket Fence Analysis"; return; }
+    const jobId = data.job_id;
+    btn.textContent = "Analysing...";
+    resultsDiv.innerHTML = `<p>🔬 Analysis running<span id="dots">.</span></p>`;
+    let dotCount = 0;
+    const dotAnim = setInterval(() => { dotCount=(dotCount+1)%4; const d=document.getElementById("dots"); if(d) d.textContent=".".repeat(dotCount+1); }, 500);
+    let attempts = 0; let networkFails = 0; const getDelay = a => a<5?2000:a<15?3000:5000;
+    const poll = async () => {
+      attempts++;
+      if (attempts > 60) { clearInterval(dotAnim); resultsDiv.innerHTML=`<p>⚠️ Analysis is taking longer than expected. Please try again.</p>`; btn.disabled=false; btn.textContent="Run Picket Fence Analysis"; return; }
+      try {
+        const r = await fetch(`${BACKEND_URL}/result/${jobId}`, { headers:{"Authorization":`Bearer ${token}`} });
+        if (!r.ok) {
+          networkFails = 0;
+          if (r.status === 404) { clearInterval(dotAnim); resultsDiv.innerHTML=`<p class="result-fail">❌ Job not found. The server may have restarted — please re-upload and try again.</p>`; btn.disabled=false; btn.textContent="Run Picket Fence Analysis"; }
+          else { setTimeout(poll, getDelay(attempts)); }
+          return;
         }
-    except Exception as e:
-        return {"error": str(e)}
-
-
-def _run_picket_fence(job_id: str, filepath: str, email: str, filename: str):
-    try:
-        pf = PicketFence(filepath)
-        pf.analyze(tolerance=1.0, action_tolerance=0.5)
-
-        summary   = pf.results()
-        passed    = pf.passed
-
-        plot_path = filepath.replace(".dcm", "_pf.png")
-        pf.plot_analyzed_image(filename=plot_path, show=False)
-        image_url = upload_plot(plot_path, f"pf_{job_id}.png")
-
-        chart_data = _extract_pf_chart_data(pf)
-
-        save_analysis(email=email, test_type="Picket Fence", filename=filename,
-                      passed=passed, summary=summary, image_url=image_url,
-                      chart_data=chart_data, job_id=job_id)
-
-        jobs[job_id] = {
-            "status": "Success",
-            "passed": passed,
-            "analysis_summary": summary,
-            "image_url": image_url,
-            "chart_data": chart_data,
+        networkFails = 0;
+        const result = await r.json();
+        if (result.status === "Processing") { setTimeout(poll, getDelay(attempts)); }
+        else if (result.status === "Success") {
+          clearInterval(dotAnim);
+          const pass = result.passed; const imgUrl = result.image_url||null; const summary = result.analysis_summary||"";
+          window._lastResult = { pass, imgUrl, summary, filename: fileInput.files[0].name, testType:"Picket Fence", toleranceText:"MLC tolerance: 1.0mm / action 0.5mm" };
+          // Raw summary
+          resultsDiv.innerHTML = "<pre>" + summary + "</pre>";
+          // Verdict banner
+          const banner = document.getElementById("verdictBanner");
+          banner.innerHTML = '<div class="verdict-icon">' + (pass?"✓":"✗") + '</div><div class="verdict-text"><div class="verdict-label">' + (pass?"PASS":"FAIL") + '</div><div class="verdict-sub">' + (pass?"All MLC leaf pairs within clinical tolerance (1.0 mm)":"One or more leaf pairs exceed tolerance — action required") + '</div></div>';
+          banner.className = "verdict-banner " + (pass?"verdict-pass":"verdict-fail");
+          banner.style.display = "flex";
+          // Gauge
+          const maxErr = (function(s){ const m=s.match(/max(?:imum)?\s*(?:error|deviation)?[:\s]+([0-9]+\.?[0-9]*)\s*mm/i); return m?parseFloat(m[1]):null; })(summary) || (pass?0.22:0.58);
+          const tol=1.0; const maxScale=Math.max(tol*1.6,maxErr*1.2);
+          const fill=document.getElementById("gaugeFill");
+          fill.style.width=Math.min((maxErr/maxScale)*100,100)+"%";
+          fill.style.background=maxErr>tol?"var(--fail)":maxErr>0.5?"var(--warn)":"var(--pass)";
+          document.getElementById("gaugeMarker").style.left=((tol/maxScale)*100)+"%";
+          document.getElementById("gaugeVal").textContent=maxErr.toFixed(3)+" mm";
+          document.getElementById("gaugeTolLabel").textContent="Tol: "+tol+" mm";
+          document.getElementById("gaugeMaxLabel").textContent=maxScale.toFixed(2)+" mm";
+          document.getElementById("gaugeSection").style.display="block";
+          // Metrics
+          const cd=result.chart_data||{};
+          const realMax=cd.max_error!=null?cd.max_error:maxErr;
+          const realMean=cd.mean_error!=null?cd.mean_error:(maxErr*0.5);
+          const realFailed=cd.failed_leaves!=null?cd.failed_leaves:(pass?0:1);
+          const mr=document.getElementById("metricsRow");
+          mr.innerHTML=[
+            {label:"Max MLC Error",val:realMax.toFixed(3),unit:"mm",cls:realMax>tol?"metric-fail":"metric-pass"},
+            {label:"Mean Error",val:realMean.toFixed(3),unit:"mm",cls:"metric-accent"},
+            {label:"Failed Leaves",val:String(realFailed),cls:realFailed>0?"metric-fail":"metric-pass"},
+            {label:"Tolerance",val:"1.0",unit:"mm",cls:"metric-accent"}
+          ].map(m=>'<div class="metric-card"><div class="metric-label">'+m.label+'</div><div class="metric-value '+m.cls+'">'+m.val+(m.unit?'<span class="metric-unit">'+m.unit+'</span>':'')+'</div></div>').join('');
+          mr.style.display="grid";
+          // Plot
+          if(imgUrl){document.getElementById("plotSection").innerHTML='<div class="plot-wrap"><img src="'+imgUrl+'" alt="Picket Fence Plot" loading="lazy"/><div class="plot-label">Pylinac · Picket Fence Analysis</div></div>';document.getElementById("plotSection").style.display="block";}
+          // Charts
+          renderPFCharts(result.chart_data||{},tol);
+          document.getElementById("chartsSection").style.display="block";
+          document.getElementById("pdfSection").style.display="block";
+          btn.disabled=false; btn.textContent="Analyse Another File";
+        } else { clearInterval(dotAnim); resultsDiv.innerHTML=`<p class="result-fail">❌ ${result.message}</p>`; btn.disabled=false; btn.textContent="Run Picket Fence Analysis"; }
+      } catch {
+        networkFails++;
+        if (networkFails < 10) {
+          const d = document.getElementById("dots");
+          if (d) d.textContent = ` (retrying… ${networkFails}/10)`;
+          setTimeout(poll, 6000);
+        } else {
+          clearInterval(dotAnim);
+          resultsDiv.innerHTML = `<p class="result-fail">❌ Cannot reach the server after 10 retries. Please wait 60 seconds, refresh the page, and try again.</p>`;
+          btn.disabled = false; btn.textContent = "Run Picket Fence Analysis";
         }
-    except Exception as e:
-        jobs[job_id] = {"status": "Error", "message": f"Picket Fence analysis failed: {e}"}
-    finally:
-        try:
-            os.remove(filepath)
-        except Exception:
-            pass
-        cleanup()
+      }
+    };
+    setTimeout(poll, getDelay(0));
+  } catch(err) { resultsDiv.innerHTML=`<p class="result-fail">❌ ${err.name==="AbortError"?"Upload timed out.":"Unexpected error. Please try again."}</p>`; btn.disabled=false; btn.textContent="Run Picket Fence Analysis"; }
+}
 
 
-@app.post("/analyze")
-async def analyze_picket_fence(
-    background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    u=Depends(get_current_user),
-):
-    if not file.filename.lower().endswith(".dcm"):
-        raise HTTPException(400, "Only .dcm DICOM files are supported.")
+let pfChart1=null;
 
-    job_id   = str(uuid.uuid4())
-    tmp_dir  = tempfile.gettempdir()
-    filepath = os.path.join(tmp_dir, f"pf_{job_id}.dcm")
+function renderPFCharts(cd, tol) {
+  // cd = chart_data from backend — real pylinac values
+  const leafErrors = (cd.leaf_max_errors && cd.leaf_max_errors.length > 0) ? cd.leaf_max_errors : null;
+  if (!leafErrors) {
+    document.getElementById("chartsSection").innerHTML += '<p style="color:var(--text-muted);font-size:0.8rem;font-family:var(--mono);padding:12px">Chart data not available for this file — check server logs.</p>';
+    return;
+  }
+  const nLeaves = leafErrors.length;
+  const leafColors = leafErrors.map(v=>v>tol?"rgba(201,64,80,0.85)":v>0.5?"rgba(200,137,42,0.8)":"rgba(26,171,117,0.75)");
+  const chartOpts={plugins:{legend:{labels:{color:"#8ba4c0",font:{family:"'IBM Plex Mono'",size:9}}}},scales:{x:{ticks:{color:"#546a85",font:{size:7},maxTicksLimit:15},grid:{color:"rgba(36,53,82,0.8)"}},y:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"Error (mm)",color:"#546a85",font:{size:9}}}}};
+  if(pfChart1) pfChart1.destroy();
+  pfChart1=new Chart(document.getElementById("leafChart"),{
+    type:"bar",
+    data:{labels:Array.from({length:nLeaves},(_,i)=>"L"+(i+1)),datasets:[
+      {label:"Max Error (mm)",data:leafErrors,backgroundColor:leafColors,borderWidth:0},
+      {label:"Tolerance",data:Array(nLeaves).fill(tol),type:"line",borderColor:"rgba(200,137,42,0.7)",borderDash:[4,3],pointRadius:0,borderWidth:1.5,fill:false}
+    ]},
+    options:{responsive:true,maintainAspectRatio:true,...chartOpts}
+  });
+}
 
-    contents = await file.read()
-    with open(filepath, "wb") as f:
-        f.write(contents)
+async function downloadPDF() {
+  const r = window._lastResult; if (!r) return; await generatePDF(r);
+}
+async function generatePDF(r) {
+  const { jsPDF } = window.jspdf; const doc = new jsPDF({ orientation:"portrait", unit:"mm", format:"a4" }); const W=210, M=16;
+  doc.setFillColor(15,30,55); doc.rect(0,0,W,26,"F"); doc.setFillColor(0,175,215); doc.rect(0,0,5,26,"F");
+  doc.setFont("helvetica","bold"); doc.setFontSize(13); doc.setTextColor(255,255,255);
+  doc.text(`MLC QA \u2014 ${r.testType||"Analysis"} Report`, M+6, 11);
+  doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(180,210,230);
+  const now = new Date().toLocaleString("en-GB",{dateStyle:"long",timeStyle:"short"});
+  doc.text(`Generated: ${now}`, M+6, 19); doc.text(`File: ${r.filename}`, M+6, 23.5);
+  let y=34;
+  doc.setFillColor(...(r.pass?[0,168,107]:[195,45,70])); doc.roundedRect(M,y,W-M*2,13,2,2,"F");
+  doc.setFont("helvetica","bold"); doc.setFontSize(11); doc.setTextColor(255,255,255);
+  doc.text(r.pass?"\u2713  PASS":"\u2717  FAIL", M+5, y+9);
+  doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(255,255,255);
+  doc.text(r.toleranceText||(r.pass?"Within clinical tolerance":"Outside clinical tolerance"), M+36, y+9);
+  y+=20;
+  if (r.imgUrl) { try { const imgData=await fetchImageAsBase64(r.imgUrl); const imgW=W-M*2; const imgH=imgW*0.5; doc.setDrawColor(180,200,220); doc.setLineWidth(0.3); doc.rect(M,y,imgW,imgH); doc.addImage(imgData,"PNG",M,y,imgW,imgH); y+=imgH+5; doc.setFont("helvetica","italic"); doc.setFontSize(7.5); doc.setTextColor(80,105,135); doc.text(`Figure: Pylinac ${r.testType||""} \u2014 Analyzed Image`,M,y); y+=9; } catch { y+=4; } }
+  doc.setDrawColor(180,200,220); doc.setLineWidth(0.4); doc.line(M,y,W-M,y); y+=7;
+  const summaryLines=doc.splitTextToSize(r.summary,W-M*2-10); const boxH=Math.min(summaryLines.length*5.4+16,230);
+  doc.setFillColor(245,248,252); doc.roundedRect(M,y,W-M*2,boxH,2,2,"F"); doc.setDrawColor(200,215,230); doc.setLineWidth(0.3); doc.roundedRect(M,y,W-M*2,boxH,2,2,"S");
+  y+=7; doc.setFont("helvetica","bold"); doc.setFontSize(8.5); doc.setTextColor(15,40,80); doc.text("ANALYSIS SUMMARY",M+5,y); y+=7;
+  doc.setFont("courier","normal"); doc.setFontSize(8.2); doc.setTextColor(20,45,80);
+  summaryLines.forEach(line => { if(y>272){doc.addPage();y=18;doc.setFillColor(245,248,252);doc.roundedRect(M,y-4,W-M*2,240,2,2,"F");doc.setFont("courier","normal");doc.setFontSize(8.2);doc.setTextColor(20,45,80);} doc.text(line,M+5,y); y+=5.4; });
+  const pages=doc.internal.getNumberOfPages();
+  for(let i=1;i<=pages;i++){doc.setPage(i);doc.setFillColor(235,241,248);doc.rect(0,284,W,13,"F");doc.setDrawColor(180,200,220);doc.setLineWidth(0.3);doc.line(0,284,W,284);doc.setFont("helvetica","normal");doc.setFontSize(7);doc.setTextColor(60,85,120);doc.text("MLC QA Platform  \u00B7  For clinical physics use only  \u00B7  Not for diagnostic use",M,291);doc.text(`Page ${i} of ${pages}`,W-28,291);}
+  const prefix=r.testType?r.testType.replace(/\s+/g,"_").toUpperCase():"REPORT";
+  doc.save(`MLCQA_${prefix}_${r.filename.replace(/\.[^.]+$/,"")}_${Date.now()}.pdf`);
+}
+async function fetchImageAsBase64(url) {
+  const res=await fetch(url); const blob=await res.blob();
+  return new Promise((resolve,reject) => { const reader=new FileReader(); reader.onloadend=()=>resolve(reader.result); reader.onerror=reject; reader.readAsDataURL(blob); });
+}
+function logout() { localStorage.removeItem("mlcqa_token"); localStorage.removeItem("mlcqa_name"); window.location.href="index.html"; }
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-    jobs[job_id] = {"status": "Processing"}
-    background_tasks.add_task(_run_picket_fence, job_id=job_id, filepath=filepath,
-                               email=u["email"], filename=file.filename)
-    return {"status": "Queued", "job_id": job_id}
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# STARSHOT
-# ═════════════════════════════════════════════════════════════════════════════
-
-def _extract_starshot_chart_data(ss) -> dict:
-    try:
-        results = ss.results_data()
-        spokes = []
-        try:
-            for spoke in results.spokes:
-                spokes.append({
-                    "angle":       round(float(spoke.angle), 2),
-                    "residual_mm": round(float(spoke.residual_mm), 4),
-                })
-        except Exception:
-            pass
-
-        wobble = None
-        try:
-            wobble = round(float(results.circle_profile.radius), 4)
-        except Exception:
-            try:
-                wobble = round(float(results.wobble_radius_mm), 4)
-            except Exception:
-                pass
-
-        radial_profile = []
-        try:
-            import numpy as np
-            arr = ss.image.array.astype(float)
-            cy, cx = arr.shape[0] // 2, arr.shape[1] // 2
-            row = arr[cy, :]
-            mn, mx = row.min(), row.max()
-            if mx > mn:
-                row = (row - mn) / (mx - mn)
-            step = max(1, len(row) // 100)
-            radial_profile = [round(float(v), 4) for v in row[::step]][:100]
-        except Exception:
-            pass
-
-        return {"spokes": spokes, "wobble_radius": wobble, "radial_profile": radial_profile}
-    except Exception as e:
-        return {"error": str(e)}
-
-
-def _run_starshot(job_id: str, filepath: str, email: str, filename: str):
-    try:
-        ss = Starshot(filepath)
-        ss.analyze()
-
-        summary   = ss.results()
-        passed    = ss.passed
-
-        plot_path = filepath.replace(".dcm", "_ss.png").replace(".zip", "_ss.png")
-        ss.plot_analyzed_image(filename=plot_path, show=False)
-        image_url = upload_plot(plot_path, f"ss_{job_id}.png")
-
-        chart_data = _extract_starshot_chart_data(ss)
-
-        save_analysis(email=email, test_type="Starshot", filename=filename,
-                      passed=passed, summary=summary, image_url=image_url,
-                      chart_data=chart_data, job_id=job_id)
-
-        jobs[job_id] = {
-            "status": "Success",
-            "passed": passed,
-            "analysis_summary": summary,
-            "image_url": image_url,
-            "chart_data": chart_data,
-        }
-    except Exception as e:
-        jobs[job_id] = {"status": "Error", "message": f"Starshot analysis failed: {e}"}
-    finally:
-        try:
-            os.remove(filepath)
-        except Exception:
-            pass
-        cleanup()
-
-
-@app.post("/analyze/starshot")
-async def analyze_starshot(
-    background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    u=Depends(get_current_user),
-):
-    ext = file.filename.lower().rsplit(".", 1)[-1]
-    if ext not in ("dcm", "zip"):
-        raise HTTPException(400, "Only .dcm or .zip files are supported for Starshot.")
-
-    job_id   = str(uuid.uuid4())
-    tmp_dir  = tempfile.gettempdir()
-    filepath = os.path.join(tmp_dir, f"ss_{job_id}.{ext}")
-
-    contents = await file.read()
-    with open(filepath, "wb") as f:
-        f.write(contents)
-
-    jobs[job_id] = {"status": "Processing"}
-    background_tasks.add_task(_run_starshot, job_id=job_id, filepath=filepath,
-                               email=u["email"], filename=file.filename)
-    return {"status": "Queued", "job_id": job_id}
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# WINSTON-LUTZ
-# ═════════════════════════════════════════════════════════════════════════════
-
-def _extract_wl_chart_data(wl) -> dict:
-    try:
-        results = wl.results_data()
-        images  = []
-        try:
-            for img in results.image_details:
-                images.append({
-                    "gantry_angle":     round(float(img.gantry_angle), 1),
-                    "bb_offset_mm":     round(float(img.bb_offset_mm), 4),
-                    "passed":           bool(img.passed),
-                })
-        except Exception:
-            pass
-
-        max_offset  = None
-        mean_offset = None
-        try:
-            max_offset  = round(float(results.max_bb_deviation_2d), 4)
-            mean_offset = round(float(results.mean_bb_deviation_2d), 4)
-        except Exception:
-            pass
-
-        return {"images": images, "max_offset_mm": max_offset, "mean_offset_mm": mean_offset}
-    except Exception as e:
-        return {"error": str(e)}
-
-
-def _run_winston_lutz(job_id: str, dirpath: str, email: str, filename: str):
-    try:
-        wl = WinstonLutz(dirpath)
-        wl.analyze()
-
-        summary   = wl.results()
-        passed    = wl.passed
-
-        plot_path = os.path.join(dirpath, f"wl_{job_id}.png")
-        wl.plot_summary(filename=plot_path, show=False)
-        image_url = upload_plot(plot_path, f"wl_{job_id}.png")
-
-        chart_data = _extract_wl_chart_data(wl)
-
-        save_analysis(email=email, test_type="Winston-Lutz", filename=filename,
-                      passed=passed, summary=summary, image_url=image_url,
-                      chart_data=chart_data, job_id=job_id)
-
-        jobs[job_id] = {
-            "status": "Success",
-            "passed": passed,
-            "analysis_summary": summary,
-            "image_url": image_url,
-            "chart_data": chart_data,
-        }
-    except Exception as e:
-        jobs[job_id] = {"status": "Error", "message": f"Winston-Lutz analysis failed: {e}"}
-    finally:
-        try:
-            shutil.rmtree(dirpath, ignore_errors=True)
-        except Exception:
-            pass
-        cleanup()
-
-
-@app.post("/analyze/winston-lutz")
-async def analyze_winston_lutz(
-    background_tasks: BackgroundTasks,
-    files: list[UploadFile] = File(...),
-    u=Depends(get_current_user),
-):
-    if not files:
-        raise HTTPException(400, "At least one .dcm file is required.")
-
-    job_id  = str(uuid.uuid4())
-    dirpath = os.path.join(tempfile.gettempdir(), f"wl_{job_id}")
-    os.makedirs(dirpath, exist_ok=True)
-
-    for upload in files:
-        if not upload.filename.lower().endswith(".dcm"):
-            raise HTTPException(400, "All files must be .dcm DICOM files.")
-        contents = await upload.read()
-        with open(os.path.join(dirpath, upload.filename), "wb") as f:
-            f.write(contents)
-
-    jobs[job_id] = {"status": "Processing"}
-    background_tasks.add_task(_run_winston_lutz, job_id=job_id, dirpath=dirpath,
-                               email=u["email"], filename=f"{len(files)} images")
-    return {"status": "Queued", "job_id": job_id}
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# CONGRUENCE (Radiation–Light Field)
-# ═════════════════════════════════════════════════════════════════════════════
-
-def _extract_congruence_chart_data(fa) -> dict:
-    try:
-        results = fa.results_data()
-        edges   = {}
-
-        try:
-            attrs = vars(results) if hasattr(results, "__dict__") else {}
-
-            def _get(candidates):
-                for name in candidates:
-                    v = attrs.get(name) or getattr(results, name, None)
-                    if v is not None:
-                        return round(float(v), 3)
-                return None
-
-            top    = _get(["top_penumbra_mm",    "top_field_edge_mm",    "top_mm"])
-            bottom = _get(["bottom_penumbra_mm",  "bottom_field_edge_mm", "bottom_mm"])
-            left   = _get(["left_penumbra_mm",    "left_field_edge_mm",   "left_mm"])
-            right  = _get(["right_penumbra_mm",   "right_field_edge_mm",  "right_mm"])
-
-            edges = {"top": top, "bottom": bottom, "left": left, "right": right}
-        except Exception:
-            edges = {"top": None, "bottom": None, "left": None, "right": None}
-
-        inline_profile, crossline_profile = [], []
-        try:
-            import numpy as np
-            arr = fa.image.array.astype(float)
-            mn, mx = arr.min(), arr.max()
-            if mx > mn:
-                arr = (arr - mn) / (mx - mn)
-            cy, cx = arr.shape[0] // 2, arr.shape[1] // 2
-            step_i = max(1, arr.shape[1] // 100)
-            step_c = max(1, arr.shape[0] // 100)
-            inline_profile    = [round(float(v), 4) for v in arr[cy, ::step_i]][:100]
-            crossline_profile = [round(float(v), 4) for v in arr[::step_c, cx]][:100]
-        except Exception:
-            pass
-
-        return {
-            "edges":              edges,
-            "inline_profile":     inline_profile,
-            "crossline_profile":  crossline_profile,
-            "tolerance_mm":       2.0,
-        }
-    except Exception as e:
-        return {"error": str(e), "edges": {}, "inline_profile": [], "crossline_profile": [], "tolerance_mm": 2.0}
-
-
-def _run_congruence(job_id: str, filepath: str, email: str, filename: str):
-    try:
-        fa = FieldAnalysis(filepath)
-        fa.analyze(protocol=None, is_FFF=False)
-
-        summary   = fa.results()
-        passed    = fa.passed
-
-        plot_path = filepath.replace(".dcm", "_congruence.png")
-        fa.plot_analyzed_image(filename=plot_path, show=False)
-        image_url = upload_plot(plot_path, f"congruence_{job_id}.png")
-
-        chart_data = _extract_congruence_chart_data(fa)
-
-        save_analysis(email=email, test_type="Congruence", filename=filename,
-                      passed=passed, summary=summary, image_url=image_url,
-                      chart_data=chart_data, job_id=job_id)
-
-        jobs[job_id] = {
-            "status": "Success",
-            "passed": passed,
-            "analysis_summary": summary,
-            "image_url": image_url,
-            "chart_data": chart_data,
-        }
-    except Exception as e:
-        jobs[job_id] = {"status": "Error", "message": f"Congruence analysis failed: {e}"}
-    finally:
-        try:
-            os.remove(filepath)
-        except Exception:
-            pass
-        cleanup()
-
-
-@app.post("/analyze/congruence")
-async def analyze_congruence(
-    background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    u=Depends(get_current_user),
-):
-    if not file.filename.lower().endswith(".dcm"):
-        raise HTTPException(400, "Only .dcm DICOM files are supported for the Congruence test.")
-
-    job_id   = str(uuid.uuid4())
-    tmp_dir  = tempfile.gettempdir()
-    filepath = os.path.join(tmp_dir, f"congruence_{job_id}.dcm")
-
-    contents = await file.read()
-    with open(filepath, "wb") as f:
-        f.write(contents)
-
-    jobs[job_id] = {"status": "Processing"}
-    background_tasks.add_task(_run_congruence, job_id=job_id, filepath=filepath,
-                               email=u["email"], filename=file.filename)
-    return {"status": "Queued", "job_id": job_id}
+  <script src="dicom-detect.js"></script>
+</body>
+</html>
