@@ -6,6 +6,7 @@
   <title>Picket Fence — MLC QA</title>
   <link rel="stylesheet" href="style.css"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="script_fixed.js"></script>
 </head>
 <body>
 <aside class="sidebar">
@@ -129,27 +130,15 @@
 </main>
 
 <script>
-// Redundant BACKEND_URL, token, name, and server status logic removed.
+// Initialize user info
+const name = localStorage.getItem("mlcqa_name");
 if (name) {
   document.getElementById("sidebarName").textContent = name;
   document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
 }
 
-(async () => {
-  const el = document.getElementById("serverStatus");
-  if (!el) return;
-  try {
-    const r = await fetch(`${BACKEND_URL}/`);
-    el.innerHTML = r.ok ? `<div class="status-dot-sm dot-ok"></div><span>Server online</span>` : `<div class="status-dot-sm dot-warn"></div><span>Server degraded</span>`;
-    if (r.ok) {
-        const btn = document.getElementById("analyzeBtn");
-        if (btn) btn.disabled = false;
-    }
-  } catch { 
-    el.innerHTML = `<div class="status-dot-sm dot-warn"></div><span>Server waking up — wait ~60s</span>`; 
-    setTimeout(() => location.reload(), 60000); 
-  }
-})();
+// Check server status on load
+AnalysisHelpers.checkServer('serverStatus', 'analyzeBtn');
 
 async function onFileSelected(input) {
   const label = document.getElementById("fileLabel");
@@ -179,103 +168,142 @@ zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
 zone.addEventListener("drop", e => { e.preventDefault(); zone.classList.remove("dragover"); const dt = new DataTransfer(); Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f)); document.getElementById("dicomFile").files = dt.files; onFileSelected(document.getElementById("dicomFile")); });
 
 async function runAnalysis() {
-  const fileInput = document.getElementById("dicomFile"); const btn = document.getElementById("analyzeBtn"); const resultsDiv = document.getElementById("resultsBody");
-  if (!fileInput.files.length) { alert("Please select a file first."); return; }
-  if (!fileInput.files[0].name.toLowerCase().endsWith(".dcm")) { resultsDiv.innerHTML = `<p class="result-fail">&#10060; Only .dcm files are supported.</p>`; return; }
-  if (!isWrongFileConfirmed()) {
-    const detected = await detectDicomType(fileInput.files[0]);
-    if (detected !== "picket_fence" && detected !== "unknown") {
-      showWrongTestModal({ detectedType: detected, pageType: "picket_fence", analyzeBtn: btn });
+  const fileInput = document.getElementById("dicomFile");
+  const btn = document.getElementById("analyzeBtn");
+  const resultsDiv = document.getElementById("resultsBody");
+  
+  if (!fileInput.files.length) {
+    alert("Please select a file first.");
+    return;
+  }
+  
+  if (!fileInput.files[0].name.toLowerCase().endsWith(".dcm")) {
+    resultsDiv.innerHTML = `<p class="result-fail">❌ Only .dcm files are supported.</p>`;
+    return;
+  }
+
+  try {
+    // Check server first
+    resultsDiv.innerHTML = `<p>⏳ Checking server status...</p>`;
+    const serverReady = await AnalysisHelpers.waitForServer();
+    if (!serverReady) {
+      throw new Error("Server not responding. Please refresh the page and try again.");
+    }
+
+    // Validate authentication
+    const token = localStorage.getItem("mlcqa_token");
+    if (!token) {
+      window.location.href = "login.html";
       return;
     }
-  }
-  btn.disabled = true; btn.textContent = "Uploading...";
-  resultsDiv.innerHTML = `<p>⏳ Uploading file...</p>`;
-  try {
-    const formData = new FormData(); formData.append("file", fileInput.files[0]);
-    const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 60000);
-    const res = await fetch(`${BACKEND_URL}/analyze`, { method:"POST", headers:{"Authorization":`Bearer ${token}`}, body:formData, signal:controller.signal });
-    clearTimeout(timeout);
-    const data = await res.json();
-    if (data.status === "Error") { resultsDiv.innerHTML = `<p class="result-fail">❌ ${data.message}</p>`; btn.disabled=false; btn.textContent="Run Picket Fence Analysis"; return; }
-    const jobId = data.job_id;
-    btn.textContent = "Analysing...";
+
+    // Prepare and send request
+    resultsDiv.innerHTML = `<p>📤 Uploading file...</p>`;
+    const formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+    formData.append("tolerance", "1.0");
+    formData.append("action_tolerance", "0.5");
+
+    btn.textContent = "Uploading...";
+    
+    const data = await AnalysisHelpers.makeApiCall(`${BACKEND_URL}/analyze`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`
+      },
+      body: formData
+    }, 30000);
+
+    if (data.status === "Error") {
+      throw new Error(data.message || "Server returned an error");
+    }
+
+    // Start polling for results
+    btn.textContent = "Analyzing...";
     resultsDiv.innerHTML = `<p>🔬 Analysis running<span id="dots">.</span></p>`;
-    let dotCount = 0;
-    const dotAnim = setInterval(() => { dotCount=(dotCount+1)%4; const d=document.getElementById("dots"); if(d) d.textContent=".".repeat(dotCount+1); }, 500);
-    let attempts = 0; let networkFails = 0; const getDelay = a => a<5?2000:a<15?3000:5000;
-    const poll = async () => {
-      attempts++;
-      if (attempts > 60) { clearInterval(dotAnim); resultsDiv.innerHTML=`<p>⚠️ Analysis is taking longer than expected. Please try again.</p>`; btn.disabled=false; btn.textContent="Run Picket Fence Analysis"; return; }
-      try {
-        const r = await fetch(`${BACKEND_URL}/result/${jobId}`, { headers:{"Authorization":`Bearer ${token}`} });
-        if (!r.ok) {
-          networkFails = 0;
-          if (r.status === 404) { clearInterval(dotAnim); resultsDiv.innerHTML=`<p class="result-fail">❌ Job not found. The server may have restarted — please re-upload and try again.</p>`; btn.disabled=false; btn.textContent="Run Picket Fence Analysis"; }
-          else { setTimeout(poll, getDelay(attempts)); }
-          return;
-        }
-        networkFails = 0;
-        const result = await r.json();
-        if (result.status === "Processing") { setTimeout(poll, getDelay(attempts)); }
-        else if (result.status === "Success") {
-          clearInterval(dotAnim);
-          const pass = result.passed; const imgUrl = result.image_url||null; const summary = result.analysis_summary||"";
-          window._lastResult = { pass, imgUrl, summary, filename: fileInput.files[0].name, testType:"Picket Fence", toleranceText:"MLC tolerance: 1.0mm / action 0.5mm" };
-          // Raw summary
-          resultsDiv.innerHTML = "<pre>" + summary + "</pre>";
-          // Verdict banner
-          const banner = document.getElementById("verdictBanner");
-          banner.innerHTML = '<div class="verdict-icon">' + (pass?"✓":"✗") + '</div><div class="verdict-text"><div class="verdict-label">' + (pass?"PASS":"FAIL") + '</div><div class="verdict-sub">' + (pass?"All MLC leaf pairs within clinical tolerance (1.0 mm)":"One or more leaf pairs exceed tolerance — action required") + '</div></div>';
-          banner.className = "verdict-banner " + (pass?"verdict-pass":"verdict-fail");
-          banner.style.display = "flex";
-          // Gauge
-          const maxErr = (function(s){ const m=s.match(/max(?:imum)?\s*(?:error|deviation)?[:\s]+([0-9]+\.?[0-9]*)\s*mm/i); return m?parseFloat(m[1]):null; })(summary) || (pass?0.22:0.58);
-          const tol=1.0; const maxScale=Math.max(tol*1.6,maxErr*1.2);
-          const fill=document.getElementById("gaugeFill");
-          fill.style.width=Math.min((maxErr/maxScale)*100,100)+"%";
-          fill.style.background=maxErr>tol?"var(--fail)":maxErr>0.5?"var(--warn)":"var(--pass)";
-          document.getElementById("gaugeMarker").style.left=((tol/maxScale)*100)+"%";
-          document.getElementById("gaugeVal").textContent=maxErr.toFixed(3)+" mm";
-          document.getElementById("gaugeTolLabel").textContent="Tol: "+tol+" mm";
-          document.getElementById("gaugeMaxLabel").textContent=maxScale.toFixed(2)+" mm";
-          document.getElementById("gaugeSection").style.display="block";
-          // Metrics
-          const cd=result.chart_data||{};
-          const realMax=cd.max_error!=null?cd.max_error:maxErr;
-          const realMean=cd.mean_error!=null?cd.mean_error:(maxErr*0.5);
-          const realFailed=cd.failed_leaves!=null?cd.failed_leaves:(pass?0:1);
-          const mr=document.getElementById("metricsRow");
-          mr.innerHTML=[
-            {label:"Max MLC Error",val:realMax.toFixed(3),unit:"mm",cls:realMax>tol?"metric-fail":"metric-pass"},
-            {label:"Mean Error",val:realMean.toFixed(3),unit:"mm",cls:"metric-accent"},
-            {label:"Failed Leaves",val:String(realFailed),cls:realFailed>0?"metric-fail":"metric-pass"},
-            {label:"Tolerance",val:"1.0",unit:"mm",cls:"metric-accent"}
-          ].map(m=>'<div class="metric-card"><div class="metric-label">'+m.label+'</div><div class="metric-value '+m.cls+'">'+m.val+(m.unit?'<span class="metric-unit">'+m.unit+'</span>':'')+'</div></div>').join('');
-          mr.style.display="grid";
-          // Plot
-          if(imgUrl){document.getElementById("plotSection").innerHTML='<div class="plot-wrap"><img src="'+imgUrl+'" alt="Picket Fence Plot" loading="lazy"/><div class="plot-label">Pylinac · Picket Fence Analysis</div></div>';document.getElementById("plotSection").style.display="block";}
-          // Charts
-          renderPFCharts(result.chart_data||{},tol);
-          document.getElementById("chartsSection").style.display="block";
-          document.getElementById("pdfSection").style.display="block";
-          btn.disabled=false; btn.textContent="Analyse Another File";
-        } else { clearInterval(dotAnim); resultsDiv.innerHTML=`<p class="result-fail">❌ ${result.message}</p>`; btn.disabled=false; btn.textContent="Run Picket Fence Analysis"; }
-      } catch {
-        networkFails++;
-        if (networkFails < 10) {
-          const d = document.getElementById("dots");
-          if (d) d.textContent = ` (retrying… ${networkFails}/10)`;
-          setTimeout(poll, 6000);
-        } else {
-          clearInterval(dotAnim);
-          resultsDiv.innerHTML = `<p class="result-fail">❌ Cannot reach the server after 10 retries. Please wait 60 seconds, refresh the page, and try again.</p>`;
-          btn.disabled = false; btn.textContent = "Run Picket Fence Analysis";
-        }
-      }
-    };
-    setTimeout(poll, getDelay(0));
-  } catch(err) { resultsDiv.innerHTML=`<p class="result-fail">❌ ${err.name==="AbortError"?"Upload timed out.":"Unexpected error. Please try again."}</p>`; btn.disabled=false; btn.textContent="Run Picket Fence Analysis"; }
+    
+    await AnalysisHelpers.pollForResult(data.job_id, (result) => {
+      handlePicketFenceSuccess(result, fileInput.files[0].name);
+    }, (error) => {
+      throw new Error(error);
+    });
+
+  } catch (err) {
+    console.error("Picket Fence analysis error:", err);
+    resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
+    btn.disabled = false;
+    btn.textContent = "Run Picket Fence Analysis";
+  }
+}
+
+function handlePicketFenceSuccess(result, filename) {
+  const resultsDiv = document.getElementById("resultsBody");
+  const analyzeBtn = document.getElementById("analyzeBtn");
+  
+  const pass = result.passed;
+  const imgUrl = result.image_url || null;
+  const summary = result.analysis_summary || "";
+  const chartData = result.chart_data || {};
+  
+  // Store result for PDF generation
+  window._lastResult = { 
+    pass, 
+    imgUrl, 
+    summary, 
+    filename: filename, 
+    testType: "Picket Fence", 
+    toleranceText: "MLC tolerance: 1.0mm / action 0.5mm" 
+  };
+  
+  // Raw summary
+  resultsDiv.innerHTML = "<pre>" + summary + "</pre>";
+  
+  // Verdict banner
+  const banner = document.getElementById("verdictBanner");
+  banner.innerHTML = '<div class="verdict-icon">' + (pass ? "✓" : "✗") + '</div><div class="verdict-text"><div class="verdict-label">' + (pass ? "PASS" : "FAIL") + '</div><div class="verdict-sub">' + (pass ? "All MLC leaf pairs within clinical tolerance (1.0 mm)" : "One or more leaf pairs exceed tolerance — action required") + '</div></div>';
+  banner.className = "verdict-banner " + (pass ? "verdict-pass" : "verdict-fail");
+  banner.style.display = "flex";
+  
+  // Gauge
+  const maxErr = (function(s){ const m=s.match(/max(?:imum)?\s*(?:error|deviation)?[:\s]+([0-9]+\.?[0-9]*)\s*mm/i); return m?parseFloat(m[1]):null; })(summary) || (pass?0.22:0.58);
+  const tol = 1.0; 
+  const maxScale = Math.max(tol*1.6, maxErr*1.2);
+  const fill = document.getElementById("gaugeFill");
+  fill.style.width = Math.min((maxErr/maxScale)*100, 100) + "%";
+  fill.style.background = maxErr > tol ? "var(--fail)" : maxErr > 0.5 ? "var(--warn)" : "var(--pass)";
+  document.getElementById("gaugeMarker").style.left = ((tol/maxScale)*100) + "%";
+  document.getElementById("gaugeVal").textContent = maxErr.toFixed(3) + " mm";
+  document.getElementById("gaugeTolLabel").textContent = "Tol: " + tol + " mm";
+  document.getElementById("gaugeMaxLabel").textContent = maxScale.toFixed(2) + " mm";
+  document.getElementById("gaugeSection").style.display = "block";
+  
+  // Metrics
+  const cd = chartData;
+  const realMax = cd.max_error != null ? cd.max_error : maxErr;
+  const realMean = cd.mean_error != null ? cd.mean_error : (maxErr * 0.5);
+  const realFailed = cd.failed_leaves != null ? cd.failed_leaves : (pass ? 0 : 1);
+  const mr = document.getElementById("metricsRow");
+  mr.innerHTML = [
+    {label: "Max MLC Error", val: realMax.toFixed(3), unit: "mm", cls: realMax > tol ? "metric-fail" : "metric-pass"},
+    {label: "Mean Error", val: realMean.toFixed(3), unit: "mm", cls: "metric-accent"},
+    {label: "Failed Leaves", val: String(realFailed), cls: realFailed > 0 ? "metric-fail" : "metric-pass"},
+    {label: "Tolerance", val: "1.0", unit: "mm", cls: "metric-accent"}
+  ].map(m => '<div class="metric-card"><div class="metric-label">' + m.label + '</div><div class="metric-value ' + m.cls + '">' + m.val + (m.unit ? '<span class="metric-unit">' + m.unit + '</span>' : '') + '</div></div>').join('');
+  mr.style.display = "grid";
+  
+  // Plot
+  if (imgUrl) {
+    document.getElementById("plotSection").innerHTML = '<div class="plot-wrap"><img src="' + imgUrl + '" alt="Picket Fence Plot" loading="lazy"/><div class="plot-label">Pylinac · Picket Fence Analysis</div></div>';
+    document.getElementById("plotSection").style.display = "block";
+  }
+  
+  // Charts
+  renderPFCharts(chartData, tol);
+  document.getElementById("chartsSection").style.display = "block";
+  document.getElementById("pdfSection").style.display = "block";
+  
+  analyzeBtn.disabled = false;
+  analyzeBtn.textContent = "Analyze Another File";
 }
 
 
