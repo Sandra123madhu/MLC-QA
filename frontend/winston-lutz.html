@@ -30,446 +30,273 @@
       <div class="avatar" id="avatarInitial">?</div>
       <div><div class="user-name" id="sidebarName">Loading...</div><div class="user-role">Medical Physicist</div></div>
     </div>
-    <button class="logout-btn" onclick="logout()">Logout</button>
+    <button class="logout-btn" onclick="logout()">Sign Out</button>
   </div>
 </aside>
 
 <main class="main">
-  <header class="page-header">
+  <div class="page-header">
+    <div class="breadcrumb"><a href="dashboard.html">Dashboard</a> <span>/</span> Winston-Lutz Analysis</div>
     <h1>Winston-Lutz Analysis</h1>
-    <p>Isocenter verification test using pylinac</p>
-    <div id="serverStatus" class="server-status">
-      <div class="status-dot dot-warn"></div>
-      <span>Checking...</span>
+    <p>Isocenter verification using BB offset measurements across gantry angles</p>
+  </div>
+
+  <div class="server-status" id="serverStatus">
+    <div class="status-dot-sm dot-warn"></div><span>Checking server...</span>
+  </div>
+
+  <div class="upload-card">
+    <div class="upload-zone" id="uploadZone">
+      <input type="file" id="dicomFile" accept=".dcm" multiple onchange="onFilesSelected(this)"/>
+      <div class="upload-icon">📂</div>
+      <h3>Drop your DICOM files here</h3>
+      <p>or click to browse — multiple .dcm files supported</p>
+      <div class="file-selected" id="fileLabel"></div>
     </div>
-  </header>
-
-  <section class="upload-section">
-    <div class="upload-card">
-      <h2>Upload DICOM Files</h2>
-      <div class="file-drop" id="fileDrop">
-        <input type="file" id="fileInput" accept=".dcm" multiple hidden/>
-        <div class="drop-content">
-          <div class="drop-icon">📁</div>
-          <p>Drop DICOM files here or click to browse</p>
-          <p class="drop-hint">Multiple .dcm files supported (up to 50MB total)</p>
-        </div>
-      </div>
-      
-      <div class="file-list" id="fileList" style="display:none;">
-        <h3>Selected Files:</h3>
-        <div id="fileItems"></div>
-        <button class="clear-files" id="clearFiles">Clear All</button>
-      </div>
+    <div class="tolerances">
+      <div class="tol-item"><div class="tol-label">Isocenter Tolerance</div><div class="tol-val">2.0 mm</div></div>
+      <div class="tol-item"><div class="tol-label">Action Tolerance</div><div class="tol-val">1.0 mm</div></div>
+      <div class="tol-item"><div class="tol-label">Input Format</div><div class="tol-val">DICOM</div></div>
     </div>
+    <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>Run Winston-Lutz Analysis</button>
+  </div>
 
-    <div class="params-card">
-      <h2>Analysis Parameters</h2>
-      <div class="param-group">
-        <label>Input Format</label>
-        <div class="format-display">DICOM (Multiple files)</div>
-      </div>
-      <div class="param-info">
-        <p>Winston-Lutz analysis requires multiple images taken at different gantry/collimator angles.</p>
-      </div>
-    </div>
-  </section>
-
-  <section class="analysis-section">
-    <button class="analyze-btn" id="analyzeBtn" onclick="runWinstonLutzAnalysis()">
-      Run Winston-Lutz Analysis
-    </button>
-  </section>
-
-  <div id="verdictBanner" class="verdict-banner" style="display:none;"></div>
-
-  <section class="results-section" id="resultsSection" style="display:none;">
+  <div class="results-card">
     <h2>Results</h2>
-    <div id="results"></div>
-    
-    <div id="metricsRow" class="metrics-row" style="display:none;"></div>
+    <div id="resultsBody"><p>Upload files and run the analysis to see results here.</p></div>
 
-    <div id="plotSection" class="plot-section" style="display:none;"></div>
+    <div id="verdictBanner" class="verdict-banner" style="display:none"></div>
 
-    <div id="chartsSection" class="charts-section" style="display:none;">
-      <h3>BB Offset vs Gantry Angle</h3>
-      <canvas id="wlChart"></canvas>
+    <div id="gaugeSection" style="display:none;margin-top:20px">
+      <div class="gauge-label-row">
+        <span class="gauge-title">Max BB Offset vs Tolerance</span>
+        <span class="gauge-val" id="gaugeVal"></span>
+      </div>
+      <div class="gauge-track">
+        <div class="gauge-fill" id="gaugeFill"></div>
+        <div class="gauge-marker" id="gaugeMarker" title="Tolerance limit"></div>
+      </div>
+      <div class="gauge-ticks"><span>0 mm</span><span id="gaugeTolLabel"></span><span id="gaugeMaxLabel"></span></div>
     </div>
 
-    <div id="pdfSection" class="pdf-section" style="display:none;">
-      <button class="pdf-btn" onclick="generatePDF()">Generate PDF Report</button>
+    <div id="metricsRow" class="metrics-row" style="display:none;margin-top:20px"></div>
+
+    <div id="plotSection" style="display:none;margin-top:20px"></div>
+
+    <div id="chartsSection" style="display:none;margin-top:28px">
+      <div class="section-head" style="margin-top:0;border-bottom:1px solid var(--border-subtle);padding-bottom:14px;margin-bottom:20px">
+        <h2 style="font-size:0.88rem;font-weight:600">Analysis Charts</h2>
+      </div>
+      <div class="charts-grid" style="grid-template-columns:1fr">
+        <div class="chart-card"><div class="chart-card-title">BB Offset per Image (mm)</div><div style="position:relative;width:100%;height:320px;"><canvas id="wlChart"></canvas></div></div>
+      </div>
     </div>
-  </section>
+
+    <div id="pdfSection" style="display:none;margin-top:16px">
+      <button class="btn-outline" onclick="downloadPDF()">&#11015; Download PDF Report</button>
+    </div>
+  </div>
 </main>
 
 <script>
 let wlChart = null;
-
-// File upload handling for multiple files
-const fileDrop = document.getElementById('fileDrop');
-const fileInput = document.getElementById('fileInput');
-const fileList = document.getElementById('fileList');
-const fileItems = document.getElementById('fileItems');
-const clearFiles = document.getElementById('clearFiles');
 let selectedFiles = [];
 
-fileDrop.addEventListener('click', () => fileInput.click());
-fileDrop.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    fileDrop.classList.add('drag-over');
-});
-fileDrop.addEventListener('dragleave', () => {
-    fileDrop.classList.remove('drag-over');
-});
-fileDrop.addEventListener('drop', (e) => {
-    e.preventDefault();
-    fileDrop.classList.remove('drag-over');
-    handleFiles(e.dataTransfer.files);
-});
-
-fileInput.addEventListener('change', (e) => {
-    handleFiles(e.target.files);
-});
-
-clearFiles.addEventListener('click', () => {
-    selectedFiles = [];
-    fileInput.value = '';
-    fileList.style.display = 'none';
-    fileDrop.style.display = 'block';
-});
-
-function handleFiles(files) {
-    selectedFiles = Array.from(files).filter(file => {
-        try {
-            AnalysisHelpers.validateDicomFile(file);
-            return true;
-        } catch (error) {
-            console.warn(`Skipping file ${file.name}: ${error.message}`);
-            return false;
-        }
-    });
-    
-    if (selectedFiles.length === 0) {
-        alert('No valid DICOM files found.');
-        return;
-    }
-    
-    // Check total size
-    const totalSize = selectedFiles.reduce((sum, file) => sum + file.size, 0);
-    if (totalSize > 50 * 1024 * 1024) {
-        alert('Files too large. Maximum total size is 50MB.');
-        selectedFiles = [];
-        return;
-    }
-    
-    displaySelectedFiles();
+// Init user info
+const name = localStorage.getItem("mlcqa_name");
+if (name) {
+  document.getElementById("sidebarName").textContent = name;
+  document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
 }
 
-function displaySelectedFiles() {
-    fileItems.innerHTML = selectedFiles.map((file, index) => `
-        <div class="file-item">
-            <span class="file-name">${file.name}</span>
-            <span class="file-size">${(file.size / 1024 / 1024).toFixed(2)} MB</span>
-        </div>
-    `).join('');
-    
-    fileList.style.display = 'block';
-    fileDrop.style.display = 'none';
-}
+// Drag & drop
+const zone = document.getElementById("uploadZone");
+zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("dragover"); });
+zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+zone.addEventListener("drop", e => {
+  e.preventDefault(); zone.classList.remove("dragover");
+  const dt = new DataTransfer();
+  Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f));
+  document.getElementById("dicomFile").files = dt.files;
+  onFilesSelected(document.getElementById("dicomFile"));
+});
 
-// Enhanced analysis function
-async function runWinstonLutzAnalysis() {
-    const btn = document.getElementById('analyzeBtn');
-    const resultsDiv = document.getElementById('results');
-    const resultsSection = document.getElementById('resultsSection');
-    
-    try {
-        // Reset UI
-        btn.disabled = true;
-        btn.textContent = "Starting analysis...";
-        resultsDiv.innerHTML = `<p>🔍 Initializing analysis...</p>`;
-        resultsSection.style.display = 'block';
-        
-        // Hide previous results
-        document.getElementById('verdictBanner').style.display = 'none';
-        document.getElementById('metricsRow').style.display = 'none';
-        document.getElementById('plotSection').style.display = 'none';
-        document.getElementById('chartsSection').style.display = 'none';
-        document.getElementById('pdfSection').style.display = 'none';
-        
-        // Check server first
-        resultsDiv.innerHTML = `<p>⏳ Checking server status...</p>`;
-        const serverReady = await AnalysisHelpers.waitForServer();
-        if (!serverReady) {
-            throw new Error("Server not responding. Please refresh the page and try again.");
-        }
-        
-        // Validate authentication
-        const token = localStorage.getItem("mlcqa_token");
-        if (!token) {
-            window.location.href = "login.html";
-            return;
-        }
-        
-        // Validate files
-        if (selectedFiles.length === 0) {
-            throw new Error("Please select DICOM files for analysis.");
-        }
-        
-        // Prepare and send request
-        resultsDiv.innerHTML = `<p>📤 Uploading ${selectedFiles.length} files...</p>`;
-        const formData = new FormData();
-        selectedFiles.forEach(file => {
-            formData.append("files", file);
-        });
-        
-        btn.textContent = "Uploading...";
-        
-        const data = await AnalysisHelpers.makeApiCall(`${BACKEND_URL}/analyze/winston-lutz`, {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${token}`
-            },
-            body: formData
-        }, 45000); // Longer timeout for multiple files
-        
-        if (data.status === "Error") {
-            throw new Error(data.message || "Server returned an error");
-        }
-        
-        // Start polling for results
-        btn.textContent = "Analyzing...";
-        resultsDiv.innerHTML = `<p>🔬 Analysis running<span id="dots">.</span></p>`;
-        
-        await pollForWinstonLutzResults(data.job_id);
-        
-    } catch (err) {
-        console.error("Winston-Lutz analysis error:", err);
-        resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
-        btn.disabled = false;
-        btn.textContent = "Run Winston-Lutz Analysis";
-    }
-}
-
-// Poll for Winston-Lutz results
-async function pollForWinstonLutzResults(jobId) {
-    const resultsDiv = document.getElementById('results');
-    const btn = document.getElementById('analyzeBtn');
-    
-    let dotCount = 0;
-    const dotAnim = setInterval(() => {
-        dotCount = (dotCount + 1) % 4;
-        const d = document.getElementById("dots");
-        if (d) d.textContent = ".".repeat(dotCount + 1);
-    }, 500);
-    
-    let attempts = 0;
-    let networkFails = 0;
-    const getDelay = a => a < 5 ? 2000 : a < 15 ? 3000 : 5000;
-    
-    const poll = async () => {
-        attempts++;
-        
-        if (attempts > 60) {
-            clearInterval(dotAnim);
-            resultsDiv.innerHTML = `<p>⚠️ Analysis is taking longer than expected. Please try again.</p>`;
-            btn.disabled = false;
-            btn.textContent = "Run Winston-Lutz Analysis";
-            return;
-        }
-        
-        try {
-            const result = await AnalysisHelpers.makeApiCall(`${BACKEND_URL}/result/${jobId}`, {
-                headers: {
-                    "Authorization": `Bearer ${localStorage.getItem("mlcqa_token")}`
-                }
-            }, 10000);
-            
-            networkFails = 0;
-            
-            if (result.status === "Processing") {
-                setTimeout(poll, getDelay(attempts));
-            } else if (result.status === "Success") {
-                clearInterval(dotAnim);
-                handleWinstonLutzSuccess(result);
-            } else {
-                clearInterval(dotAnim);
-                resultsDiv.innerHTML = `<p class="result-fail">❌ ${result.message || "Analysis failed"}</p>`;
-                btn.disabled = false;
-                btn.textContent = "Run Winston-Lutz Analysis";
-            }
-        } catch (error) {
-            networkFails++;
-            
-            if (networkFails < 10) {
-                const d = document.getElementById("dots");
-                if (d) d.textContent = ` (retrying… ${networkFails}/10)`;
-                setTimeout(poll, 6000);
-            } else {
-                clearInterval(dotAnim);
-                resultsDiv.innerHTML = `<p class="result-fail">❌ Cannot reach the server after 10 retries. Please wait 60 seconds, refresh the page, and try again.</p>`;
-                btn.disabled = false;
-                btn.textContent = "Run Winston-Lutz Analysis";
-            }
-        }
-    };
-    
-    setTimeout(poll, getDelay(0));
-}
-
-// Handle successful Winston-Lutz analysis
-function handleWinstonLutzSuccess(result) {
-    const resultsDiv = document.getElementById('results');
-    const btn = document.getElementById('analyzeBtn');
-    
-    const pass = result.passed;
-    const imgUrl = result.image_url || null;
-    const summary = result.analysis_summary || "";
-    const chartData = result.chart_data || {};
-    
-    // Store result for PDF generation
-    window._lastResult = { 
-        pass, 
-        imgUrl, 
-        summary, 
-        filename: `${selectedFiles.length} files`, 
-        testType: "Winston-Lutz", 
-        toleranceText: "Isocenter tolerance: 2mm" 
-    };
-    
-    // Raw summary
-    resultsDiv.innerHTML = "<pre>" + summary + "</pre>";
-    
-    // Verdict banner
-    const banner = document.getElementById("verdictBanner");
-    banner.innerHTML = '<div class="verdict-icon">' + (pass ? "✓" : "✗") + '</div><div class="verdict-text"><div class="verdict-label">' + (pass ? "PASS" : "FAIL") + '</div><div class="verdict-sub">' + (pass ? "Isocenter within clinical tolerance (2mm)" : "Isocenter exceeds tolerance — action required") + '</div></div>';
-    banner.className = "verdict-banner " + (pass ? "verdict-pass" : "verdict-fail");
-    banner.style.display = "flex";
-    
-    // Metrics
-    const maxOffset = chartData.max_offset_mm || 0;
-    const meanOffset = chartData.mean_offset_mm || 0;
-    const images = chartData.images || [];
-    
-    const mr = document.getElementById("metricsRow");
-    mr.innerHTML = [
-        {label: "Max BB Offset", val: maxOffset.toFixed(3), unit: "mm", cls: maxOffset > 2 ? "metric-fail" : "metric-pass"},
-        {label: "Mean BB Offset", val: meanOffset.toFixed(3), unit: "mm", cls: "metric-accent"},
-        {label: "Images Analyzed", val: String(images.length), cls: "metric-accent"},
-        {label: "Tolerance", val: "2.0", unit: "mm", cls: "metric-accent"}
-    ].map(m => '<div class="metric-card"><div class="metric-label">' + m.label + '</div><div class="metric-value ' + m.cls + '">' + m.val + (m.unit ? '<span class="metric-unit">' + m.unit + '</span>' : '') + '</div></div>').join('');
-    mr.style.display = "grid";
-    
-    // Plot
-    if (imgUrl) {
-        document.getElementById("plotSection").innerHTML = '<div class="plot-wrap"><img src="' + imgUrl + '" alt="Winston-Lutz Plot" loading="lazy"/><div class="plot-label">Pylinac · Winston-Lutz Analysis</div></div>';
-        document.getElementById("plotSection").style.display = "block";
-    }
-    
-    // Charts
-    renderWLCharts(chartData);
-    document.getElementById("chartsSection").style.display = "block";
-    document.getElementById("pdfSection").style.display = "block";
-    
+function onFilesSelected(input) {
+  const label = document.getElementById("fileLabel");
+  const btn   = document.getElementById("analyzeBtn");
+  selectedFiles = Array.from(input.files).filter(f => f.name.toLowerCase().endsWith(".dcm"));
+  if (selectedFiles.length > 0) {
+    label.textContent = `Selected: ${selectedFiles.length} file${selectedFiles.length > 1 ? "s" : ""} (${selectedFiles.map(f => f.name).join(", ").slice(0, 60)}${selectedFiles.map(f=>f.name).join(", ").length > 60 ? "…" : ""})`;
     btn.disabled = false;
-    btn.textContent = "Analyze Another Set";
+  } else {
+    label.textContent = "";
+    btn.disabled = true;
+  }
 }
 
-// Render Winston-Lutz charts
-function renderWLCharts(chartData) {
-    const images = chartData.images || [];
-    
-    if (images.length === 0) {
-        document.getElementById("chartsSection").innerHTML += '<p style="color:var(--text-muted);font-size:0.8rem;font-family:var(--mono);padding:12px">Chart data not available for this analysis — check server logs.</p>';
-        return;
+async function runAnalysis() {
+  const btn = document.getElementById("analyzeBtn");
+  const resultsDiv = document.getElementById("resultsBody");
+
+  if (selectedFiles.length === 0) { alert("Please select DICOM files first."); return; }
+
+  try {
+    resultsDiv.innerHTML = `<p>⏳ Checking server status...</p>`;
+    const serverReady = await AnalysisHelpers.waitForServer();
+    if (!serverReady) throw new Error("Server not responding. Please refresh and try again.");
+
+    const token = localStorage.getItem("mlcqa_token");
+    if (!token) { window.location.href = "login.html"; return; }
+
+    resultsDiv.innerHTML = `<p>📤 Uploading ${selectedFiles.length} file(s)...</p>`;
+    const formData = new FormData();
+    selectedFiles.forEach(f => formData.append("files", f));
+
+    btn.textContent = "Uploading...";
+
+    const data = await AnalysisHelpers.makeApiCall(`${BACKEND_URL}/analyze/winston-lutz`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}` },
+      body: formData
+    }, 60000);
+
+    if (data.status === "Error") throw new Error(data.message || "Server returned an error");
+
+    btn.textContent = "Analyzing...";
+    resultsDiv.innerHTML = `<p>🔬 Analysis running<span id="dots">.</span></p>`;
+
+    await AnalysisHelpers.pollForResult(data.job_id, (result) => {
+      handleSuccess(result);
+    }, (error) => { throw new Error(error); });
+
+  } catch (err) {
+    console.error("Winston-Lutz analysis error:", err);
+    resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
+    btn.disabled = false;
+    btn.textContent = "Run Winston-Lutz Analysis";
+  }
+}
+
+function handleSuccess(result) {
+  const resultsDiv = document.getElementById("resultsBody");
+  const analyzeBtn = document.getElementById("analyzeBtn");
+
+  const pass      = result.passed;
+  const imgUrl    = result.image_url || null;
+  const summary   = result.analysis_summary || "";
+  const chartData = result.chart_data || {};
+  const tol       = 2.0;
+
+  window._lastResult = { pass, imgUrl, summary, filename: `${selectedFiles.length} WL images`, testType: "Winston-Lutz", toleranceText: "Isocenter tolerance: 2.0mm / action 1.0mm" };
+
+  resultsDiv.innerHTML = "<pre>" + summary + "</pre>";
+
+  // Verdict banner
+  const banner = document.getElementById("verdictBanner");
+  banner.innerHTML = '<div class="verdict-icon">' + (pass ? "✓" : "✗") + '</div><div class="verdict-text"><div class="verdict-label">' + (pass ? "PASS" : "FAIL") + '</div><div class="verdict-sub">' + (pass ? "Isocenter within clinical tolerance (2.0 mm)" : "Isocenter exceeds tolerance — action required") + '</div></div>';
+  banner.className = "verdict-banner " + (pass ? "verdict-pass" : "verdict-fail");
+  banner.style.display = "flex";
+
+  // Gauge
+  const maxOff = chartData.max_offset_mm || 0;
+  const maxScale = Math.max(tol * 1.6, maxOff * 1.2);
+  const fill = document.getElementById("gaugeFill");
+  fill.style.width = Math.min((maxOff / maxScale) * 100, 100) + "%";
+  fill.style.background = maxOff > tol ? "var(--fail)" : maxOff > 1.0 ? "var(--warn)" : "var(--pass)";
+  document.getElementById("gaugeMarker").style.left = ((tol / maxScale) * 100) + "%";
+  document.getElementById("gaugeVal").textContent = maxOff.toFixed(3) + " mm";
+  document.getElementById("gaugeTolLabel").textContent = "Tol: " + tol + " mm";
+  document.getElementById("gaugeMaxLabel").textContent = maxScale.toFixed(2) + " mm";
+  document.getElementById("gaugeSection").style.display = "block";
+
+  // Metrics
+  const meanOff = chartData.mean_offset_mm || 0;
+  const imgCount = (chartData.images || []).length;
+  const mr = document.getElementById("metricsRow");
+  mr.innerHTML = [
+    { label: "Max BB Offset", val: maxOff.toFixed(3), unit: "mm", cls: maxOff > tol ? "metric-fail" : "metric-pass" },
+    { label: "Mean Offset",   val: meanOff.toFixed(3), unit: "mm", cls: "metric-accent" },
+    { label: "Images Used",   val: String(imgCount),   cls: "metric-accent" },
+    { label: "Tolerance",     val: "2.0", unit: "mm",  cls: "metric-accent" }
+  ].map(m => '<div class="metric-card"><div class="metric-label">' + m.label + '</div><div class="metric-value ' + m.cls + '">' + m.val + (m.unit ? '<span class="metric-unit">' + m.unit + '</span>' : '') + '</div></div>').join('');
+  mr.style.display = "grid";
+
+  // Plot
+  if (imgUrl) {
+    document.getElementById("plotSection").innerHTML = '<div class="plot-wrap"><img src="' + imgUrl + '" alt="Winston-Lutz Plot" loading="lazy"/><div class="plot-label">Pylinac · Winston-Lutz Analysis</div></div>';
+    document.getElementById("plotSection").style.display = "block";
+  }
+
+  renderCharts(chartData, tol);
+  document.getElementById("chartsSection").style.display = "block";
+  document.getElementById("pdfSection").style.display = "block";
+
+  analyzeBtn.disabled = false;
+  analyzeBtn.textContent = "Analyze Another Set";
+}
+
+function renderCharts(cd, tol) {
+  const images = cd.images || [];
+  if (images.length === 0) {
+    document.getElementById("chartsSection").innerHTML += '<p style="color:var(--text-muted);font-size:0.8rem;font-family:var(--mono);padding:12px">Chart data not available — check server logs.</p>';
+    return;
+  }
+  const angles  = images.map(img => img.gantry_angle ?? 0);
+  const offsets = images.map(img => img.bb_offset_mm  ?? 0);
+  const colors  = offsets.map(v => v > tol ? "rgba(201,64,80,0.85)" : v > 1.0 ? "rgba(200,137,42,0.8)" : "rgba(26,171,117,0.75)");
+  const chartOpts = {
+    plugins: { legend: { labels: { color: "#8ba4c0", font: { family: "'IBM Plex Mono'", size: 9 } } } },
+    scales: {
+      x: { title: { display: true, text: "Gantry Angle (°)", color: "#546a85", font: { size: 9 } }, ticks: { color: "#546a85", font: { size: 8 } }, grid: { color: "rgba(36,53,82,0.8)" } },
+      y: { title: { display: true, text: "BB Offset (mm)",   color: "#546a85", font: { size: 9 } }, ticks: { color: "#546a85", font: { family: "'IBM Plex Mono'", size: 9 } }, grid: { color: "rgba(36,53,82,0.8)" }, min: 0 }
     }
-    
-    const angles = images.map(img => img.gantry_angle);
-    const offsets = images.map(img => img.bb_offset_mm);
-    const colors = offsets.map(offset => offset > 2 ? "rgba(201,64,80,0.85)" : offset > 1 ? "rgba(200,137,42,0.8)" : "rgba(26,171,117,0.75)");
-    
-    const chartOpts = {
-        plugins: {
-            legend: {
-                labels: {
-                    color: "#8ba4c0",
-                    font: { family: "'IBM Plex Mono'", size: 9 }
-                }
-            }
-        },
-        scales: {
-            x: {
-                title: {
-                    display: true,
-                    text: "Gantry Angle (°)",
-                    color: "#546a85",
-                    font: { size: 9 }
-                },
-                ticks: { color: "#546a85", font: { size: 7 } },
-                grid: { color: "rgba(36,53,82,0.8)" }
-            },
-            y: {
-                title: {
-                    display: true,
-                    text: "BB Offset (mm)",
-                    color: "#546a85",
-                    font: { size: 9 }
-                },
-                ticks: { color: "#546a85", font: { family: "'IBM Plex Mono'", size: 9 } },
-                grid: { color: "rgba(36,53,82,0.8)" }
-            }
-        }
-    };
-    
-    if (wlChart) wlChart.destroy();
-    
-    wlChart = new Chart(document.getElementById("wlChart"), {
-        type: "scatter",
-        data: {
-            datasets: [
-                {
-                    label: "BB Offset",
-                    data: angles.map((angle, i) => ({ x: angle, y: offsets[i] })),
-                    backgroundColor: colors,
-                    pointRadius: 6,
-                    pointHoverRadius: 8
-                },
-                {
-                    label: "Tolerance (2mm)",
-                    data: angles.map(angle => ({ x: angle, y: 2 })),
-                    type: "line",
-                    borderColor: "rgba(200,137,42,0.7)",
-                    borderDash: [4, 3],
-                    pointRadius: 0,
-                    borderWidth: 1.5,
-                    fill: false
-                },
-                {
-                    label: "Tolerance (-2mm)",
-                    data: angles.map(angle => ({ x: angle, y: -2 })),
-                    type: "line",
-                    borderColor: "rgba(200,137,42,0.7)",
-                    borderDash: [4, 3],
-                    pointRadius: 0,
-                    borderWidth: 1.5,
-                    fill: false
-                }
-            ]
-        },
-        options: chartOpts
-    });
+  };
+  if (wlChart) wlChart.destroy();
+  wlChart = new Chart(document.getElementById("wlChart"), {
+    type: "bar",
+    data: {
+      labels: angles.map(a => a + "°"),
+      datasets: [
+        { label: "BB Offset (mm)", data: offsets, backgroundColor: colors, borderWidth: 0 },
+        { label: "Tolerance", data: Array(angles.length).fill(tol), type: "line", borderColor: "rgba(200,137,42,0.7)", borderDash: [4, 3], pointRadius: 0, borderWidth: 1.5, fill: false }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, ...chartOpts }
+  });
 }
 
-// PDF generation (placeholder)
-function generatePDF() {
-    alert("PDF generation will be implemented in a future version.");
+async function downloadPDF() { const r = window._lastResult; if (!r) return; await generatePDF(r); }
+async function generatePDF(r) {
+  const { jsPDF } = window.jspdf; const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" }); const W = 210, M = 16;
+  doc.setFillColor(15, 30, 55); doc.rect(0, 0, W, 26, "F"); doc.setFillColor(0, 175, 215); doc.rect(0, 0, 5, 26, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(255, 255, 255);
+  doc.text(`MLC QA — ${r.testType || "Analysis"} Report`, M + 6, 11);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(180, 210, 230);
+  const now = new Date().toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
+  doc.text(`Generated: ${now}`, M + 6, 19); doc.text(`File: ${r.filename}`, M + 6, 23.5);
+  let y = 34;
+  doc.setFillColor(...(r.pass ? [0, 168, 107] : [195, 45, 70])); doc.roundedRect(M, y, W - M * 2, 13, 2, 2, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(255, 255, 255);
+  doc.text(r.pass ? "✓  PASS" : "✗  FAIL", M + 5, y + 9);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+  doc.text(r.toleranceText || (r.pass ? "Within clinical tolerance" : "Outside clinical tolerance"), M + 36, y + 9);
+  y += 20;
+  if (r.imgUrl) { try { const imgData = await fetchImageAsBase64(r.imgUrl); const imgW = W - M * 2; const imgH = imgW * 0.5; doc.addImage(imgData, "PNG", M, y, imgW, imgH); y += imgH + 9; } catch { y += 4; } }
+  const lines = doc.splitTextToSize(r.summary, W - M * 2 - 10); const boxH = Math.min(lines.length * 5.4 + 16, 230);
+  doc.setFillColor(245, 248, 252); doc.roundedRect(M, y, W - M * 2, boxH, 2, 2, "F");
+  y += 7; doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(15, 40, 80); doc.text("ANALYSIS SUMMARY", M + 5, y); y += 7;
+  doc.setFont("courier", "normal"); doc.setFontSize(8.2); doc.setTextColor(20, 45, 80);
+  lines.forEach(line => { if (y > 272) { doc.addPage(); y = 18; } doc.text(line, M + 5, y); y += 5.4; });
+  const pages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) { doc.setPage(i); doc.setFillColor(235, 241, 248); doc.rect(0, 284, W, 13, "F"); doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(60, 85, 120); doc.text("MLC QA Platform  ·  For clinical physics use only", M, 291); doc.text(`Page ${i} of ${pages}`, W - 28, 291); }
+  doc.save(`MLCQA_WL_${Date.now()}.pdf`);
 }
-
-// Initialize page
-document.addEventListener('DOMContentLoaded', () => {
-    // Check server status
-    AnalysisHelpers.checkServer('serverStatus');
-});
+async function fetchImageAsBase64(url) {
+  const res = await fetch(url); const blob = await res.blob();
+  return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onloadend = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); });
+}
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="dicom-detect.js"></script>
 </body>
 </html>
