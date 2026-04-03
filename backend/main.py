@@ -258,7 +258,7 @@ def _extract_pf_chart_data(pf) -> dict:
         leaf_pairs = []
         try:
             errors_by_leaf = results.mlc_errors_by_leaf  # dict[int, list[float]]
-            for leaf_num in sorted(errors_by_leaf.keys()):
+            for leaf_num in sorted(errors_by_leaf.keys(), key=lambda k: int(k) if str(k).lstrip("-").isdigit() else 0):
                 errs = [abs(e) for e in errors_by_leaf[leaf_num] if e is not None]
                 max_err = round(max(errs), 4) if errs else 0.0
                 mean_err = round(sum(errs) / len(errs), 4) if errs else 0.0
