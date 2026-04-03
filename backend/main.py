@@ -6,6 +6,7 @@ from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from pylinac import PicketFence, WinstonLutz, Starshot, FieldAnalysis
 import os, shutil, tempfile, uuid, hashlib, hmac
+import re
 import bcrypt
 import matplotlib
 matplotlib.use("Agg")
@@ -245,6 +246,89 @@ def get_result(job_id: str):
     return jobs[job_id]
 
 # ═════════════════════════════════════════════════════════════════════════════
+# DICOM TYPE VALIDATION  (shared by all analysis endpoints)
+# ═════════════════════════════════════════════════════════════════════════════
+
+_DICOM_SIGNATURES = {
+    "picket_fence": {
+        "filename": [r"picket", r"\bpf[_\-\s]", r"mlc[_\-\s]fence", r"leaf[_\-\s]pos",
+                     r"mlcqa", r"pf_test", r"pf-test"],
+        "header":   [r"picket[\s_\-]?fence", r"PicketFence", r"mlc.*picket", r"picket.*mlc",
+                     r"Leaf\s*\d+\s*(Bank|Pair)", r"DMLC|SMLC", r"MLC QA",
+                     r"leaf[\s_\-]?position", r"mlc_qa", r"mlcfence"],
+    },
+    "starshot": {
+        "filename": [r"starshot", r"star[_\-\s]shot", r"gantry[_\-\s]rot",
+                     r"collimator[_\-\s]rot", r"spoke"],
+        "header":   [r"starshot", r"star[\s_\-]?shot", r"spoke[\s_\-]?angle", r"wobble",
+                     r"collimator.*rotat", r"gantry.*spoke", r"radiation[\s_\-]?spoke"],
+    },
+    "winston_lutz": {
+        "filename": [r"winston", r"\bwl\b", r"wl[_\-\s]", r"[_\-\s]wl",
+                     r"winston[_\-]lutz", r"ball[_\-\s]?bear", r"isocent"],
+        "header":   [r"winston[\s_\-]?lutz", r"WinstonLutz", r"ball[\s_\-]?bearing",
+                     r"\bBB\b.*marker", r"isocenter.*bb", r"bb.*isocenter",
+                     r"gantry.*angle.*bb", r"radiation[\s_\-]?isocent"],
+    },
+    "congruence": {
+        "filename": [r"congruence", r"field[_\-\s]?size", r"light[_\-\s]?field",
+                     r"rad[_\-\s]?light", r"open[_\-\s]?field", r"flatness", r"symmetry"],
+        "header":   [r"congruence", r"field[\s_\-]?analysis", r"light[\s_\-]?field",
+                     r"radiation[\s_\-]?field", r"field[\s_\-]?size", r"flatness",
+                     r"symmetry", r"field[\s_\-]?edge"],
+    },
+}
+
+_TEST_DISPLAY_NAMES = {
+    "picket_fence": "Picket Fence",
+    "starshot":     "Starshot",
+    "winston_lutz": "Winston-Lutz",
+    "congruence":   "Congruence",
+}
+
+def _score_dicom_type(test_type: str, filename: str, header_text: str) -> int:
+    sig = _DICOM_SIGNATURES[test_type]
+    score = 0
+    for pat in sig["filename"]:
+        if re.search(pat, filename, re.IGNORECASE):
+            score += 3
+    for pat in sig["header"]:
+        if re.search(pat, header_text, re.IGNORECASE):
+            score += 2
+    return score
+
+def _detect_dicom_type(filepath: str) -> str:
+    """Return the best-matching QA test type for a DICOM file, or 'unknown'."""
+    filename = os.path.basename(filepath).lower()
+    try:
+        with open(filepath, "rb") as f:
+            raw = f.read(8192)
+        header_text = raw.decode("latin-1", errors="replace")
+    except Exception:
+        header_text = ""
+    scores = {t: _score_dicom_type(t, filename, header_text) for t in _DICOM_SIGNATURES}
+    best_type, best_score = max(scores.items(), key=lambda kv: kv[1])
+    return best_type if best_score > 0 else "unknown"
+
+def _validate_dicom_type(filepath: str, expected: str) -> None:
+    """
+    Raise ValueError with a clear user-facing message if the DICOM file's
+    detected type does not match *expected*.  Files that score 'unknown'
+    (no recognisable metadata) are allowed through unchanged.
+    """
+    detected = _detect_dicom_type(filepath)
+    if detected == "unknown" or detected == expected:
+        return  # OK
+    detected_name = _TEST_DISPLAY_NAMES.get(detected, detected)
+    expected_name = _TEST_DISPLAY_NAMES.get(expected, expected)
+    raise ValueError(
+        f"Unacceptable data: the uploaded file appears to be a {detected_name} image, "
+        f"not a {expected_name} file. "
+        f"Please upload this file on the {detected_name} test page instead. "
+        f"Analysing the wrong image type produces clinically meaningless results."
+    )
+
+# ═════════════════════════════════════════════════════════════════════════════
 # PICKET FENCE
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -297,6 +381,7 @@ def _extract_pf_chart_data(pf) -> dict:
 def _run_picket_fence(job_id: str, filepath: str, email: str, filename: str, tolerance: float = 1.0, action_tolerance: float = 0.5):
     try:
         print(f"Starting Picket Fence analysis for {filename}")
+        _validate_dicom_type(filepath, "picket_fence")
         pf = PicketFence(filepath)
         pf.analyze(tolerance=tolerance, action_tolerance=action_tolerance)
 
@@ -321,6 +406,9 @@ def _run_picket_fence(job_id: str, filepath: str, email: str, filename: str, tol
             "chart_data": chart_data,
         }
         print(f"Picket Fence analysis completed successfully for {filename}")
+    except ValueError as e:
+        print(f"Picket Fence validation error: {e}")
+        jobs[job_id] = {"status": "Error", "message": str(e)}
     except Exception as e:
         print(f"Picket Fence analysis failed: {e}")
         jobs[job_id] = {"status": "Error", "message": f"Picket Fence analysis failed: {e}"}
@@ -420,6 +508,7 @@ def _extract_starshot_chart_data(ss) -> dict:
 
 def _run_starshot(job_id: str, filepath: str, email: str, filename: str):
     try:
+        _validate_dicom_type(filepath, "starshot")
         ss = Starshot(filepath)
         ss.analyze()
 
@@ -443,6 +532,9 @@ def _run_starshot(job_id: str, filepath: str, email: str, filename: str):
             "image_url": image_url,
             "chart_data": chart_data,
         }
+    except ValueError as e:
+        print(f"Starshot validation error: {e}")
+        jobs[job_id] = {"status": "Error", "message": str(e)}
     except Exception as e:
         jobs[job_id] = {"status": "Error", "message": f"Starshot analysis failed: {e}"}
     finally:
@@ -521,6 +613,11 @@ def _extract_wl_chart_data(wl) -> dict:
 
 def _run_winston_lutz(job_id: str, dirpath: str, email: str, filename: str):
     try:
+        # Validate the first DCM file found in the directory
+        dcm_files = sorted([f for f in os.listdir(dirpath) if f.lower().endswith(".dcm")])
+        if dcm_files:
+            _validate_dicom_type(os.path.join(dirpath, dcm_files[0]), "winston_lutz")
+
         wl = WinstonLutz(dirpath)
         wl.analyze()
 
@@ -544,6 +641,9 @@ def _run_winston_lutz(job_id: str, dirpath: str, email: str, filename: str):
             "image_url": image_url,
             "chart_data": chart_data,
         }
+    except ValueError as e:
+        print(f"Winston-Lutz validation error: {e}")
+        jobs[job_id] = {"status": "Error", "message": str(e)}
     except Exception as e:
         jobs[job_id] = {"status": "Error", "message": f"Winston-Lutz analysis failed: {e}"}
     finally:
@@ -631,6 +731,7 @@ def _extract_congruence_chart_data(fa) -> dict:
 
 def _run_congruence(job_id: str, filepath: str, email: str, filename: str):
     try:
+        _validate_dicom_type(filepath, "congruence")
         fa = FieldAnalysis(filepath)
         fa.analyze()
 
@@ -654,6 +755,9 @@ def _run_congruence(job_id: str, filepath: str, email: str, filename: str):
             "image_url": image_url,
             "chart_data": chart_data,
         }
+    except ValueError as e:
+        print(f"Congruence validation error: {e}")
+        jobs[job_id] = {"status": "Error", "message": str(e)}
     except Exception as e:
         jobs[job_id] = {"status": "Error", "message": f"Congruence analysis failed: {e}"}
     finally:
