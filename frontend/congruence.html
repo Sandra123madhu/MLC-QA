@@ -45,6 +45,36 @@
     <div class="status-dot-sm dot-warn"></div><span>Checking server...</span>
   </div>
 
+  <div id="wrongTestModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(6,12,24,0.88);backdrop-filter:blur(6px);align-items:center;justify-content:center;">
+    <div style="background:var(--surface);border:1px solid rgba(201,64,80,0.5);border-left:4px solid var(--fail);border-radius:var(--r-lg);padding:32px 28px;max-width:480px;width:92%;box-shadow:0 8px 48px rgba(0,0,0,0.6);">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;">
+        <div style="width:46px;height:46px;border-radius:50%;background:rgba(201,64,80,0.18);border:1.5px solid rgba(201,64,80,0.45);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0;">&#9888;</div>
+        <div>
+          <div style="font-family:var(--mono);font-size:0.95rem;font-weight:600;color:var(--fail);letter-spacing:0.05em;">UNACCEPTABLE DATA — WRONG TEST FILE</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px;font-family:var(--mono);">File type mismatch &mdash; analysis blocked</div>
+        </div>
+      </div>
+      <p style="font-size:0.85rem;color:var(--text-2);line-height:1.7;margin-bottom:10px;">
+        The selected file appears to be a <strong id="wtm-detected-name" style="color:var(--accent);">&#8230;</strong> image, not a <strong id="wtm-page-name" style="color:var(--text-1);">&#8230;</strong> file.
+      </p>
+      <p style="font-size:0.85rem;color:var(--text-2);line-height:1.7;margin-bottom:22px;">
+        Analysing the wrong image type will produce <strong style="color:var(--fail);">clinically meaningless or misleading results</strong>. This action is <strong style="color:var(--fail);">blocked</strong> to protect data integrity. Please upload this file on the correct page:
+      </p>
+      <a id="wtm-correct-link" href="#" style="display:flex;align-items:center;gap:12px;padding:13px 16px;background:rgba(43,159,212,0.08);border:1px solid var(--accent-border);border-radius:var(--r);text-decoration:none;margin-bottom:20px;">
+        <span id="wtm-correct-icon" style="font-size:1.2rem;">&#128194;</span>
+        <div>
+          <div id="wtm-correct-label" style="font-size:0.85rem;font-weight:600;color:var(--accent);">Go to correct test</div>
+          <div id="wtm-correct-sub"   style="font-size:0.74rem;color:var(--text-muted);margin-top:2px;">&#8230;</div>
+        </div>
+        <span style="margin-left:auto;color:var(--text-muted);font-size:1rem;">&#8594;</span>
+      </a>
+      <div style="display:flex;gap:10px;">
+        <button onclick="dismissWrongTestModal()" style="width:100%;padding:11px 0;background:transparent;border:1px solid var(--border);border-radius:var(--r);color:var(--text-muted);font-size:0.83rem;cursor:pointer;font-family:var(--mono);">&#8592; Choose a Different File</button>
+      </div>
+      <p style="font-size:0.71rem;color:var(--text-muted);margin-top:14px;text-align:center;line-height:1.55;">Detection is based on DICOM metadata and filename heuristics. If you believe this is a false positive, please verify the file type before uploading.</p>
+    </div>
+  </div>
+
   <div class="upload-card">
     <div class="upload-zone" id="uploadZone">
       <input type="file" id="dicomFile" accept=".dcm" onchange="onFileSelected(this)"/>
@@ -124,8 +154,11 @@ function onFileSelected(input) {
   const label = document.getElementById("fileLabel");
   const btn   = document.getElementById("analyzeBtn");
   if (input.files.length > 0) {
-    label.textContent = "Selected: " + input.files[0].name;
+    const file = input.files[0];
+    label.textContent = "Selected: " + file.name;
     btn.disabled = false;
+    // Check file is the correct type for this test
+    checkFileAcceptable(file, "congruence", btn);
   } else {
     label.textContent = "";
     btn.disabled = true;
@@ -141,6 +174,10 @@ async function runAnalysis() {
   if (!fileInput.files[0].name.toLowerCase().endsWith(".dcm")) {
     resultsDiv.innerHTML = `<p class="result-fail">❌ Only .dcm files are supported.</p>`; return;
   }
+
+  // Second-pass safety check — catches drag-and-drop bypasses
+  const _safetyOk = await checkFileAcceptable(fileInput.files[0], "congruence", btn);
+  if (!_safetyOk) { btn.disabled = false; btn.textContent = "Run Congruence Analysis"; return; }
 
   try {
     resultsDiv.innerHTML = `<p>⏳ Checking server status...</p>`;
