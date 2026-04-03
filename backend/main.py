@@ -296,7 +296,7 @@ def _run_picket_fence(job_id: str, filepath: str, email: str, filename: str, tol
         passed    = pf.passed
 
         plot_path = os.path.join(tempfile.gettempdir(), f"pf_{job_id}.png")
-        pf.plot_summary(filename=plot_path, show=False)
+        pf.save_analyzed_image(filename=plot_path)
         image_url = upload_plot(plot_path, f"pf_{job_id}.png")
 
         chart_data = _extract_pf_chart_data(pf)
@@ -419,7 +419,7 @@ def _run_starshot(job_id: str, filepath: str, email: str, filename: str):
         passed    = ss.passed
 
         plot_path = os.path.join(tempfile.gettempdir(), f"ss_{job_id}.png")
-        ss.plot_summary(filename=plot_path, show=False)
+        ss.save_analyzed_image(filename=plot_path)
         image_url = upload_plot(plot_path, f"ss_{job_id}.png")
 
         chart_data = _extract_starshot_chart_data(ss)
@@ -520,7 +520,7 @@ def _run_winston_lutz(job_id: str, dirpath: str, email: str, filename: str):
         passed    = wl.passed
 
         plot_path = os.path.join(dirpath, f"wl_{job_id}.png")
-        wl.plot_summary(filename=plot_path, show=False)
+        wl.save_analyzed_image(filename=plot_path)
         image_url = upload_plot(plot_path, f"wl_{job_id}.png")
 
         chart_data = _extract_wl_chart_data(wl)
@@ -630,7 +630,7 @@ def _run_congruence(job_id: str, filepath: str, email: str, filename: str):
         passed    = fa.passed
 
         plot_path = os.path.join(tempfile.gettempdir(), f"cg_{job_id}.png")
-        fa.plot_summary(filename=plot_path, show=False)
+        fa.save_analyzed_image(filename=plot_path)
         image_url = upload_plot(plot_path, f"cg_{job_id}.png")
 
         chart_data = _extract_congruence_chart_data(fa)
