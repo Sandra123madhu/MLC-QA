@@ -42,6 +42,13 @@
 if (localStorage.getItem("mlcqa_token")) { window.location.href = "dashboard.html"; }
 document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
 
+// Show a banner if redirected here because the session expired
+if (new URLSearchParams(window.location.search).get("reason") === "session_expired") {
+    const msg = document.getElementById("msg");
+    msg.className = "msg warn";
+    msg.textContent = "⚠️ Your session has expired. Please sign in again.";
+}
+
 async function doLogin() {
   const email = document.getElementById("email").value.trim();
   const password = document.getElementById("password").value;
