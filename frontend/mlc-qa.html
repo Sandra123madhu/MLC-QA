@@ -119,7 +119,7 @@
         <h2 style="font-size:0.88rem;font-weight:600">Analysis Charts</h2>
       </div>
       <div class="charts-grid" style="grid-template-columns:1fr">
-        <div class="chart-card"><div class="chart-card-title">Leaf Pair Max Error (mm)</div><canvas id="leafChart"></canvas></div>
+        <div class="chart-card"><div class="chart-card-title">Leaf Pair Max Error (mm)</div><div style="position:relative;width:100%;height:360px;"><canvas id="leafChart"></canvas></div></div>
       </div>
     </div>
 
@@ -310,23 +310,60 @@ function handlePicketFenceSuccess(result, filename) {
 let pfChart1=null;
 
 function renderPFCharts(cd, tol) {
-  // cd = chart_data from backend — real pylinac values
   const leafErrors = (cd.leaf_max_errors && cd.leaf_max_errors.length > 0) ? cd.leaf_max_errors : null;
   if (!leafErrors) {
     document.getElementById("chartsSection").innerHTML += '<p style="color:var(--text-muted);font-size:0.8rem;font-family:var(--mono);padding:12px">Chart data not available for this file — check server logs.</p>';
     return;
   }
   const nLeaves = leafErrors.length;
-  const leafColors = leafErrors.map(v=>v>tol?"rgba(201,64,80,0.85)":v>0.5?"rgba(200,137,42,0.8)":"rgba(26,171,117,0.75)");
-  const chartOpts={plugins:{legend:{labels:{color:"#8ba4c0",font:{family:"'IBM Plex Mono'",size:9}}}},scales:{x:{ticks:{color:"#546a85",font:{size:7},maxTicksLimit:15},grid:{color:"rgba(36,53,82,0.8)"}},y:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"Error (mm)",color:"#546a85",font:{size:9}}}}};
-  if(pfChart1) pfChart1.destroy();
-  pfChart1=new Chart(document.getElementById("leafChart"),{
-    type:"bar",
-    data:{labels:Array.from({length:nLeaves},(_,i)=>"L"+(i+1)),datasets:[
-      {label:"Max Error (mm)",data:leafErrors,backgroundColor:leafColors,borderWidth:0},
-      {label:"Tolerance",data:Array(nLeaves).fill(tol),type:"line",borderColor:"rgba(200,137,42,0.7)",borderDash:[4,3],pointRadius:0,borderWidth:1.5,fill:false}
-    ]},
-    options:{responsive:true,maintainAspectRatio:true,...chartOpts}
+  const leafColors = leafErrors.map(v => v > tol ? "rgba(201,64,80,0.85)" : v > 0.5 ? "rgba(200,137,42,0.8)" : "rgba(26,171,117,0.75)");
+
+  // Dynamically size canvas height based on leaf count, and show every leaf label
+  const canvas = document.getElementById("leafChart");
+  canvas.style.height = Math.max(220, Math.min(nLeaves * 5, 400)) + "px";
+
+  const chartOpts = {
+    plugins: {
+      legend: { labels: { color: "#8ba4c0", font: { family: "'IBM Plex Mono'", size: 9 } } },
+      tooltip: {
+        callbacks: {
+          title: (items) => "Leaf " + items[0].label,
+          label: (item) => item.dataset.label === "Tolerance" ? "Tolerance: " + tol + " mm" : "Max Error: " + item.raw.toFixed(4) + " mm"
+        }
+      }
+    },
+    scales: {
+      x: {
+        ticks: {
+          color: "#546a85",
+          font: { size: nLeaves > 60 ? 6 : 7 },
+          maxRotation: 90,
+          minRotation: 45,
+          autoSkip: false,        // show ALL leaf labels, no skipping
+          maxTicksLimit: nLeaves  // never cap the number of ticks
+        },
+        grid: { color: "rgba(36,53,82,0.8)" }
+      },
+      y: {
+        ticks: { color: "#546a85", font: { family: "'IBM Plex Mono'", size: 9 } },
+        grid: { color: "rgba(36,53,82,0.8)" },
+        title: { display: true, text: "Error (mm)", color: "#546a85", font: { size: 9 } },
+        min: 0
+      }
+    }
+  };
+
+  if (pfChart1) pfChart1.destroy();
+  pfChart1 = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: Array.from({ length: nLeaves }, (_, i) => "L" + (i + 1)),
+      datasets: [
+        { label: "Max Error (mm)", data: leafErrors, backgroundColor: leafColors, borderWidth: 0, barPercentage: 0.9, categoryPercentage: 0.95 },
+        { label: "Tolerance", data: Array(nLeaves).fill(tol), type: "line", borderColor: "rgba(200,137,42,0.7)", borderDash: [4, 3], pointRadius: 0, borderWidth: 1.5, fill: false }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, ...chartOpts }
   });
 }
 
