@@ -249,32 +249,39 @@ def get_result(job_id: str):
 # ═════════════════════════════════════════════════════════════════════════════
 
 def _extract_pf_chart_data(pf) -> dict:
-    """Extract per-leaf-pair errors and summary metrics from a PicketFence result."""
+    """Extract per-leaf-pair errors and summary metrics from a PicketFence result (pylinac 3.x)."""
     try:
-        results = pf.results_data()
+        results = pf.results_data()  # returns PFResult in pylinac 3.x
+
+        # --- per-leaf max errors (mlc_errors_by_leaf is a dict: leaf_num -> list of errors per picket) ---
+        leaf_max_errors = []
         leaf_pairs = []
         try:
-            for leaf in results.leaf_pairs:
+            errors_by_leaf = results.mlc_errors_by_leaf  # dict[int, list[float]]
+            for leaf_num in sorted(errors_by_leaf.keys()):
+                errs = [abs(e) for e in errors_by_leaf[leaf_num] if e is not None]
+                max_err = round(max(errs), 4) if errs else 0.0
+                mean_err = round(sum(errs) / len(errs), 4) if errs else 0.0
+                leaf_max_errors.append(max_err)
                 leaf_pairs.append({
-                    "leaf_pair": int(leaf.leaf_pair),
-                    "max_error": round(float(leaf.max_error), 4),
-                    "mean_error": round(float(leaf.mean_error), 4),
-                    "passed": bool(leaf.passed),
+                    "leaf_pair": int(leaf_num),
+                    "max_error": max_err,
+                    "mean_error": mean_err,
+                    "passed": max_err <= results.tolerance_mm,
                 })
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Leaf extraction error: {e}")
 
+        # --- summary metrics ---
         max_error = None
         mean_error = None
         failed_leaves = None
         try:
-            max_error = round(float(results.max_error), 4)
-            mean_error = round(float(results.mean_error), 4)
-            failed_leaves = int(results.failed_leaves)
-        except Exception:
-            pass
-
-        leaf_max_errors = [lp["max_error"] for lp in leaf_pairs] if leaf_pairs else []
+            max_error    = round(float(results.max_error_mm), 4)
+            mean_error   = round(float(results.absolute_median_error_mm), 4)
+            failed_leaves = int(results.failed_leaves) if results.failed_leaves is not None else 0
+        except Exception as e:
+            print(f"Metrics extraction error: {e}")
 
         return {
             "leaf_pairs": leaf_pairs,
@@ -284,6 +291,7 @@ def _extract_pf_chart_data(pf) -> dict:
             "leaf_max_errors": leaf_max_errors,
         }
     except Exception as e:
+        print(f"_extract_pf_chart_data error: {e}")
         return {"error": str(e)}
 
 def _run_picket_fence(job_id: str, filepath: str, email: str, filename: str, tolerance: float = 1.0, action_tolerance: float = 0.5):
