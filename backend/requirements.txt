@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 starlette==0.46.2
-pylinac
+pylinac==3.42.0
 pydicom
 python-multipart
 python-jose
