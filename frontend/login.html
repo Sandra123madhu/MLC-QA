@@ -54,7 +54,7 @@ async function doLogin() {
     const res = await fetch(`${BACKEND_URL}/auth/login`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({email,password}) });
     const data = await res.json();
     if (!res.ok) { msg.className="msg error"; msg.textContent=data.detail||"Invalid email or password."; btn.disabled=false; btn.textContent="Sign In"; return; }
-    localStorage.setItem("mlcqa_token", data.access_token);
+    localStorage.setItem("mlcqa_token", data.token || data.access_token);
     localStorage.setItem("mlcqa_name", data.name);
     window.location.href = "dashboard.html";
   } catch (err) {
