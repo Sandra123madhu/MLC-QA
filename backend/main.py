@@ -47,7 +47,10 @@ def sb_storage_headers():
 
 def get_user_by_email(email):
     with httpx.Client() as c:
-        r = c.get(f"{SUPABASE_URL}/rest/v1/users?email=eq.{email}&limit=1", headers=sb_headers())
+        r = c.get(
+            f"{SUPABASE_URL}/rest/v1/users?email=eq.{email}&limit=1&select=name,email,password_hash",
+            headers=sb_headers()
+        )
         if r.status_code != 200:
             return None
         data = r.json()
@@ -209,7 +212,8 @@ def signup(req: SignupRequest):
 def login(req: LoginRequest):
     try:
         user = get_user_by_email(req.email)
-        if not user or not verify_password(req.password, user["password_hash"]):
+        pw_hash = user.get("password_hash") if user else None
+        if not user or not pw_hash or not verify_password(req.password, pw_hash):
             raise HTTPException(401, "Invalid email or password")
         token = create_token(user["email"], user["name"])
         return {"token": token, "name": user["name"]}
