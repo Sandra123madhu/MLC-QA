@@ -30,426 +30,277 @@
       <div class="avatar" id="avatarInitial">?</div>
       <div><div class="user-name" id="sidebarName">Loading...</div><div class="user-role">Medical Physicist</div></div>
     </div>
-    <button class="logout-btn" onclick="logout()">Logout</button>
+    <button class="logout-btn" onclick="logout()">Sign Out</button>
   </div>
 </aside>
 
 <main class="main">
-  <header class="page-header">
+  <div class="page-header">
+    <div class="breadcrumb"><a href="dashboard.html">Dashboard</a> <span>/</span> Congruence Analysis</div>
     <h1>Congruence Analysis</h1>
-    <p>Radiation/Light field congruence test using pylinac</p>
-    <div id="serverStatus" class="server-status">
-      <div class="status-dot dot-warn"></div>
-      <span>Checking...</span>
+    <p>Radiation/light field congruence test — compares field edges against nominal values</p>
+  </div>
+
+  <div class="server-status" id="serverStatus">
+    <div class="status-dot-sm dot-warn"></div><span>Checking server...</span>
+  </div>
+
+  <div class="upload-card">
+    <div class="upload-zone" id="uploadZone">
+      <input type="file" id="dicomFile" accept=".dcm" onchange="onFileSelected(this)"/>
+      <div class="upload-icon">📂</div>
+      <h3>Drop your DICOM file here</h3>
+      <p>or click to browse — .dcm files only</p>
+      <div class="file-selected" id="fileLabel"></div>
     </div>
-  </header>
-
-  <section class="upload-section">
-    <div class="upload-card">
-      <h2>Upload DICOM File</h2>
-      <div class="file-drop" id="fileDrop">
-        <input type="file" id="fileInput" accept=".dcm,.dicom" hidden/>
-        <div class="drop-content">
-          <div class="drop-icon">📁</div>
-          <p>Drop DICOM file here or click to browse</p>
-          <p class="drop-hint">Supports .dcm files up to 50MB</p>
-        </div>
-      </div>
-      
-      <div class="file-info" id="fileInfo" style="display:none;">
-        <div class="file-details">
-          <span class="file-name" id="fileName"></span>
-          <span class="file-size" id="fileSize"></span>
-        </div>
-        <button class="remove-file" id="removeFile">✕</button>
-      </div>
+    <div class="tolerances">
+      <div class="tol-item"><div class="tol-label">Edge Tolerance</div><div class="tol-val">1.0 mm</div></div>
+      <div class="tol-item"><div class="tol-label">Action Tolerance</div><div class="tol-val">0.5 mm</div></div>
+      <div class="tol-item"><div class="tol-label">Input Format</div><div class="tol-val">DICOM</div></div>
     </div>
+    <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>Run Congruence Analysis</button>
+  </div>
 
-    <div class="params-card">
-      <h2>Analysis Parameters</h2>
-      <div class="param-group">
-        <label>Input Format</label>
-        <div class="format-display">DICOM</div>
-      </div>
-      <div class="param-info">
-        <p>Congruence analysis compares radiation field edges with light field or nominal values.</p>
-      </div>
-    </div>
-  </section>
-
-  <section class="analysis-section">
-    <button class="analyze-btn" id="analyzeBtn" onclick="runCongruenceAnalysis()">
-      Run Congruence Analysis
-    </button>
-  </section>
-
-  <div id="verdictBanner" class="verdict-banner" style="display:none;"></div>
-
-  <section class="results-section" id="resultsSection" style="display:none;">
+  <div class="results-card">
     <h2>Results</h2>
-    <div id="results"></div>
-    
-    <div id="metricsRow" class="metrics-row" style="display:none;"></div>
+    <div id="resultsBody"><p>Upload a file and run the analysis to see results here.</p></div>
 
-    <div id="plotSection" class="plot-section" style="display:none;"></div>
+    <div id="verdictBanner" class="verdict-banner" style="display:none"></div>
 
-    <div id="chartsSection" class="charts-section" style="display:none;">
-      <h3>Field Edge Analysis</h3>
-      <canvas id="congruenceChart"></canvas>
+    <div id="gaugeSection" style="display:none;margin-top:20px">
+      <div class="gauge-label-row">
+        <span class="gauge-title">Max Edge Deviation vs Tolerance</span>
+        <span class="gauge-val" id="gaugeVal"></span>
+      </div>
+      <div class="gauge-track">
+        <div class="gauge-fill" id="gaugeFill"></div>
+        <div class="gauge-marker" id="gaugeMarker" title="Tolerance limit"></div>
+      </div>
+      <div class="gauge-ticks"><span>0 mm</span><span id="gaugeTolLabel"></span><span id="gaugeMaxLabel"></span></div>
     </div>
 
-    <div id="pdfSection" class="pdf-section" style="display:none;">
-      <button class="pdf-btn" onclick="generatePDF()">Generate PDF Report</button>
+    <div id="metricsRow" class="metrics-row" style="display:none;margin-top:20px"></div>
+
+    <div id="plotSection" style="display:none;margin-top:20px"></div>
+
+    <div id="chartsSection" style="display:none;margin-top:28px">
+      <div class="section-head" style="margin-top:0;border-bottom:1px solid var(--border-subtle);padding-bottom:14px;margin-bottom:20px">
+        <h2 style="font-size:0.88rem;font-weight:600">Analysis Charts</h2>
+      </div>
+      <div class="charts-grid" style="grid-template-columns:1fr">
+        <div class="chart-card"><div class="chart-card-title">Field Edge Deviation (mm)</div><div style="position:relative;width:100%;height:280px;"><canvas id="congruenceChart"></canvas></div></div>
+      </div>
     </div>
-  </section>
+
+    <div id="pdfSection" style="display:none;margin-top:16px">
+      <button class="btn-outline" onclick="downloadPDF()">&#11015; Download PDF Report</button>
+    </div>
+  </div>
 </main>
 
 <script>
 let congruenceChart = null;
 
-// File upload handling
-const fileDrop = document.getElementById('fileDrop');
-const fileInput = document.getElementById('fileInput');
-const fileInfo = document.getElementById('fileInfo');
-const fileName = document.getElementById('fileName');
-const fileSize = document.getElementById('fileSize');
-const removeFile = document.getElementById('removeFile');
-
-fileDrop.addEventListener('click', () => fileInput.click());
-fileDrop.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    fileDrop.classList.add('drag-over');
-});
-fileDrop.addEventListener('dragleave', () => {
-    fileDrop.classList.remove('drag-over');
-});
-fileDrop.addEventListener('drop', (e) => {
-    e.preventDefault();
-    fileDrop.classList.remove('drag-over');
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-        handleFileSelect(files[0]);
-    }
-});
-
-fileInput.addEventListener('change', (e) => {
-    if (e.target.files.length > 0) {
-        handleFileSelect(e.target.files[0]);
-    }
-});
-
-removeFile.addEventListener('click', () => {
-    fileInput.value = '';
-    fileInfo.style.display = 'none';
-    fileDrop.style.display = 'block';
-});
-
-function handleFileSelect(file) {
-    try {
-        AnalysisHelpers.validateDicomFile(file);
-        fileName.textContent = file.name;
-        fileSize.textContent = `${(file.size / 1024 / 1024).toFixed(2)} MB`;
-        fileInfo.style.display = 'flex';
-        fileDrop.style.display = 'none';
-    } catch (error) {
-        alert(error.message);
-        fileInput.value = '';
-    }
+// Init user info
+const name = localStorage.getItem("mlcqa_name");
+if (name) {
+  document.getElementById("sidebarName").textContent = name;
+  document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
 }
 
-// Enhanced analysis function
-async function runCongruenceAnalysis() {
-    const btn = document.getElementById('analyzeBtn');
-    const resultsDiv = document.getElementById('results');
-    const resultsSection = document.getElementById('resultsSection');
-    
-    try {
-        // Reset UI
-        btn.disabled = true;
-        btn.textContent = "Starting analysis...";
-        resultsDiv.innerHTML = `<p>🔍 Initializing analysis...</p>`;
-        resultsSection.style.display = 'block';
-        
-        // Hide previous results
-        document.getElementById('verdictBanner').style.display = 'none';
-        document.getElementById('metricsRow').style.display = 'none';
-        document.getElementById('plotSection').style.display = 'none';
-        document.getElementById('chartsSection').style.display = 'none';
-        document.getElementById('pdfSection').style.display = 'none';
-        
-        // Check server first
-        resultsDiv.innerHTML = `<p>⏳ Checking server status...</p>`;
-        const serverReady = await AnalysisHelpers.waitForServer();
-        if (!serverReady) {
-            throw new Error("Server not responding. Please refresh the page and try again.");
-        }
-        
-        // Validate authentication
-        const token = localStorage.getItem("mlcqa_token");
-        if (!token) {
-            window.location.href = "login.html";
-            return;
-        }
-        
-        // Validate file
-        if (!fileInput.files[0]) {
-            throw new Error("Please select a DICOM file for analysis.");
-        }
-        
-        const file = fileInput.files[0];
-        AnalysisHelpers.validateDicomFile(file);
-        
-        // Prepare and send request
-        resultsDiv.innerHTML = `<p>📤 Uploading file...</p>`;
-        const formData = new FormData();
-        formData.append("file", file);
-        
-        btn.textContent = "Uploading...";
-        
-        const data = await AnalysisHelpers.makeApiCall(`${BACKEND_URL}/analyze/congruence`, {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${token}`
-            },
-            body: formData
-        }, 30000);
-        
-        if (data.status === "Error") {
-            throw new Error(data.message || "Server returned an error");
-        }
-        
-        // Start polling for results
-        btn.textContent = "Analyzing...";
-        resultsDiv.innerHTML = `<p>🔬 Analysis running<span id="dots">.</span></p>`;
-        
-        await pollForCongruenceResults(data.job_id);
-        
-    } catch (err) {
-        console.error("Congruence analysis error:", err);
-        resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
-        btn.disabled = false;
-        btn.textContent = "Run Congruence Analysis";
-    }
-}
+// Drag & drop
+const zone = document.getElementById("uploadZone");
+zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("dragover"); });
+zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+zone.addEventListener("drop", e => {
+  e.preventDefault(); zone.classList.remove("dragover");
+  const dt = new DataTransfer();
+  Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f));
+  document.getElementById("dicomFile").files = dt.files;
+  onFileSelected(document.getElementById("dicomFile"));
+});
 
-// Poll for Congruence results
-async function pollForCongruenceResults(jobId) {
-    const resultsDiv = document.getElementById('results');
-    const btn = document.getElementById('analyzeBtn');
-    
-    let dotCount = 0;
-    const dotAnim = setInterval(() => {
-        dotCount = (dotCount + 1) % 4;
-        const d = document.getElementById("dots");
-        if (d) d.textContent = ".".repeat(dotCount + 1);
-    }, 500);
-    
-    let attempts = 0;
-    let networkFails = 0;
-    const getDelay = a => a < 5 ? 2000 : a < 15 ? 3000 : 5000;
-    
-    const poll = async () => {
-        attempts++;
-        
-        if (attempts > 60) {
-            clearInterval(dotAnim);
-            resultsDiv.innerHTML = `<p>⚠️ Analysis is taking longer than expected. Please try again.</p>`;
-            btn.disabled = false;
-            btn.textContent = "Run Congruence Analysis";
-            return;
-        }
-        
-        try {
-            const result = await AnalysisHelpers.makeApiCall(`${BACKEND_URL}/result/${jobId}`, {
-                headers: {
-                    "Authorization": `Bearer ${localStorage.getItem("mlcqa_token")}`
-                }
-            }, 10000);
-            
-            networkFails = 0;
-            
-            if (result.status === "Processing") {
-                setTimeout(poll, getDelay(attempts));
-            } else if (result.status === "Success") {
-                clearInterval(dotAnim);
-                handleCongruenceSuccess(result);
-            } else {
-                clearInterval(dotAnim);
-                resultsDiv.innerHTML = `<p class="result-fail">❌ ${result.message || "Analysis failed"}</p>`;
-                btn.disabled = false;
-                btn.textContent = "Run Congruence Analysis";
-            }
-        } catch (error) {
-            networkFails++;
-            
-            if (networkFails < 10) {
-                const d = document.getElementById("dots");
-                if (d) d.textContent = ` (retrying… ${networkFails}/10)`;
-                setTimeout(poll, 6000);
-            } else {
-                clearInterval(dotAnim);
-                resultsDiv.innerHTML = `<p class="result-fail">❌ Cannot reach the server after 10 retries. Please wait 60 seconds, refresh the page, and try again.</p>`;
-                btn.disabled = false;
-                btn.textContent = "Run Congruence Analysis";
-            }
-        }
-    };
-    
-    setTimeout(poll, getDelay(0));
-}
-
-// Handle successful Congruence analysis
-function handleCongruenceSuccess(result) {
-    const resultsDiv = document.getElementById('results');
-    const btn = document.getElementById('analyzeBtn');
-    const file = fileInput.files[0];
-    
-    const pass = result.passed;
-    const imgUrl = result.image_url || null;
-    const summary = result.analysis_summary || "";
-    const chartData = result.chart_data || {};
-    
-    // Store result for PDF generation
-    window._lastResult = { 
-        pass, 
-        imgUrl, 
-        summary, 
-        filename: file.name, 
-        testType: "Congruence", 
-        toleranceText: "Field edge tolerance: 1mm" 
-    };
-    
-    // Raw summary
-    resultsDiv.innerHTML = "<pre>" + summary + "</pre>";
-    
-    // Verdict banner
-    const banner = document.getElementById("verdictBanner");
-    banner.innerHTML = '<div class="verdict-icon">' + (pass ? "✓" : "✗") + '</div><div class="verdict-text"><div class="verdict-label">' + (pass ? "PASS" : "FAIL") + '</div><div class="verdict-sub">' + (pass ? "Field congruence within clinical tolerance (1mm)" : "Field congruence exceeds tolerance — action required") + '</div></div>';
-    banner.className = "verdict-banner " + (pass ? "verdict-pass" : "verdict-fail");
-    banner.style.display = "flex";
-    
-    // Metrics
-    const edges = chartData.edges || {};
-    const fieldSize = chartData.field_size || {};
-    
-    const mr = document.getElementById("metricsRow");
-    mr.innerHTML = [
-        {label: "Top Edge", val: edges.top ? edges.top.toFixed(3) : "N/A", unit: "mm", cls: edges.top && Math.abs(edges.top) > 1 ? "metric-fail" : "metric-pass"},
-        {label: "Bottom Edge", val: edges.bottom ? edges.bottom.toFixed(3) : "N/A", unit: "mm", cls: edges.bottom && Math.abs(edges.bottom) > 1 ? "metric-fail" : "metric-pass"},
-        {label: "Left Edge", val: edges.left ? edges.left.toFixed(3) : "N/A", unit: "mm", cls: edges.left && Math.abs(edges.left) > 1 ? "metric-fail" : "metric-pass"},
-        {label: "Right Edge", val: edges.right ? edges.right.toFixed(3) : "N/A", unit: "mm", cls: edges.right && Math.abs(edges.right) > 1 ? "metric-fail" : "metric-pass"}
-    ].map(m => '<div class="metric-card"><div class="metric-label">' + m.label + '</div><div class="metric-value ' + m.cls + '">' + m.val + (m.unit ? '<span class="metric-unit">' + m.unit + '</span>' : '') + '</div></div>').join('');
-    mr.style.display = "grid";
-    
-    // Plot
-    if (imgUrl) {
-        document.getElementById("plotSection").innerHTML = '<div class="plot-wrap"><img src="' + imgUrl + '" alt="Congruence Plot" loading="lazy"/><div class="plot-label">Pylinac · Congruence Analysis</div></div>';
-        document.getElementById("plotSection").style.display = "block";
-    }
-    
-    // Charts
-    renderCongruenceCharts(chartData);
-    document.getElementById("chartsSection").style.display = "block";
-    document.getElementById("pdfSection").style.display = "block";
-    
+function onFileSelected(input) {
+  const label = document.getElementById("fileLabel");
+  const btn   = document.getElementById("analyzeBtn");
+  if (input.files.length > 0) {
+    label.textContent = "Selected: " + input.files[0].name;
     btn.disabled = false;
-    btn.textContent = "Analyze Another File";
+  } else {
+    label.textContent = "";
+    btn.disabled = true;
+  }
 }
 
-// Render Congruence charts
-function renderCongruenceCharts(chartData) {
-    const edges = chartData.edges || {};
-    
-    if (!edges.top && !edges.bottom && !edges.left && !edges.right) {
-        document.getElementById("chartsSection").innerHTML += '<p style="color:var(--text-muted);font-size:0.8rem;font-family:var(--mono);padding:12px">Chart data not available for this analysis — check server logs.</p>';
-        return;
+async function runAnalysis() {
+  const fileInput  = document.getElementById("dicomFile");
+  const btn        = document.getElementById("analyzeBtn");
+  const resultsDiv = document.getElementById("resultsBody");
+
+  if (!fileInput.files.length) { alert("Please select a file first."); return; }
+  if (!fileInput.files[0].name.toLowerCase().endsWith(".dcm")) {
+    resultsDiv.innerHTML = `<p class="result-fail">❌ Only .dcm files are supported.</p>`; return;
+  }
+
+  try {
+    resultsDiv.innerHTML = `<p>⏳ Checking server status...</p>`;
+    const serverReady = await AnalysisHelpers.waitForServer();
+    if (!serverReady) throw new Error("Server not responding. Please refresh and try again.");
+
+    const token = localStorage.getItem("mlcqa_token");
+    if (!token) { window.location.href = "login.html"; return; }
+
+    resultsDiv.innerHTML = `<p>📤 Uploading file...</p>`;
+    const formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+
+    btn.textContent = "Uploading...";
+
+    const data = await AnalysisHelpers.makeApiCall(`${BACKEND_URL}/analyze/congruence`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}` },
+      body: formData
+    }, 30000);
+
+    if (data.status === "Error") throw new Error(data.message || "Server returned an error");
+
+    btn.textContent = "Analyzing...";
+    resultsDiv.innerHTML = `<p>🔬 Analysis running<span id="dots">.</span></p>`;
+
+    await AnalysisHelpers.pollForResult(data.job_id, (result) => {
+      handleSuccess(result, fileInput.files[0].name);
+    }, (error) => { throw new Error(error); });
+
+  } catch (err) {
+    console.error("Congruence analysis error:", err);
+    resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
+    btn.disabled = false;
+    btn.textContent = "Run Congruence Analysis";
+  }
+}
+
+function handleSuccess(result, filename) {
+  const resultsDiv = document.getElementById("resultsBody");
+  const analyzeBtn = document.getElementById("analyzeBtn");
+  const tol = 1.0;
+
+  const pass      = result.passed;
+  const imgUrl    = result.image_url || null;
+  const summary   = result.analysis_summary || "";
+  const chartData = result.chart_data || {};
+  const edges     = chartData.edges || {};
+
+  window._lastResult = { pass, imgUrl, summary, filename, testType: "Congruence", toleranceText: "Edge tolerance: 1.0mm / action 0.5mm" };
+
+  resultsDiv.innerHTML = "<pre>" + summary + "</pre>";
+
+  // Verdict
+  const banner = document.getElementById("verdictBanner");
+  banner.innerHTML = '<div class="verdict-icon">' + (pass ? "✓" : "✗") + '</div><div class="verdict-text"><div class="verdict-label">' + (pass ? "PASS" : "FAIL") + '</div><div class="verdict-sub">' + (pass ? "Field congruence within clinical tolerance (1.0 mm)" : "Field edges exceed tolerance — action required") + '</div></div>';
+  banner.className = "verdict-banner " + (pass ? "verdict-pass" : "verdict-fail");
+  banner.style.display = "flex";
+
+  // Gauge — max absolute edge deviation
+  const edgeVals = [edges.top, edges.bottom, edges.left, edges.right].filter(v => v != null).map(Math.abs);
+  const maxEdge = edgeVals.length ? Math.max(...edgeVals) : 0;
+  const maxScale = Math.max(tol * 1.6, maxEdge * 1.2);
+  const fill = document.getElementById("gaugeFill");
+  fill.style.width = Math.min((maxEdge / maxScale) * 100, 100) + "%";
+  fill.style.background = maxEdge > tol ? "var(--fail)" : maxEdge > 0.5 ? "var(--warn)" : "var(--pass)";
+  document.getElementById("gaugeMarker").style.left = ((tol / maxScale) * 100) + "%";
+  document.getElementById("gaugeVal").textContent = maxEdge.toFixed(3) + " mm";
+  document.getElementById("gaugeTolLabel").textContent = "Tol: " + tol + " mm";
+  document.getElementById("gaugeMaxLabel").textContent = maxScale.toFixed(2) + " mm";
+  document.getElementById("gaugeSection").style.display = "block";
+
+  // Metrics
+  const mr = document.getElementById("metricsRow");
+  mr.innerHTML = [
+    { label: "Top Edge",    val: edges.top    != null ? edges.top.toFixed(3)    : "N/A", unit: "mm", cls: edges.top    != null && Math.abs(edges.top)    > tol ? "metric-fail" : "metric-pass" },
+    { label: "Bottom Edge", val: edges.bottom != null ? edges.bottom.toFixed(3) : "N/A", unit: "mm", cls: edges.bottom != null && Math.abs(edges.bottom) > tol ? "metric-fail" : "metric-pass" },
+    { label: "Left Edge",   val: edges.left   != null ? edges.left.toFixed(3)   : "N/A", unit: "mm", cls: edges.left   != null && Math.abs(edges.left)   > tol ? "metric-fail" : "metric-pass" },
+    { label: "Right Edge",  val: edges.right  != null ? edges.right.toFixed(3)  : "N/A", unit: "mm", cls: edges.right  != null && Math.abs(edges.right)  > tol ? "metric-fail" : "metric-pass" }
+  ].map(m => '<div class="metric-card"><div class="metric-label">' + m.label + '</div><div class="metric-value ' + m.cls + '">' + m.val + (m.unit ? '<span class="metric-unit">' + m.unit + '</span>' : '') + '</div></div>').join('');
+  mr.style.display = "grid";
+
+  // Plot
+  if (imgUrl) {
+    document.getElementById("plotSection").innerHTML = '<div class="plot-wrap"><img src="' + imgUrl + '" alt="Congruence Plot" loading="lazy"/><div class="plot-label">Pylinac · Congruence Analysis</div></div>';
+    document.getElementById("plotSection").style.display = "block";
+  }
+
+  renderCharts(chartData, tol);
+  document.getElementById("chartsSection").style.display = "block";
+  document.getElementById("pdfSection").style.display = "block";
+
+  analyzeBtn.disabled = false;
+  analyzeBtn.textContent = "Analyze Another File";
+}
+
+function renderCharts(cd, tol) {
+  const edges = cd.edges || {};
+  const vals  = [edges.top ?? null, edges.bottom ?? null, edges.left ?? null, edges.right ?? null];
+  if (vals.every(v => v === null)) {
+    document.getElementById("chartsSection").innerHTML += '<p style="color:var(--text-muted);font-size:0.8rem;font-family:var(--mono);padding:12px">Chart data not available — check server logs.</p>';
+    return;
+  }
+  const labels = ["Top", "Bottom", "Left", "Right"];
+  const data   = vals.map(v => v ?? 0);
+  const colors = data.map(v => Math.abs(v) > tol ? "rgba(201,64,80,0.85)" : Math.abs(v) > 0.5 ? "rgba(200,137,42,0.8)" : "rgba(26,171,117,0.75)");
+  const chartOpts = {
+    plugins: { legend: { labels: { color: "#8ba4c0", font: { family: "'IBM Plex Mono'", size: 9 } } } },
+    scales: {
+      x: { ticks: { color: "#546a85", font: { size: 9 } }, grid: { color: "rgba(36,53,82,0.8)" } },
+      y: { title: { display: true, text: "Edge Deviation (mm)", color: "#546a85", font: { size: 9 } }, ticks: { color: "#546a85", font: { family: "'IBM Plex Mono'", size: 9 } }, grid: { color: "rgba(36,53,82,0.8)" } }
     }
-    
-    const edgeLabels = ['Top', 'Bottom', 'Left', 'Right'];
-    const edgeValues = [
-        edges.top || 0,
-        edges.bottom || 0,
-        edges.left || 0,
-        edges.right || 0
-    ];
-    const edgeColors = edgeValues.map(val => Math.abs(val) > 1 ? "rgba(201,64,80,0.85)" : Math.abs(val) > 0.5 ? "rgba(200,137,42,0.8)" : "rgba(26,171,117,0.75)");
-    
-    const chartOpts = {
-        plugins: {
-            legend: {
-                labels: {
-                    color: "#8ba4c0",
-                    font: { family: "'IBM Plex Mono'", size: 9 }
-                }
-            }
-        },
-        scales: {
-            x: {
-                ticks: { color: "#546a85", font: { size: 9 } },
-                grid: { color: "rgba(36,53,82,0.8)" }
-            },
-            y: {
-                title: {
-                    display: true,
-                    text: "Edge Deviation (mm)",
-                    color: "#546a85",
-                    font: { size: 9 }
-                },
-                ticks: { color: "#546a85", font: { family: "'IBM Plex Mono'", size: 9 } },
-                grid: { color: "rgba(36,53,82,0.8)" }
-            }
-        }
-    };
-    
-    if (congruenceChart) congruenceChart.destroy();
-    
-    congruenceChart = new Chart(document.getElementById("congruenceChart"), {
-        type: "bar",
-        data: {
-            labels: edgeLabels,
-            datasets: [
-                {
-                    label: "Edge Deviation",
-                    data: edgeValues,
-                    backgroundColor: edgeColors,
-                    borderWidth: 0
-                },
-                {
-                    label: "Tolerance (+1mm)",
-                    data: [1, 1, 1, 1],
-                    type: "line",
-                    borderColor: "rgba(200,137,42,0.7)",
-                    borderDash: [4, 3],
-                    pointRadius: 0,
-                    borderWidth: 1.5,
-                    fill: false
-                },
-                {
-                    label: "Tolerance (-1mm)",
-                    data: [-1, -1, -1, -1],
-                    type: "line",
-                    borderColor: "rgba(200,137,42,0.7)",
-                    borderDash: [4, 3],
-                    pointRadius: 0,
-                    borderWidth: 1.5,
-                    fill: false
-                }
-            ]
-        },
-        options: chartOpts
-    });
+  };
+  if (congruenceChart) congruenceChart.destroy();
+  congruenceChart = new Chart(document.getElementById("congruenceChart"), {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        { label: "Edge Deviation", data, backgroundColor: colors, borderWidth: 0 },
+        { label: "Tolerance (+1mm)", data: [tol, tol, tol, tol], type: "line", borderColor: "rgba(200,137,42,0.7)", borderDash: [4, 3], pointRadius: 0, borderWidth: 1.5, fill: false },
+        { label: "Tolerance (-1mm)", data: [-tol, -tol, -tol, -tol], type: "line", borderColor: "rgba(200,137,42,0.7)", borderDash: [4, 3], pointRadius: 0, borderWidth: 1.5, fill: false }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, ...chartOpts }
+  });
 }
 
-// PDF generation (placeholder)
-function generatePDF() {
-    alert("PDF generation will be implemented in a future version.");
+async function downloadPDF() { const r = window._lastResult; if (!r) return; await generatePDF(r); }
+async function generatePDF(r) {
+  const { jsPDF } = window.jspdf; const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" }); const W = 210, M = 16;
+  doc.setFillColor(15, 30, 55); doc.rect(0, 0, W, 26, "F"); doc.setFillColor(0, 175, 215); doc.rect(0, 0, 5, 26, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(255, 255, 255);
+  doc.text(`MLC QA — ${r.testType || "Analysis"} Report`, M + 6, 11);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(180, 210, 230);
+  const now = new Date().toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
+  doc.text(`Generated: ${now}`, M + 6, 19); doc.text(`File: ${r.filename}`, M + 6, 23.5);
+  let y = 34;
+  doc.setFillColor(...(r.pass ? [0, 168, 107] : [195, 45, 70])); doc.roundedRect(M, y, W - M * 2, 13, 2, 2, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(255, 255, 255);
+  doc.text(r.pass ? "✓  PASS" : "✗  FAIL", M + 5, y + 9);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+  doc.text(r.toleranceText || (r.pass ? "Within clinical tolerance" : "Outside clinical tolerance"), M + 36, y + 9);
+  y += 20;
+  if (r.imgUrl) { try { const imgData = await fetchImageAsBase64(r.imgUrl); const imgW = W - M * 2; const imgH = imgW * 0.5; doc.addImage(imgData, "PNG", M, y, imgW, imgH); y += imgH + 9; } catch { y += 4; } }
+  const lines = doc.splitTextToSize(r.summary, W - M * 2 - 10); const boxH = Math.min(lines.length * 5.4 + 16, 230);
+  doc.setFillColor(245, 248, 252); doc.roundedRect(M, y, W - M * 2, boxH, 2, 2, "F");
+  y += 7; doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(15, 40, 80); doc.text("ANALYSIS SUMMARY", M + 5, y); y += 7;
+  doc.setFont("courier", "normal"); doc.setFontSize(8.2); doc.setTextColor(20, 45, 80);
+  lines.forEach(line => { if (y > 272) { doc.addPage(); y = 18; } doc.text(line, M + 5, y); y += 5.4; });
+  const pages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) { doc.setPage(i); doc.setFillColor(235, 241, 248); doc.rect(0, 284, W, 13, "F"); doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(60, 85, 120); doc.text("MLC QA Platform  ·  For clinical physics use only", M, 291); doc.text(`Page ${i} of ${pages}`, W - 28, 291); }
+  doc.save(`MLCQA_CONGRUENCE_${r.filename.replace(/\.[^.]+$/, "")}_${Date.now()}.pdf`);
 }
-
-// Initialize page
-document.addEventListener('DOMContentLoaded', () => {
-    // Check server status
-    AnalysisHelpers.checkServer('serverStatus');
-});
+async function fetchImageAsBase64(url) {
+  const res = await fetch(url); const blob = await res.blob();
+  return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onloadend = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); });
+}
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="dicom-detect.js"></script>
 </body>
 </html>
