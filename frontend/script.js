@@ -1,19 +1,36 @@
 const BACKEND_URL = "https://mlc-qa.onrender.com";
 
-// --- Auth: redirect to login if no token found ---
-const token = localStorage.getItem("mlcqa_token");
+// ── Auth guard ────────────────────────────────────────────────────────────────
+// Sanitize: if the stored token is literally "undefined" or empty, wipe it now
+// so we don't send a garbage Authorization header on every request.
+(function sanitizeToken() {
+    const t = localStorage.getItem("mlcqa_token");
+    if (!t || t === "undefined" || t === "null" || t.trim() === "") {
+        localStorage.removeItem("mlcqa_token");
+        localStorage.removeItem("mlcqa_name");
+    }
+})();
+
 const isAuthPage = window.location.pathname.includes("login.html") ||
                    window.location.pathname.includes("signup.html") ||
                    window.location.pathname.endsWith("/");
 
-if (!token && !isAuthPage) {
+if (!localStorage.getItem("mlcqa_token") && !isAuthPage) {
     window.location.href = "login.html";
 }
 
+// Returns headers for JSON API calls (NOT for FormData uploads)
 function authHeaders() {
     return {
         "Authorization": `Bearer ${localStorage.getItem("mlcqa_token")}`,
         "Content-Type": "application/json"
+    };
+}
+
+// Returns just the Authorization header — use this for FormData/file uploads
+function authHeadersOnly() {
+    return {
+        "Authorization": `Bearer ${localStorage.getItem("mlcqa_token")}`
     };
 }
 
@@ -23,24 +40,19 @@ function logout() {
     window.location.href = "login.html";
 }
 
-// --- Keep-alive ping every 14 minutes to prevent Render cold starts ---
-function startKeepAlive() {
-    setInterval(() => {
-        console.log("Keep-alive ping...");
-        fetch(`${BACKEND_URL}/`).catch(() => {});
-    }, 14 * 60 * 1000);
-}
-startKeepAlive();
+// ── Keep-alive ping every 14 min to prevent Render cold starts ────────────────
+setInterval(() => {
+    fetch(`${BACKEND_URL}/`).catch(() => {});
+}, 14 * 60 * 1000);
 
 
-// ============================================================
-//  AnalysisHelpers — shared utility object used by all pages
-// ============================================================
+// ═══════════════════════════════════════════════════════════════════════════════
+//  AnalysisHelpers — shared utility used by all analysis pages
+// ═══════════════════════════════════════════════════════════════════════════════
 const AnalysisHelpers = {
 
-    // checkServer(elementId, btnId?)
-    //   Shows a live server-status indicator in the given element.
-    //   Polls every 2s until the backend responds.
+    // ── checkServer(elementId, btnId?) ────────────────────────────────────────
+    // Polls the backend and updates a status indicator element.
     checkServer(elementId, btnId) {
         const el  = document.getElementById(elementId);
         const btn = btnId ? document.getElementById(btnId) : null;
@@ -66,22 +78,21 @@ const AnalysisHelpers = {
             let seconds = 60;
             if (btn) btn.disabled = false;
             el.innerHTML = `<div class="status-dot-sm dot-warn" style="animation:blink 1s infinite"></div>
-                            <span>Server waking up... (~${seconds}s) — you can still try</span>`;
+                            <span>Server waking up... (~${seconds}s)</span>`;
 
             const interval = setInterval(async () => {
                 seconds = Math.max(seconds - 2, 5);
                 el.innerHTML = `<div class="status-dot-sm dot-warn" style="animation:blink 1s infinite"></div>
-                                <span>Server waking up... (~${seconds}s) — you can still try</span>`;
+                                <span>Server waking up... (~${seconds}s)</span>`;
                 if (await ping()) clearInterval(interval);
             }, 2000);
         });
     },
 
-    // waitForServer()
-    //   Awaitable check — resolves true if server responds within ~30s.
+    // ── waitForServer() ───────────────────────────────────────────────────────
+    // Resolves true if backend responds within ~30 s, false otherwise.
     async waitForServer() {
-        const maxTries = 15;
-        for (let i = 0; i < maxTries; i++) {
+        for (let i = 0; i < 15; i++) {
             try {
                 const res = await fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(5000) });
                 if (res.ok) return true;
@@ -91,8 +102,12 @@ const AnalysisHelpers = {
         return false;
     },
 
-    // makeApiCall(url, options, timeoutMs?)
-    //   fetch() wrapper with timeout, error handling, and JSON parsing.
+    // ── makeApiCall(url, options, timeoutMs?) ─────────────────────────────────
+    // fetch() wrapper with:
+    //   • configurable timeout (default 30 s)
+    //   • auto-logout on 401 (invalid/expired token)
+    //   • human-readable error messages
+    //   • always returns parsed JSON
     async makeApiCall(url, options = {}, timeoutMs = 30000) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -100,6 +115,14 @@ const AnalysisHelpers = {
         try {
             const res = await fetch(url, { ...options, signal: controller.signal });
             clearTimeout(timer);
+
+            // 401 → token is bad or expired → kick to login
+            if (res.status === 401) {
+                localStorage.removeItem("mlcqa_token");
+                localStorage.removeItem("mlcqa_name");
+                window.location.href = "login.html?reason=session_expired";
+                throw new Error("Session expired. Redirecting to login...");
+            }
 
             const text = await res.text();
             if (!text || text.trim() === "") {
@@ -128,17 +151,13 @@ const AnalysisHelpers = {
         }
     },
 
-    // pollForResult(jobId, onSuccess, onError?)
-    //   Polls GET /result/:jobId with back-off until done.
+    // ── pollForResult(jobId, onSuccess, onError?) ─────────────────────────────
+    // Polls GET /result/:jobId with exponential back-off until complete.
     async pollForResult(jobId, onSuccess, onError) {
         const maxAttempts = 60;
         let attempts = 0;
 
-        const getDelay = (n) => {
-            if (n < 5)  return 2000;
-            if (n < 15) return 3000;
-            return 5000;
-        };
+        const getDelay = (n) => n < 5 ? 2000 : n < 15 ? 3000 : 5000;
 
         let dotCount = 0;
         const dotAnim = setInterval(() => {
@@ -149,10 +168,9 @@ const AnalysisHelpers = {
 
         const poll = async () => {
             attempts++;
-
             if (attempts > maxAttempts) {
                 clearInterval(dotAnim);
-                const msg = "Analysis is taking longer than expected. The server may be under load — please try again.";
+                const msg = "Analysis is taking longer than expected — please try again.";
                 if (onError) onError(msg); else console.error(msg);
                 return;
             }
@@ -160,7 +178,7 @@ const AnalysisHelpers = {
             try {
                 const result = await this.makeApiCall(
                     `${BACKEND_URL}/result/${jobId}`,
-                    { headers: authHeaders() }
+                    { headers: authHeadersOnly() }
                 );
 
                 if (result.status === "Processing") {
@@ -183,8 +201,8 @@ const AnalysisHelpers = {
         setTimeout(poll, getDelay(0));
     },
 
-    // validateDicomFile(file)
-    //   Client-side guard — checks .dcm extension.
+    // ── validateDicomFile(file) ───────────────────────────────────────────────
+    // Client-side guard — throws if file is not a .dcm file.
     validateDicomFile(file) {
         if (!file || !file.name.toLowerCase().endsWith(".dcm")) {
             throw new Error("Only DICOM (.dcm) files are supported. Please select a valid file.");
@@ -194,7 +212,7 @@ const AnalysisHelpers = {
 };
 
 
-// --- Auto-run server check on any page that has #serverStatus ---
+// ── Auto server-check on any page that has #serverStatus ─────────────────────
 window.addEventListener("DOMContentLoaded", () => {
     if (document.getElementById("serverStatus")) {
         const btnId = document.getElementById("loginBtn")   ? "loginBtn"
@@ -205,7 +223,7 @@ window.addEventListener("DOMContentLoaded", () => {
 });
 
 
-// --- Shared UI helpers ---
+// ── Shared UI helpers ─────────────────────────────────────────────────────────
 function togglePassword(inputId, iconEl) {
     const input = document.getElementById(inputId);
     if (input.type === "password") {
