@@ -118,13 +118,14 @@
         <h2 style="font-size:0.88rem;font-weight:600">Analysis Charts</h2>
       </div>
       <div class="charts-grid" style="grid-template-columns:1fr">
-        <div class="chart-card">
+        <div class="chart-card" style="padding:16px 12px;">
           <div class="chart-card-title">Leaf Pair Max Error (mm)</div>
           <div id="leafChartWrap" style="width:100%;overflow-x:scroll;overflow-y:hidden;-webkit-overflow-scrolling:touch;">
             <div id="leafChartInner" style="position:relative;">
               <canvas id="leafChart"></canvas>
             </div>
           </div>
+          <div id="leafScrollHint" style="display:none;text-align:center;font-size:0.72rem;color:var(--text-muted);font-family:var(--mono);margin-top:6px;">← scroll to see all leaf pairs →</div>
         </div>
       </div>
     </div>
@@ -325,21 +326,28 @@ function renderPFCharts(cd, tol) {
   const nLeaves = leafErrors.length;
   const leafColors = leafErrors.map(v => v > tol ? "rgba(201,64,80,0.85)" : v > 0.5 ? "rgba(200,137,42,0.8)" : "rgba(26,171,117,0.75)");
 
-  // Each leaf pair gets 32px column width. The inner div is sized to that total,
-  // and the outer wrapper scrolls horizontally — no clipping.
   const canvas = document.getElementById("leafChart");
   const inner  = document.getElementById("leafChartInner");
   const wrap   = document.getElementById("leafChartWrap");
-  const chartWidth  = Math.max(900, nLeaves * 32);
-  const chartHeight = 380;
+
+  // Use the card's actual rendered width so the chart always fits the page layout.
+  // Each leaf pair needs at least 18px; if they all fit in the card width, use that.
+  const cardWidth   = (wrap && wrap.parentElement) ? wrap.parentElement.offsetWidth - 32 : 900;
+  const minPerLeaf  = 18;
+  const chartWidth  = Math.max(cardWidth, nLeaves * minPerLeaf);
+  const chartHeight = Math.round(cardWidth * 0.38);  // ~38% of card width → proportional height
 
   if (inner) { inner.style.width = chartWidth + "px"; inner.style.height = chartHeight + "px"; }
-  if (wrap)  { wrap.style.height = (chartHeight + 20) + "px"; }  // +20 for scrollbar
+  if (wrap)  { wrap.style.height = (chartHeight + 18) + "px"; }
   canvas.setAttribute("width",  chartWidth);
   canvas.setAttribute("height", chartHeight);
-  canvas.style.width  = chartWidth  + "px";
-  canvas.style.height = chartHeight + "px";
+  canvas.style.width   = chartWidth  + "px";
+  canvas.style.height  = chartHeight + "px";
   canvas.style.display = "block";
+
+  // Show scroll hint only when chart is wider than the visible card area
+  const hint = document.getElementById("leafScrollHint");
+  if (hint) hint.style.display = (chartWidth > cardWidth) ? "block" : "none";
 
   const chartOpts = {
     // vertical bars — leaf pairs on X axis
