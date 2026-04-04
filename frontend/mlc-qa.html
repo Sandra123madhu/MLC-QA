@@ -317,26 +317,24 @@ function renderPFCharts(cd, tol) {
   }
   const nLeaves = leafErrors.length;
   const leafColors = leafErrors.map(v => v > tol ? "rgba(201,64,80,0.85)" : v > 0.5 ? "rgba(200,137,42,0.8)" : "rgba(26,171,117,0.75)");
-
-  // Give every leaf pair exactly 22px of row height.
-  // responsive:false → Chart.js uses the canvas width/height ATTRIBUTES directly.
-  // We must set the pixel width from the wrapper's actual offsetWidth, otherwise
-  // the chart renders at a tiny default size.
+  // Each leaf pair gets 28px of column width minimum — horizontal scroll if needed
   const canvas = document.getElementById("leafChart");
   const wrap = document.getElementById("leafChartWrap");
-  const chartHeight = Math.max(400, nLeaves * 22);
-  const chartWidth  = (wrap && wrap.offsetWidth > 0) ? wrap.offsetWidth : 800;
-  canvas.setAttribute("height", chartHeight);
+  const chartWidth  = Math.max(800, nLeaves * 28);
+  const chartHeight = 360;
   canvas.setAttribute("width",  chartWidth);
-  canvas.style.height = chartHeight + "px";
+  canvas.setAttribute("height", chartHeight);
   canvas.style.width  = chartWidth  + "px";
+  canvas.style.height = chartHeight + "px";
   if (wrap) {
+    wrap.style.width    = "100%";
     wrap.style.height   = chartHeight + "px";
-    wrap.style.overflow = "visible";  // no clipping — card expands to fit
+    wrap.style.overflowX = "auto";
+    wrap.style.overflowY = "hidden";
   }
 
   const chartOpts = {
-    indexAxis: 'y',   // ← horizontal bars — every leaf pair gets its own row
+    // vertical bars — leaf pairs on X axis
     plugins: {
       legend: { labels: { color: "#8ba4c0", font: { family: "'IBM Plex Mono'", size: 9 } } },
       tooltip: {
@@ -349,16 +347,19 @@ function renderPFCharts(cd, tol) {
       }
     },
     scales: {
-      y: {
+      x: {
         ticks: {
           color: "#546a85",
-          font: { family: "'IBM Plex Mono'", size: nLeaves > 80 ? 7 : 8 },
-          autoSkip: false,       // show every leaf pair label — no skipping
+          font: { family: "'IBM Plex Mono'", size: 8 },
+          maxRotation: 90,
+          minRotation: 45,
+          autoSkip: false,
           maxTicksLimit: nLeaves
         },
-        grid: { color: "rgba(36,53,82,0.8)" }
+        grid: { color: "rgba(36,53,82,0.8)" },
+        title: { display: true, text: "Leaf Pair", color: "#546a85", font: { size: 9 } }
       },
-      x: {
+      y: {
         ticks: { color: "#546a85", font: { family: "'IBM Plex Mono'", size: 9 } },
         grid: { color: "rgba(36,53,82,0.8)" },
         title: { display: true, text: "Error (mm)", color: "#546a85", font: { size: 9 } },
@@ -385,7 +386,6 @@ function renderPFCharts(cd, tol) {
           label: "Tolerance",
           data: Array(nLeaves).fill(tol),
           type: "line",
-          indexAxis: 'y',
           borderColor: "rgba(200,137,42,0.7)",
           borderDash: [4, 3],
           pointRadius: 0,
