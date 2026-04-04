@@ -118,7 +118,7 @@
         <h2 style="font-size:0.88rem;font-weight:600">Analysis Charts</h2>
       </div>
       <div class="charts-grid" style="grid-template-columns:1fr">
-        <div class="chart-card"><div class="chart-card-title">Leaf Pair Max Error (mm)</div><div style="position:relative;width:100%;height:360px;"><canvas id="leafChart"></canvas></div></div>
+        <div class="chart-card"><div class="chart-card-title">Leaf Pair Max Error (mm)</div><div id="leafChartWrap" style="position:relative;width:100%;height:300px;overflow-y:auto;"><canvas id="leafChart"></canvas></div></div>
       </div>
     </div>
 
@@ -318,33 +318,37 @@ function renderPFCharts(cd, tol) {
   const nLeaves = leafErrors.length;
   const leafColors = leafErrors.map(v => v > tol ? "rgba(201,64,80,0.85)" : v > 0.5 ? "rgba(200,137,42,0.8)" : "rgba(26,171,117,0.75)");
 
-  // Dynamically size canvas height based on leaf count, and show every leaf label
+  // Height: give each leaf pair 18 px of row space, minimum 300 px
   const canvas = document.getElementById("leafChart");
-  canvas.style.height = Math.max(220, Math.min(nLeaves * 5, 400)) + "px";
+  const chartHeight = Math.max(300, nLeaves * 18);
+  canvas.style.height = chartHeight + "px";
+  const wrap = document.getElementById("leafChartWrap");
+  if (wrap) wrap.style.height = chartHeight + "px";
 
   const chartOpts = {
+    indexAxis: 'y',   // ← horizontal bars — every leaf pair gets its own row
     plugins: {
       legend: { labels: { color: "#8ba4c0", font: { family: "'IBM Plex Mono'", size: 9 } } },
       tooltip: {
         callbacks: {
-          title: (items) => "Leaf " + items[0].label,
-          label: (item) => item.dataset.label === "Tolerance" ? "Tolerance: " + tol + " mm" : "Max Error: " + item.raw.toFixed(4) + " mm"
+          title: (items) => "Leaf Pair " + items[0].label,
+          label: (item) => item.dataset.label === "Tolerance"
+            ? "Tolerance: " + tol + " mm"
+            : "Max Error: " + item.raw.toFixed(4) + " mm"
         }
       }
     },
     scales: {
-      x: {
+      y: {
         ticks: {
           color: "#546a85",
-          font: { size: nLeaves > 60 ? 6 : 7 },
-          maxRotation: 90,
-          minRotation: 45,
-          autoSkip: false,        // show ALL leaf labels, no skipping
-          maxTicksLimit: nLeaves  // never cap the number of ticks
+          font: { family: "'IBM Plex Mono'", size: nLeaves > 80 ? 7 : 8 },
+          autoSkip: false,       // show every leaf pair label — no skipping
+          maxTicksLimit: nLeaves
         },
         grid: { color: "rgba(36,53,82,0.8)" }
       },
-      y: {
+      x: {
         ticks: { color: "#546a85", font: { family: "'IBM Plex Mono'", size: 9 } },
         grid: { color: "rgba(36,53,82,0.8)" },
         title: { display: true, text: "Error (mm)", color: "#546a85", font: { size: 9 } },
@@ -357,10 +361,27 @@ function renderPFCharts(cd, tol) {
   pfChart1 = new Chart(canvas, {
     type: "bar",
     data: {
-      labels: Array.from({ length: nLeaves }, (_, i) => "L" + (i + 1)),
+      labels: Array.from({ length: nLeaves }, (_, i) => "LP" + (i + 1)),
       datasets: [
-        { label: "Max Error (mm)", data: leafErrors, backgroundColor: leafColors, borderWidth: 0, barPercentage: 0.9, categoryPercentage: 0.95 },
-        { label: "Tolerance", data: Array(nLeaves).fill(tol), type: "line", borderColor: "rgba(200,137,42,0.7)", borderDash: [4, 3], pointRadius: 0, borderWidth: 1.5, fill: false }
+        {
+          label: "Max Error (mm)",
+          data: leafErrors,
+          backgroundColor: leafColors,
+          borderWidth: 0,
+          barPercentage: 0.75,
+          categoryPercentage: 0.85
+        },
+        {
+          label: "Tolerance",
+          data: Array(nLeaves).fill(tol),
+          type: "line",
+          indexAxis: 'y',
+          borderColor: "rgba(200,137,42,0.7)",
+          borderDash: [4, 3],
+          pointRadius: 0,
+          borderWidth: 1.5,
+          fill: false
+        }
       ]
     },
     options: { responsive: true, maintainAspectRatio: false, ...chartOpts }
