@@ -305,10 +305,10 @@ function handlePicketFenceSuccess(result, filename) {
     document.getElementById("plotSection").style.display = "block";
   }
   
-  // Charts
-  renderPFCharts(chartData, tol);
+  // Charts — make section visible FIRST so offsetWidth is readable, then render
   document.getElementById("chartsSection").style.display = "block";
   document.getElementById("pdfSection").style.display = "block";
+  requestAnimationFrame(() => renderPFCharts(chartData, tol));
   
   analyzeBtn.disabled = false;
   analyzeBtn.textContent = "Analyze Another File";
@@ -330,12 +330,11 @@ function renderPFCharts(cd, tol) {
   const inner  = document.getElementById("leafChartInner");
   const wrap   = document.getElementById("leafChartWrap");
 
-  // Use the card's actual rendered width so the chart always fits the page layout.
-  // Each leaf pair needs at least 18px; if they all fit in the card width, use that.
-  const cardWidth   = (wrap && wrap.parentElement) ? wrap.parentElement.offsetWidth - 32 : 900;
-  const minPerLeaf  = 18;
-  const chartWidth  = Math.max(cardWidth, nLeaves * minPerLeaf);
-  const chartHeight = Math.round(cardWidth * 0.38);  // ~38% of card width → proportional height
+  // offsetWidth is only valid after the section is visible in the DOM.
+  // Falls back to 900 if still 0 for any reason.
+  const cardWidth  = Math.max(400, (wrap && wrap.parentElement) ? wrap.parentElement.offsetWidth - 32 : 900);
+  const chartWidth = Math.max(cardWidth, nLeaves * 18);
+  const chartHeight = Math.max(320, Math.round(cardWidth * 0.4)); // 40% of card, min 320px
 
   if (inner) { inner.style.width = chartWidth + "px"; inner.style.height = chartHeight + "px"; }
   if (wrap)  { wrap.style.height = (chartHeight + 18) + "px"; }
