@@ -359,12 +359,17 @@ function renderPFCharts(cd, tol) {
   const hint = document.getElementById("leafScrollHint");
   if (hint) hint.style.display = (chartWidth > visibleWidth) ? "block" : "none";
 
+  // Use actual leaf pair labels from backend if available, else generate LP1..N
+  const leafLabels = (cd.leaf_pairs && cd.leaf_pairs.length === nLeaves)
+    ? cd.leaf_pairs.map(lp => String(lp.leaf_pair))
+    : Array.from({ length: nLeaves }, (_, i) => "LP" + (i + 1));
+
   if (pfChart1) { pfChart1.destroy(); pfChart1 = null; }
 
   pfChart1 = new Chart(canvas, {
     type: "bar",
     data: {
-      labels: Array.from({ length: nLeaves }, (_, i) => "LP" + (i + 1)),
+      labels: leafLabels,
       datasets: [
         {
           label: "Max Error (mm)",
