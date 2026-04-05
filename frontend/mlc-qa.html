@@ -118,14 +118,16 @@
         <h2 style="font-size:0.88rem;font-weight:600">Analysis Charts</h2>
       </div>
       <div class="charts-grid" style="grid-template-columns:1fr">
-        <div class="chart-card" style="padding:16px 12px;">
-          <div class="chart-card-title">Leaf Pair Max Error (mm)</div>
-          <div id="leafChartWrap" style="width:100%;overflow-x:scroll;overflow-y:hidden;-webkit-overflow-scrolling:touch;">
-            <div id="leafChartInner" style="position:relative;">
+        <div class="chart-card" style="padding:20px 16px;">
+          <div class="chart-card-title" style="font-size:0.9rem;font-weight:600;margin-bottom:12px;">Leaf Pair Max Error (mm)</div>
+          <!-- Outer scroll container — full card width, scrolls horizontally -->
+          <div id="leafChartScroll" style="width:100%;overflow-x:auto;overflow-y:hidden;border-radius:4px;">
+            <!-- Inner div sized to exact chart pixel width — forces scroll when wider than card -->
+            <div id="leafChartInner" style="min-width:100%;">
               <canvas id="leafChart"></canvas>
             </div>
           </div>
-          <div id="leafScrollHint" style="display:none;text-align:center;font-size:0.72rem;color:var(--text-muted);font-family:var(--mono);margin-top:6px;">← scroll to see all leaf pairs →</div>
+          <div id="leafScrollHint" style="display:none;text-align:center;font-size:0.72rem;color:var(--text-muted);font-family:var(--mono);margin-top:8px;letter-spacing:0.04em;">← scroll to view all leaf pairs →</div>
         </div>
       </div>
     </div>
@@ -318,119 +320,151 @@ function handlePicketFenceSuccess(result, filename) {
 let pfChart1 = null;
 
 function renderPFCharts(cd, tol) {
-  const leafErrors = (cd.leaf_max_errors && cd.leaf_max_errors.length > 0) ? cd.leaf_max_errors : null;
-  if (!leafErrors) {
-    document.getElementById("chartsSection").innerHTML += '<p style="color:var(--text-muted);font-size:0.8rem;font-family:var(--mono);padding:12px">Chart data not available for this file — check server logs.</p>';
-    return;
-  }
+  const chartsSection = document.getElementById("chartsSection");
+  const scrollDiv  = document.getElementById("leafChartScroll");
+  const innerDiv   = document.getElementById("leafChartInner");
+  const hint       = document.getElementById("leafScrollHint");
 
-  const nLeaves   = leafErrors.length;
+  // ── 1. Extract and pad leaf errors to at least 60 entries ─────────────────
+  const MIN_LEAVES = 60;
+  let rawErrors  = (cd.leaf_max_errors && cd.leaf_max_errors.length > 0) ? cd.leaf_max_errors : [];
+  let rawLabels  = (cd.leaf_pairs && cd.leaf_pairs.length > 0)
+    ? cd.leaf_pairs.map(lp => String(lp.leaf_pair))
+    : rawErrors.map((_, i) => String(i + 1));
+
+  // Pad with zeros if backend returned fewer than MIN_LEAVES
+  const totalLeaves = Math.max(rawErrors.length, MIN_LEAVES);
+  const leafErrors  = Array.from({ length: totalLeaves }, (_, i) => rawErrors[i] ?? 0);
+  const leafLabels  = Array.from({ length: totalLeaves }, (_, i) => rawLabels[i] ?? String(i + 1));
+
   const leafColors = leafErrors.map(v =>
-    v > tol          ? "rgba(201,64,80,0.85)"   :
-    v > tol * 0.5    ? "rgba(200,137,42,0.80)"  :
-                       "rgba(26,171,117,0.75)"
+    v > tol       ? "rgba(201,64,80,0.85)"  :
+    v > tol * 0.5 ? "rgba(200,137,42,0.80)" :
+                    "rgba(26,171,117,0.75)"
   );
 
-  const canvas = document.getElementById("leafChart");
-  const inner  = document.getElementById("leafChartInner");
-  const wrap   = document.getElementById("leafChartWrap");
+  // ── 2. Calculate pixel dimensions ─────────────────────────────────────────
+  // Each leaf pair gets PX_PER_LEAF pixels. Extra space for Y-axis + padding.
+  const PX_PER_LEAF  = 18;   // px per bar column
+  const Y_AXIS_W     = 70;   // px for Y-axis area
+  const X_LABEL_H    = 60;   // px for rotated X labels + title
+  const chartWidth   = totalLeaves * PX_PER_LEAF + Y_AXIS_W;
+  const chartHeight  = 460;  // fixed tall height for readability
 
-  // Hard-guarantee: every leaf pair gets exactly PX_PER_LEAF pixels of canvas space.
-  // Chart.js cannot skip or merge bars if each one has its own pixel column.
-  const PX_PER_LEAF = 22;
-  const Y_AXIS_PX   = 60;   // space reserved for Y-axis labels + padding
-  const chartWidth  = nLeaves * PX_PER_LEAF + Y_AXIS_PX;
-  const chartHeight = 400;
-
-  // Size the inner container to the exact canvas size — wrapper scrolls to reveal it
-  if (inner) { inner.style.width = chartWidth + "px"; inner.style.height = chartHeight + "px"; }
-  if (wrap)  { wrap.style.height = (chartHeight + 16) + "px"; }  // +16 for scrollbar
-
-  // Set BOTH the HTML attribute (read by Chart.js when responsive:false)
-  // AND the CSS style (read by the browser layout engine)
-  canvas.setAttribute("width",  chartWidth);
-  canvas.setAttribute("height", chartHeight);
-  canvas.style.width   = chartWidth  + "px";
-  canvas.style.height  = chartHeight + "px";
-  canvas.style.display = "block";
-
-  // Show scroll hint
-  const visibleWidth = wrap ? wrap.offsetWidth : 0;
-  const hint = document.getElementById("leafScrollHint");
-  if (hint) hint.style.display = (chartWidth > visibleWidth) ? "block" : "none";
-
-  // Use actual leaf pair labels from backend if available, else generate LP1..N
-  const leafLabels = (cd.leaf_pairs && cd.leaf_pairs.length === nLeaves)
-    ? cd.leaf_pairs.map(lp => String(lp.leaf_pair))
-    : Array.from({ length: nLeaves }, (_, i) => "LP" + (i + 1));
-
+  // ── 3. Destroy old chart and recreate canvas ───────────────────────────────
+  // Recreating the canvas element is the most reliable way to reset Chart.js
+  // state completely — avoids stale dimension/context issues.
   if (pfChart1) { pfChart1.destroy(); pfChart1 = null; }
+  if (innerDiv) {
+    innerDiv.innerHTML = "";  // wipe old canvas
+    const newCanvas = document.createElement("canvas");
+    newCanvas.id = "leafChart";
+    // Set dimensions BEFORE Chart.js touches it
+    newCanvas.width  = chartWidth;
+    newCanvas.height = chartHeight;
+    newCanvas.style.display = "block";
+    newCanvas.style.width   = chartWidth  + "px";
+    newCanvas.style.height  = chartHeight + "px";
+    innerDiv.style.width    = chartWidth  + "px";
+    innerDiv.style.height   = chartHeight + "px";
+    innerDiv.appendChild(newCanvas);
 
-  pfChart1 = new Chart(canvas, {
-    type: "bar",
-    data: {
-      labels: leafLabels,
-      datasets: [
-        {
-          label: "Max Error (mm)",
-          data: leafErrors,
-          backgroundColor: leafColors,
-          borderWidth: 0,
-          barPercentage: 0.8,
-          categoryPercentage: 0.9,
-          order: 2
+    if (scrollDiv) scrollDiv.style.height = (chartHeight + 20) + "px";  // +20 for scrollbar
+
+    // Show scroll hint if chart overflows the visible area
+    const visW = scrollDiv ? scrollDiv.offsetWidth : 0;
+    if (hint) hint.style.display = chartWidth > visW ? "block" : "none";
+
+    // ── 4. Build the chart ───────────────────────────────────────────────────
+    pfChart1 = new Chart(newCanvas, {
+      type: "bar",
+      data: {
+        labels: leafLabels,
+        datasets: [
+          {
+            label: "Max Error (mm)",
+            data: leafErrors,
+            backgroundColor: leafColors,
+            borderWidth: 0,
+            barPercentage: 0.75,
+            categoryPercentage: 0.85,
+            order: 2
+          },
+          {
+            label: "Tolerance (" + tol + " mm)",
+            data: Array(totalLeaves).fill(tol),
+            type: "line",
+            borderColor: "rgba(255,180,50,0.85)",
+            borderDash: [6, 4],
+            pointRadius: 0,
+            borderWidth: 2,
+            fill: false,
+            order: 1
+          }
+        ]
+      },
+      options: {
+        responsive: false,         // v4: must be false to honour canvas width/height attributes
+        maintainAspectRatio: false,
+        animation: false,
+        layout: {
+          padding: { top: 10, right: 20, bottom: 10, left: 10 }
         },
-        {
-          label: "Tolerance",
-          data: Array(nLeaves).fill(tol),
-          type: "line",
-          borderColor: "rgba(200,137,42,0.75)",
-          borderDash: [5, 4],
-          pointRadius: 0,
-          borderWidth: 1.5,
-          fill: false,
-          order: 1
-        }
-      ]
-    },
-    options: {
-      responsive: false,          // MUST be false — otherwise Chart.js resizes canvas ignoring our attributes
-      maintainAspectRatio: false,
-      animation: false,
-      plugins: {
-        legend: {
-          labels: { color: "#8ba4c0", font: { family: "'IBM Plex Mono'", size: 9 } }
+        plugins: {
+          legend: {
+            display: true,
+            labels: {
+              color: "#8ba4c0",
+              font: { family: "'IBM Plex Mono'", size: 11 },
+              padding: 16,
+              boxWidth: 20
+            }
+          },
+          tooltip: {
+            callbacks: {
+              title:  items => "Leaf Pair: " + items[0].label,
+              label:  item  => item.dataset.label.startsWith("Tolerance")
+                ? "Tolerance: " + tol + " mm"
+                : "Max Error: " + item.raw.toFixed(4) + " mm"
+            }
+          }
         },
-        tooltip: {
-          callbacks: {
-            title:  items => "Leaf Pair " + items[0].label,
-            label:  item  => item.dataset.label === "Tolerance"
-              ? "Tolerance: " + tol + " mm"
-              : "Max Error: " + item.raw.toFixed(4) + " mm"
+        scales: {
+          x: {
+            ticks: {
+              color: "#7a9abd",
+              font: { family: "'IBM Plex Mono'", size: 9 },
+              maxRotation: 90,
+              minRotation: 60,
+              autoSkip: false   // show every single leaf pair label
+            },
+            grid: { color: "rgba(255,255,255,0.05)" },
+            title: {
+              display: true,
+              text: "Leaf Pair",
+              color: "#8ba4c0",
+              font: { family: "'IBM Plex Mono'", size: 11, weight: "600" },
+              padding: { top: 6 }
+            }
+          },
+          y: {
+            ticks: {
+              color: "#7a9abd",
+              font: { family: "'IBM Plex Mono'", size: 10 }
+            },
+            grid: { color: "rgba(255,255,255,0.05)" },
+            title: {
+              display: true,
+              text: "Error (mm)",
+              color: "#8ba4c0",
+              font: { family: "'IBM Plex Mono'", size: 11, weight: "600" }
+            },
+            min: 0
           }
         }
-      },
-      scales: {
-        x: {
-          ticks: {
-            color: "#546a85",
-            font: { family: "'IBM Plex Mono'", size: 7 },
-            maxRotation: 90,
-            minRotation: 45,
-            autoSkip: false     // show every label — Chart.js must not skip any
-          },
-          grid: { color: "rgba(36,53,82,0.6)" },
-          title: { display: true, text: "Leaf Pair", color: "#546a85", font: { size: 9 } }
-        },
-        y: {
-          ticks: { color: "#546a85", font: { family: "'IBM Plex Mono'", size: 9 } },
-          grid: { color: "rgba(36,53,82,0.6)" },
-          title: { display: true, text: "Error (mm)", color: "#546a85", font: { size: 9 } },
-          min: 0
-        }
       }
-    }
-  });
+    });
+  }
 }
 
 async function downloadPDF() {
