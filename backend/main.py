@@ -333,104 +333,149 @@ def _validate_dicom_type(filepath: str, expected: str) -> None:
 # ═════════════════════════════════════════════════════════════════════════════
 
 def _extract_pf_chart_data(pf) -> dict:
-    """Extract per-leaf-pair errors and summary metrics from a PicketFence result."""
+    """
+    Extract per-leaf-pair errors from a PicketFence result.
+    Handles both single-bank and dual-bank (Bank A + Bank B) MLCs.
+    Tries multiple pylinac API styles for compatibility.
+    """
     try:
         results = pf.results_data()
+        tol_mm  = float(getattr(results, "tolerance_mm", 1.0))
 
         leaf_max_errors = []
         leaf_pairs      = []
 
-        # ── Strategy A: mlc_errors_by_leaf (pylinac 3.x dict API) ─────────────
-        errors_by_leaf = getattr(results, "mlc_errors_by_leaf", None)
-        if errors_by_leaf and isinstance(errors_by_leaf, dict) and len(errors_by_leaf) > 0:
-            print(f"PF extraction: using mlc_errors_by_leaf ({len(errors_by_leaf)} entries)")
-            def _leaf_sort_key(k):
+        # ── Helper: build leaf dict from mlc_errors_by_leaf ───────────────────
+        def _build_from_dict(errors_dict):
+            """Takes dict {leaf_key: [errors_per_picket]} → sorted (key, max_err) list."""
+            def _sort_key(k):
                 s = str(k).strip()
                 try:
-                    return (0, int(s), "")
+                    return (int(s) if int(s) >= 0 else int(s) + 10000,)   # negatives after positives
                 except ValueError:
                     pass
                 m = re.match(r'^(-?\d+)(.*)$', s)
                 if m:
-                    return (0, int(m.group(1)), m.group(2))
-                return (1, 0, s)
+                    n = int(m.group(1))
+                    return (n if n >= 0 else n + 10000, m.group(2))
+                return (9999, s)
 
-            for leaf_key in sorted(errors_by_leaf.keys(), key=_leaf_sort_key):
-                errs = [abs(e) for e in errors_by_leaf[leaf_key] if e is not None]
-                max_err  = round(max(errs),             4) if errs else 0.0
-                mean_err = round(sum(errs)/len(errs),   4) if errs else 0.0
-                leaf_max_errors.append(max_err)
-                leaf_pairs.append({
-                    "leaf_pair":  str(leaf_key),
-                    "max_error":  max_err,
-                    "mean_error": mean_err,
-                    "passed":     max_err <= (results.tolerance_mm if hasattr(results, "tolerance_mm") else 1.0),
-                })
+            out = []
+            for k in sorted(errors_dict.keys(), key=_sort_key):
+                errs = [abs(float(e)) for e in errors_dict[k] if e is not None]
+                max_e  = round(max(errs),            4) if errs else 0.0
+                mean_e = round(sum(errs)/len(errs),  4) if errs else 0.0
+                out.append((str(k), max_e, mean_e))
+            return out
 
-        # ── Strategy B: iterate pf.mlc.leaf_axes (pylinac 3.x object API) ─────
+        # ── Strategy 1: mlc_errors_by_leaf on results object ─────────────────
+        ebl = getattr(results, "mlc_errors_by_leaf", None)
+        if ebl and isinstance(ebl, dict) and len(ebl) > 0:
+            print(f"PF Strategy 1 (results.mlc_errors_by_leaf): {len(ebl)} keys")
+            pairs_data = _build_from_dict(ebl)
+            for label, max_e, mean_e in pairs_data:
+                leaf_max_errors.append(max_e)
+                leaf_pairs.append({"leaf_pair": label, "max_error": max_e,
+                                   "mean_error": mean_e, "passed": max_e <= tol_mm})
+
+        # ── Strategy 2: pf.mlc has bank_a / bank_b attributes ────────────────
         if not leaf_max_errors:
             try:
-                tol_mm = getattr(results, "tolerance_mm", 1.0)
-                for picket in pf.pickets:
-                    pass  # just confirm pickets exist
-                # Build per-leaf max error across all pickets
+                mlc = getattr(pf, "mlc", None)
+                if mlc:
+                    all_errs = {}
+                    # Try bank_a and bank_b separately
+                    for bank_attr, offset in [("bank_a", 0), ("bank_b", 1000)]:
+                        bank = getattr(mlc, bank_attr, None)
+                        if bank is not None:
+                            bank_dict = getattr(bank, "mlc_errors_by_leaf", None)
+                            if bank_dict and isinstance(bank_dict, dict):
+                                for k, v in bank_dict.items():
+                                    all_errs[f"{k}{'A' if offset==0 else 'B'}"] = v
+                    if all_errs:
+                        print(f"PF Strategy 2 (mlc banks): {len(all_errs)} keys")
+                        for label, max_e, mean_e in _build_from_dict(all_errs):
+                            leaf_max_errors.append(max_e)
+                            leaf_pairs.append({"leaf_pair": label, "max_error": max_e,
+                                               "mean_error": mean_e, "passed": max_e <= tol_mm})
+            except Exception as ex:
+                print(f"PF Strategy 2 failed: {ex}")
+
+        # ── Strategy 3: iterate pf.pickets → guards ───────────────────────────
+        if not leaf_max_errors:
+            try:
                 leaf_errs_dict = {}
                 for picket in pf.pickets:
                     for guard in picket.guards:
-                        ln = guard.leaf_num
-                        err = abs(float(guard.error))
-                        if ln not in leaf_errs_dict or err > leaf_errs_dict[ln]:
-                            leaf_errs_dict[ln] = err
+                        ln  = str(getattr(guard, "leaf_num", getattr(guard, "leaf", "?")))
+                        err = abs(float(getattr(guard, "error", 0)))
+                        if ln not in leaf_errs_dict:
+                            leaf_errs_dict[ln] = []
+                        leaf_errs_dict[ln].append(err)
                 if leaf_errs_dict:
-                    print(f"PF extraction: using picket guards ({len(leaf_errs_dict)} leaves)")
-                    for ln in sorted(leaf_errs_dict.keys()):
-                        e = round(leaf_errs_dict[ln], 4)
-                        leaf_max_errors.append(e)
-                        leaf_pairs.append({
-                            "leaf_pair":  str(ln),
-                            "max_error":  e,
-                            "mean_error": e,
-                            "passed":     e <= tol_mm,
-                        })
+                    print(f"PF Strategy 3 (picket guards): {len(leaf_errs_dict)} leaves")
+                    for label, max_e, mean_e in _build_from_dict(leaf_errs_dict):
+                        leaf_max_errors.append(max_e)
+                        leaf_pairs.append({"leaf_pair": label, "max_error": max_e,
+                                           "mean_error": mean_e, "passed": max_e <= tol_mm})
             except Exception as ex:
-                print(f"PF strategy B failed: {ex}")
+                print(f"PF Strategy 3 failed: {ex}")
 
-        # ── Strategy C: results.leaf_arrangement (some pylinac versions) ────────
+        # ── Strategy 4: results.picket_results list ───────────────────────────
         if not leaf_max_errors:
             try:
-                arrangement = getattr(results, "leaf_arrangement", None)
-                if arrangement:
-                    tol_mm = getattr(results, "tolerance_mm", 1.0)
-                    print(f"PF extraction: using leaf_arrangement ({len(arrangement)} entries)")
-                    for i, entry in enumerate(arrangement):
-                        errs = [abs(float(e)) for e in (entry if hasattr(entry, '__iter__') else [entry]) if e is not None]
-                        max_err = round(max(errs), 4) if errs else 0.0
-                        leaf_max_errors.append(max_err)
-                        leaf_pairs.append({
-                            "leaf_pair":  str(i + 1),
-                            "max_error":  max_err,
-                            "mean_error": max_err,
-                            "passed":     max_err <= tol_mm,
-                        })
+                picket_results = getattr(results, "picket_results", None)
+                if picket_results:
+                    leaf_errs_dict = {}
+                    for pr in picket_results:
+                        leaf_errors_attr = getattr(pr, "leaf_errors", getattr(pr, "errors", None))
+                        if leaf_errors_attr and isinstance(leaf_errors_attr, dict):
+                            for k, v in leaf_errors_attr.items():
+                                errs = v if isinstance(v, list) else [v]
+                                if k not in leaf_errs_dict:
+                                    leaf_errs_dict[k] = []
+                                leaf_errs_dict[k].extend([abs(float(e)) for e in errs if e is not None])
+                    if leaf_errs_dict:
+                        print(f"PF Strategy 4 (picket_results): {len(leaf_errs_dict)} leaves")
+                        for label, max_e, mean_e in _build_from_dict(leaf_errs_dict):
+                            leaf_max_errors.append(max_e)
+                            leaf_pairs.append({"leaf_pair": label, "max_error": max_e,
+                                               "mean_error": mean_e, "passed": max_e <= tol_mm})
             except Exception as ex:
-                print(f"PF strategy C failed: {ex}")
+                print(f"PF Strategy 4 failed: {ex}")
 
-        # ── Strategy D: inspect all result attributes to find leaf data ─────────
+        # ── Fallback: log all available attributes for debugging ──────────────
         if not leaf_max_errors:
-            print(f"PF all strategies failed. Available result attrs: {[a for a in dir(results) if not a.startswith('_')]}")
+            r_attrs = [a for a in dir(results) if not a.startswith("_")]
+            pf_attrs = [a for a in dir(pf) if not a.startswith("_")]
+            print(f"PF: all strategies failed.\nresults attrs: {r_attrs}\npf attrs: {pf_attrs}")
+            # Last resort — try any attribute that looks like it contains leaf errors
+            for attr in r_attrs:
+                val = getattr(results, attr, None)
+                if isinstance(val, dict) and len(val) > 5:
+                    print(f"PF: attempting fallback on results.{attr} ({len(val)} keys)")
+                    try:
+                        for label, max_e, mean_e in _build_from_dict(
+                                {k: (v if isinstance(v, list) else [v]) for k, v in val.items()}):
+                            leaf_max_errors.append(max_e)
+                            leaf_pairs.append({"leaf_pair": label, "max_error": max_e,
+                                               "mean_error": mean_e, "passed": max_e <= tol_mm})
+                        if leaf_max_errors:
+                            print(f"PF: fallback on {attr} succeeded with {len(leaf_max_errors)} leaves")
+                            break
+                    except Exception:
+                        leaf_max_errors.clear(); leaf_pairs.clear()
 
-        # ── Summary metrics ──────────────────────────────────────────────────────
-        max_error     = None
-        mean_error    = None
-        failed_leaves = None
+        # ── Summary metrics ───────────────────────────────────────────────────
+        max_error = mean_error = failed_leaves = None
         try:
             max_error     = round(float(results.max_error_mm),             4)
             mean_error    = round(float(results.absolute_median_error_mm), 4)
             failed_leaves = int(results.failed_leaves) if results.failed_leaves is not None else 0
         except Exception as e:
-            print(f"PF metrics extraction error: {e}")
+            print(f"PF metrics error: {e}")
 
-        print(f"PF final: {len(leaf_max_errors)} leaf pairs extracted. Max={max_error}, Mean={mean_error}")
+        print(f"PF FINAL: {len(leaf_max_errors)} leaf pairs | max={max_error} mean={mean_error}")
         return {
             "leaf_pairs":      leaf_pairs,
             "max_error":       max_error,
@@ -448,6 +493,20 @@ def _run_picket_fence(job_id: str, filepath: str, email: str, filename: str, tol
         _validate_dicom_type(filepath, "picket_fence")
         pf = PicketFence(filepath)
         pf.analyze(tolerance=tolerance, action_tolerance=action_tolerance)
+
+        # Diagnostic: log pylinac result structure so we know exactly what data is available
+        try:
+            _res = pf.results_data()
+            _ebl = getattr(_res, "mlc_errors_by_leaf", None)
+            print(f"[PF DIAG] results_data type: {type(_res).__name__}")
+            print(f"[PF DIAG] mlc_errors_by_leaf: {type(_ebl).__name__ if _ebl is not None else 'None'}, len={len(_ebl) if isinstance(_ebl, dict) else 'N/A'}")
+            if isinstance(_ebl, dict) and len(_ebl) > 0:
+                sample_keys = list(_ebl.keys())[:5]
+                print(f"[PF DIAG] sample keys: {sample_keys}")
+                print(f"[PF DIAG] sample values type: {type(list(_ebl.values())[0]).__name__}")
+            print(f"[PF DIAG] all result attrs: {[a for a in dir(_res) if not a.startswith('_')]}")
+        except Exception as _de:
+            print(f"[PF DIAG] diagnostic failed: {_de}")
 
         summary   = pf.results()
         passed    = pf.passed
