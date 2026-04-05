@@ -333,62 +333,110 @@ def _validate_dicom_type(filepath: str, expected: str) -> None:
 # ═════════════════════════════════════════════════════════════════════════════
 
 def _extract_pf_chart_data(pf) -> dict:
-    """Extract per-leaf-pair errors and summary metrics from a PicketFence result (pylinac 3.x)."""
+    """Extract per-leaf-pair errors and summary metrics from a PicketFence result."""
     try:
         results = pf.results_data()
 
         leaf_max_errors = []
-        leaf_pairs = []
-        try:
-            errors_by_leaf = results.mlc_errors_by_leaf  # dict: leaf_id -> list[float]
+        leaf_pairs      = []
 
-            # Sort keys robustly — handles int keys, string keys like "1A"/"1B", negative ints
+        # ── Strategy A: mlc_errors_by_leaf (pylinac 3.x dict API) ─────────────
+        errors_by_leaf = getattr(results, "mlc_errors_by_leaf", None)
+        if errors_by_leaf and isinstance(errors_by_leaf, dict) and len(errors_by_leaf) > 0:
+            print(f"PF extraction: using mlc_errors_by_leaf ({len(errors_by_leaf)} entries)")
             def _leaf_sort_key(k):
                 s = str(k).strip()
-                # Pure integer (possibly negative)
                 try:
-                    return (0, int(s), s)
+                    return (0, int(s), "")
                 except ValueError:
                     pass
-                # Alphanumeric like "1A", "32B" — sort by numeric prefix then suffix
-                import re as _re
-                m = _re.match(r'^(-?\d+)(.*)$', s)
+                m = re.match(r'^(-?\d+)(.*)$', s)
                 if m:
                     return (0, int(m.group(1)), m.group(2))
-                return (1, 0, s)  # non-numeric fallback
+                return (1, 0, s)
 
             for leaf_key in sorted(errors_by_leaf.keys(), key=_leaf_sort_key):
                 errs = [abs(e) for e in errors_by_leaf[leaf_key] if e is not None]
-                max_err  = round(max(errs),              4) if errs else 0.0
-                mean_err = round(sum(errs) / len(errs),  4) if errs else 0.0
+                max_err  = round(max(errs),             4) if errs else 0.0
+                mean_err = round(sum(errs)/len(errs),   4) if errs else 0.0
                 leaf_max_errors.append(max_err)
                 leaf_pairs.append({
                     "leaf_pair":  str(leaf_key),
                     "max_error":  max_err,
                     "mean_error": mean_err,
-                    "passed":     max_err <= results.tolerance_mm,
+                    "passed":     max_err <= (results.tolerance_mm if hasattr(results, "tolerance_mm") else 1.0),
                 })
-        except Exception as e:
-            print(f"Leaf extraction error: {e}")
 
-        # --- summary metrics ---
-        max_error = None
-        mean_error = None
+        # ── Strategy B: iterate pf.mlc.leaf_axes (pylinac 3.x object API) ─────
+        if not leaf_max_errors:
+            try:
+                tol_mm = getattr(results, "tolerance_mm", 1.0)
+                for picket in pf.pickets:
+                    pass  # just confirm pickets exist
+                # Build per-leaf max error across all pickets
+                leaf_errs_dict = {}
+                for picket in pf.pickets:
+                    for guard in picket.guards:
+                        ln = guard.leaf_num
+                        err = abs(float(guard.error))
+                        if ln not in leaf_errs_dict or err > leaf_errs_dict[ln]:
+                            leaf_errs_dict[ln] = err
+                if leaf_errs_dict:
+                    print(f"PF extraction: using picket guards ({len(leaf_errs_dict)} leaves)")
+                    for ln in sorted(leaf_errs_dict.keys()):
+                        e = round(leaf_errs_dict[ln], 4)
+                        leaf_max_errors.append(e)
+                        leaf_pairs.append({
+                            "leaf_pair":  str(ln),
+                            "max_error":  e,
+                            "mean_error": e,
+                            "passed":     e <= tol_mm,
+                        })
+            except Exception as ex:
+                print(f"PF strategy B failed: {ex}")
+
+        # ── Strategy C: results.leaf_arrangement (some pylinac versions) ────────
+        if not leaf_max_errors:
+            try:
+                arrangement = getattr(results, "leaf_arrangement", None)
+                if arrangement:
+                    tol_mm = getattr(results, "tolerance_mm", 1.0)
+                    print(f"PF extraction: using leaf_arrangement ({len(arrangement)} entries)")
+                    for i, entry in enumerate(arrangement):
+                        errs = [abs(float(e)) for e in (entry if hasattr(entry, '__iter__') else [entry]) if e is not None]
+                        max_err = round(max(errs), 4) if errs else 0.0
+                        leaf_max_errors.append(max_err)
+                        leaf_pairs.append({
+                            "leaf_pair":  str(i + 1),
+                            "max_error":  max_err,
+                            "mean_error": max_err,
+                            "passed":     max_err <= tol_mm,
+                        })
+            except Exception as ex:
+                print(f"PF strategy C failed: {ex}")
+
+        # ── Strategy D: inspect all result attributes to find leaf data ─────────
+        if not leaf_max_errors:
+            print(f"PF all strategies failed. Available result attrs: {[a for a in dir(results) if not a.startswith('_')]}")
+
+        # ── Summary metrics ──────────────────────────────────────────────────────
+        max_error     = None
+        mean_error    = None
         failed_leaves = None
         try:
-            max_error     = round(float(results.max_error_mm),              4)
-            mean_error    = round(float(results.absolute_median_error_mm),  4)
+            max_error     = round(float(results.max_error_mm),             4)
+            mean_error    = round(float(results.absolute_median_error_mm), 4)
             failed_leaves = int(results.failed_leaves) if results.failed_leaves is not None else 0
         except Exception as e:
-            print(f"Metrics extraction error: {e}")
+            print(f"PF metrics extraction error: {e}")
 
-        print(f"Extracted {len(leaf_max_errors)} leaf pairs from picket fence result")
+        print(f"PF final: {len(leaf_max_errors)} leaf pairs extracted. Max={max_error}, Mean={mean_error}")
         return {
-            "leaf_pairs":       leaf_pairs,
-            "max_error":        max_error,
-            "mean_error":       mean_error,
-            "failed_leaves":    failed_leaves,
-            "leaf_max_errors":  leaf_max_errors,
+            "leaf_pairs":      leaf_pairs,
+            "max_error":       max_error,
+            "mean_error":      mean_error,
+            "failed_leaves":   failed_leaves,
+            "leaf_max_errors": leaf_max_errors,
         }
     except Exception as e:
         print(f"_extract_pf_chart_data error: {e}")
