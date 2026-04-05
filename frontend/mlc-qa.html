@@ -325,17 +325,20 @@ function renderPFCharts(cd, tol) {
   const innerDiv   = document.getElementById("leafChartInner");
   const hint       = document.getElementById("leafScrollHint");
 
-  // ── 1. Extract and pad leaf errors to at least 60 entries ─────────────────
-  const MIN_LEAVES = 60;
-  let rawErrors  = (cd.leaf_max_errors && cd.leaf_max_errors.length > 0) ? cd.leaf_max_errors : [];
-  let rawLabels  = (cd.leaf_pairs && cd.leaf_pairs.length > 0)
+  // ── 1. Extract leaf errors — only use real data, no zero-padding ─────────
+  let rawErrors = (cd.leaf_max_errors && cd.leaf_max_errors.length > 0) ? cd.leaf_max_errors : [];
+  let rawLabels = (cd.leaf_pairs && cd.leaf_pairs.length > 0)
     ? cd.leaf_pairs.map(lp => String(lp.leaf_pair))
     : rawErrors.map((_, i) => String(i + 1));
 
-  // Pad with zeros if backend returned fewer than MIN_LEAVES
-  const totalLeaves = Math.max(rawErrors.length, MIN_LEAVES);
-  const leafErrors  = Array.from({ length: totalLeaves }, (_, i) => rawErrors[i] ?? 0);
-  const leafLabels  = Array.from({ length: totalLeaves }, (_, i) => rawLabels[i] ?? String(i + 1));
+  if (rawErrors.length === 0) {
+    chartsSection.innerHTML += '<p style="color:var(--warn);font-size:0.82rem;font-family:var(--mono);padding:12px">⚠ No per-leaf data returned from server. Check server logs for extraction details.</p>';
+    return;
+  }
+
+  const totalLeaves = rawErrors.length;
+  const leafErrors  = rawErrors.map(v => (v == null || isNaN(v)) ? 0 : v);
+  const leafLabels  = rawLabels;
 
   const leafColors = leafErrors.map(v =>
     v > tol       ? "rgba(201,64,80,0.85)"  :
