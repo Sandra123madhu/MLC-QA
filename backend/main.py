@@ -335,23 +335,38 @@ def _validate_dicom_type(filepath: str, expected: str) -> None:
 def _extract_pf_chart_data(pf) -> dict:
     """Extract per-leaf-pair errors and summary metrics from a PicketFence result (pylinac 3.x)."""
     try:
-        results = pf.results_data()  # returns PFResult in pylinac 3.x
+        results = pf.results_data()
 
-        # --- per-leaf max errors (mlc_errors_by_leaf is a dict: leaf_num -> list of errors per picket) ---
         leaf_max_errors = []
         leaf_pairs = []
         try:
-            errors_by_leaf = results.mlc_errors_by_leaf  # dict[int, list[float]]
-            for leaf_num in sorted(errors_by_leaf.keys(), key=lambda k: int(k) if str(k).lstrip("-").isdigit() else 0):
-                errs = [abs(e) for e in errors_by_leaf[leaf_num] if e is not None]
-                max_err = round(max(errs), 4) if errs else 0.0
-                mean_err = round(sum(errs) / len(errs), 4) if errs else 0.0
+            errors_by_leaf = results.mlc_errors_by_leaf  # dict: leaf_id -> list[float]
+
+            # Sort keys robustly — handles int keys, string keys like "1A"/"1B", negative ints
+            def _leaf_sort_key(k):
+                s = str(k).strip()
+                # Pure integer (possibly negative)
+                try:
+                    return (0, int(s), s)
+                except ValueError:
+                    pass
+                # Alphanumeric like "1A", "32B" — sort by numeric prefix then suffix
+                import re as _re
+                m = _re.match(r'^(-?\d+)(.*)$', s)
+                if m:
+                    return (0, int(m.group(1)), m.group(2))
+                return (1, 0, s)  # non-numeric fallback
+
+            for leaf_key in sorted(errors_by_leaf.keys(), key=_leaf_sort_key):
+                errs = [abs(e) for e in errors_by_leaf[leaf_key] if e is not None]
+                max_err  = round(max(errs),              4) if errs else 0.0
+                mean_err = round(sum(errs) / len(errs),  4) if errs else 0.0
                 leaf_max_errors.append(max_err)
                 leaf_pairs.append({
-                    "leaf_pair": int(leaf_num),
-                    "max_error": max_err,
+                    "leaf_pair":  str(leaf_key),
+                    "max_error":  max_err,
                     "mean_error": mean_err,
-                    "passed": max_err <= results.tolerance_mm,
+                    "passed":     max_err <= results.tolerance_mm,
                 })
         except Exception as e:
             print(f"Leaf extraction error: {e}")
@@ -361,18 +376,19 @@ def _extract_pf_chart_data(pf) -> dict:
         mean_error = None
         failed_leaves = None
         try:
-            max_error    = round(float(results.max_error_mm), 4)
-            mean_error   = round(float(results.absolute_median_error_mm), 4)
+            max_error     = round(float(results.max_error_mm),              4)
+            mean_error    = round(float(results.absolute_median_error_mm),  4)
             failed_leaves = int(results.failed_leaves) if results.failed_leaves is not None else 0
         except Exception as e:
             print(f"Metrics extraction error: {e}")
 
+        print(f"Extracted {len(leaf_max_errors)} leaf pairs from picket fence result")
         return {
-            "leaf_pairs": leaf_pairs,
-            "max_error": max_error,
-            "mean_error": mean_error,
-            "failed_leaves": failed_leaves,
-            "leaf_max_errors": leaf_max_errors,
+            "leaf_pairs":       leaf_pairs,
+            "max_error":        max_error,
+            "mean_error":       mean_error,
+            "failed_leaves":    failed_leaves,
+            "leaf_max_errors":  leaf_max_errors,
         }
     except Exception as e:
         print(f"_extract_pf_chart_data error: {e}")
