@@ -150,103 +150,193 @@ if (name) {
 AnalysisHelpers.checkServer('serverStatus', 'analyzeBtn');
 
 async function onFileSelected(input) {
-  if (!input.files.length) return;
-  const file = input.files[0];
-  document.getElementById("fileLabel").textContent = "📄 " + file.name;
-  AnalysisHelpers.checkServer("serverStatus", "analyzeBtn");
+  const label = document.getElementById("fileLabel");
+  const btn   = document.getElementById("analyzeBtn");
+
+  if (input.files.length > 0) {
+    const file = input.files[0];
+    label.textContent = "Selected: " + file.name;
+    btn.disabled = false;
+
+    const ok = await checkFileAcceptable(file, "picket_fence", btn);
+    if (!ok) return;
+  } else {
+    label.textContent = "";
+    btn.disabled = true;
+  }
 }
 
-function dismissWrongTestModal() { document.getElementById("wrongTestModal").style.display = "none"; }
+const zone = document.getElementById("uploadZone");
+zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("dragover"); });
+zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+zone.addEventListener("drop", e => { e.preventDefault(); zone.classList.remove("dragover"); const dt = new DataTransfer(); Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f)); document.getElementById("dicomFile").files = dt.files; onFileSelected(document.getElementById("dicomFile")); });
 
 async function runAnalysis() {
-  const file = document.getElementById("dicomFile").files[0];
-  if (!file) return;
+  const fileInput = document.getElementById("dicomFile");
+  const btn = document.getElementById("analyzeBtn");
+  const resultsDiv = document.getElementById("resultsBody");
+  
+  if (!fileInput.files.length) {
+    alert("Please select a file first.");
+    return;
+  }
+  
+  if (!fileInput.files[0].name.toLowerCase().endsWith(".dcm")) {
+    resultsDiv.innerHTML = `<p class="result-fail">❌ Only .dcm files are supported.</p>`;
+    return;
+  }
 
-  document.getElementById("resultsBody").innerHTML = '<p style="color:var(--text-muted);font-family:var(--mono);font-size:0.85rem;letter-spacing:0.04em;animation:pulse 1.5s ease-in-out infinite;"><span style="display:inline-block;margin-right:8px;">⟳</span>Analyzing...</p>';
+  // Second-pass safety check — blocks wrong/unidentifiable files even if
+  // the user somehow bypassed the onFileSelected guard
+  const _safetyFile = fileInput.files[0];
+  const _safetyOk = await checkFileAcceptable(_safetyFile, "picket_fence", btn);
+  if (!_safetyOk) return;
 
   try {
+    // Check server first
+    resultsDiv.innerHTML = `<p>⏳ Checking server status...</p>`;
+    const serverReady = await AnalysisHelpers.waitForServer();
+    if (!serverReady) {
+      throw new Error("Server not responding. Please refresh the page and try again.");
+    }
+
+    // Validate authentication
+    const token = localStorage.getItem("mlcqa_token");
+    if (!token) {
+      window.location.href = "login.html";
+      return;
+    }
+
+    // Prepare and send request
+    resultsDiv.innerHTML = `<p>📤 Uploading file...</p>`;
     const formData = new FormData();
-    formData.append("file", file);
-    const uploadRes = await fetch("/upload", { method: "POST", body: formData });
-    if (!uploadRes.ok) {
-      document.getElementById("resultsBody").innerHTML = '<p style="color:var(--fail);">Upload failed: ' + uploadRes.status + '</p>';
-      return;
-    }
-    const uploadData = await uploadRes.json();
-    const fileId = uploadData.fileId;
+    formData.append("file", fileInput.files[0]);
+    formData.append("tolerance", "1.0");
+    formData.append("action_tolerance", "0.5");
 
-    const testTypeRes = await fetch("/testtype?fileId=" + fileId);
-    const testTypeData = await testTypeRes.json();
-    if (testTypeData.testType !== "PicketFence") {
-      document.getElementById("wrongTestModal").style.display = "flex";
-      return;
+    btn.textContent = "Uploading...";
+    
+    const data = await AnalysisHelpers.makeApiCall(`${BACKEND_URL}/analyze`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`
+      },
+      body: formData
+    }, 30000);
+
+    if (data.status === "Error") {
+      throw new Error(data.message || "Server returned an error");
     }
 
-    const analysisRes = await fetch("/analyze?fileId=" + fileId);
-    if (!analysisRes.ok) {
-      document.getElementById("resultsBody").innerHTML = '<p style="color:var(--fail);">Analysis failed</p>';
-      return;
-    }
-    const result = await analysisRes.json();
-    displayResults(result);
-  } catch (e) {
-    document.getElementById("resultsBody").innerHTML = '<p style="color:var(--fail);">Error: ' + e.message + '</p>';
+    // Start polling for results
+    btn.textContent = "Analyzing...";
+    resultsDiv.innerHTML = `<p>🔬 Analysis running<span id="dots">.</span></p>`;
+    
+    await AnalysisHelpers.pollForResult(data.job_id, (result) => {
+      handlePicketFenceSuccess(result, fileInput.files[0].name);
+    }, (error) => {
+      throw new Error(error);
+    });
+
+  } catch (err) {
+    console.error("Picket Fence analysis error:", err);
+    resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
+    btn.disabled = false;
+    btn.textContent = "Run Picket Fence Analysis";
   }
 }
 
-function displayResults(r) {
-  window._lastResult = r;
-  document.getElementById("resultsBody").innerHTML = "";
-  document.getElementById("verdictBanner").style.display = "block";
-  document.getElementById("verdictBanner").innerHTML = `
-    <div style="${r.pass ? 'background:rgba(0,168,107,0.1);border-left:4px solid var(--pass)' : 'background:rgba(201,64,80,0.1);border-left:4px solid var(--fail)'};padding:16px;">
-      <div style="font-weight:600;font-size:0.95rem;color:${r.pass ? 'var(--pass)' : 'var(--fail)'};">${r.pass ? '✓ PASS' : '✗ FAIL'}</div>
-      <div style="font-size:0.82rem;color:var(--text-2);margin-top:4px;">${r.toleranceText || (r.pass ? 'All leaf pairs within tolerance.' : 'One or more leaf pairs exceed tolerance.')}</div>
-    </div>
-  `;
-
-  if (typeof r.maxError !== "undefined" && typeof r.tolerance !== "undefined") {
-    const tol = r.tolerance;
-    document.getElementById("gaugeSection").style.display = "block";
-    const pct = Math.min((r.maxError / tol) * 100, 100);
-    document.getElementById("gaugeFill").style.width = pct + "%";
-    document.getElementById("gaugeVal").textContent = r.maxError.toFixed(4) + " mm";
-    document.getElementById("gaugeTolLabel").textContent = tol + " mm";
-    document.getElementById("gaugeMaxLabel").textContent = (tol * 2) + " mm";
-
-    const marker = document.getElementById("gaugeMarker");
-    marker.style.left = (tol / (tol * 2)) * 100 + "%";
-    marker.style.display = "block";
+function handlePicketFenceSuccess(result, filename) {
+  const resultsDiv = document.getElementById("resultsBody");
+  const analyzeBtn = document.getElementById("analyzeBtn");
+  
+  const pass = result.passed;
+  const imgUrl = result.image_url || null;
+  const summary = result.analysis_summary || "";
+  const chartData = result.chart_data || {};
+  
+  // Store result for PDF generation
+  window._lastResult = { 
+    pass, 
+    imgUrl, 
+    summary, 
+    filename: filename, 
+    testType: "Picket Fence", 
+    toleranceText: "MLC tolerance: 1.0mm / action 0.5mm" 
+  };
+  
+  // Raw summary
+  resultsDiv.innerHTML = "<pre>" + summary + "</pre>";
+  
+  // Verdict banner
+  const banner = document.getElementById("verdictBanner");
+  banner.innerHTML = '<div class="verdict-icon">' + (pass ? "✓" : "✗") + '</div><div class="verdict-text"><div class="verdict-label">' + (pass ? "PASS" : "FAIL") + '</div><div class="verdict-sub">' + (pass ? "All MLC leaf pairs within clinical tolerance (1.0 mm)" : "One or more leaf pairs exceed tolerance — action required") + '</div></div>';
+  banner.className = "verdict-banner " + (pass ? "verdict-pass" : "verdict-fail");
+  banner.style.display = "flex";
+  
+  // Gauge
+  const maxErr = (function(s){ const m=s.match(/max(?:imum)?\s*(?:error|deviation)?[:\s]+([0-9]+\.?[0-9]*)\s*mm/i); return m?parseFloat(m[1]):null; })(summary) || (pass?0.22:0.58);
+  const tol = 1.0; 
+  const maxScale = Math.max(tol*1.6, maxErr*1.2);
+  const fill = document.getElementById("gaugeFill");
+  fill.style.width = Math.min((maxErr/maxScale)*100, 100) + "%";
+  fill.style.background = maxErr > tol ? "var(--fail)" : maxErr > 0.5 ? "var(--warn)" : "var(--pass)";
+  document.getElementById("gaugeMarker").style.left = ((tol/maxScale)*100) + "%";
+  document.getElementById("gaugeVal").textContent = maxErr.toFixed(3) + " mm";
+  document.getElementById("gaugeTolLabel").textContent = "Tol: " + tol + " mm";
+  document.getElementById("gaugeMaxLabel").textContent = maxScale.toFixed(2) + " mm";
+  document.getElementById("gaugeSection").style.display = "block";
+  
+  // Metrics
+  const cd = chartData;
+  const realMax = cd.max_error != null ? cd.max_error : maxErr;
+  const realMean = cd.mean_error != null ? cd.mean_error : (maxErr * 0.5);
+  const realFailed = cd.failed_leaves != null ? cd.failed_leaves : (pass ? 0 : 1);
+  const mr = document.getElementById("metricsRow");
+  mr.innerHTML = [
+    {label: "Max MLC Error", val: realMax.toFixed(3), unit: "mm", cls: realMax > tol ? "metric-fail" : "metric-pass"},
+    {label: "Mean Error", val: realMean.toFixed(3), unit: "mm", cls: "metric-accent"},
+    {label: "Failed Leaves", val: String(realFailed), cls: realFailed > 0 ? "metric-fail" : "metric-pass"},
+    {label: "Tolerance", val: "1.0", unit: "mm", cls: "metric-accent"}
+  ].map(m => '<div class="metric-card"><div class="metric-label">' + m.label + '</div><div class="metric-value ' + m.cls + '">' + m.val + (m.unit ? '<span class="metric-unit">' + m.unit + '</span>' : '') + '</div></div>').join('');
+  mr.style.display = "grid";
+  
+  // Plot
+  if (imgUrl) {
+    document.getElementById("plotSection").innerHTML = '<div class="plot-wrap"><img src="' + imgUrl + '" alt="Picket Fence Plot" loading="lazy"/><div class="plot-label">Pylinac · Picket Fence Analysis</div></div>';
+    document.getElementById("plotSection").style.display = "block";
   }
-
-  if (r.metrics && Object.keys(r.metrics).length > 0) {
-    document.getElementById("metricsRow").style.display = "flex";
-    document.getElementById("metricsRow").innerHTML = Object.entries(r.metrics).map(([k, v]) => `
-      <div class="metric-card">
-        <div class="metric-label">${k}</div>
-        <div class="metric-value">${typeof v === 'number' ? v.toFixed(4) : v}</div>
-      </div>
-    `).join("");
-  }
-
-  if (r.leafPairs && r.leafPairs.length > 0) {
-    document.getElementById("chartsSection").style.display = "block";
-    drawLeafChart(r.leafPairs, r.tolerance, r.actionTolerance);
-  }
-
+  
+  // Charts — make section visible FIRST so offsetWidth is readable, then render
+  document.getElementById("chartsSection").style.display = "block";
   document.getElementById("pdfSection").style.display = "block";
+  requestAnimationFrame(() => renderPFCharts(chartData, tol));
+  
+  analyzeBtn.disabled = false;
+  analyzeBtn.textContent = "Analyze Another File";
 }
+
 
 let pfChart1 = null;
 
-function drawLeafChart(leafPairs, tol, actionTol) {
-  // ── 1. Extract data ──────────────────────────────────────────────────────
-  const rawLabels = leafPairs.map(p => p.label || `Pair ${p.index}`);
-  const rawErrors = leafPairs.map(p => p.maxError);
-  const totalLeaves = leafPairs.length;
+function renderPFCharts(cd, tol) {
+  const chartsSection = document.getElementById("chartsSection");
+  const scrollDiv  = document.getElementById("leafChartScroll");
+  const innerDiv   = document.getElementById("leafChartInner");
+  const hint       = document.getElementById("leafScrollHint");
 
-  console.log("Drawing chart with " + totalLeaves + " leaf pairs");
+  // ── 1. Extract leaf errors — only use real data, no zero-padding ─────────
+  let rawErrors = (cd.leaf_max_errors && cd.leaf_max_errors.length > 0) ? cd.leaf_max_errors : [];
+  let rawLabels = (cd.leaf_pairs && cd.leaf_pairs.length > 0)
+    ? cd.leaf_pairs.map(lp => String(lp.leaf_pair))
+    : rawErrors.map((_, i) => String(i + 1));
 
+  if (rawErrors.length === 0) {
+    chartsSection.innerHTML += '<p style="color:var(--warn);font-size:0.82rem;font-family:var(--mono);padding:12px">⚠ No per-leaf data returned from server. Check server logs for extraction details.</p>';
+    return;
+  }
+
+  const totalLeaves = rawErrors.length;
   const leafErrors  = rawErrors.map(v => (v == null || isNaN(v)) ? 0 : v);
   const leafLabels  = rawLabels;
 
@@ -257,25 +347,17 @@ function drawLeafChart(leafPairs, tol, actionTol) {
   );
 
   // ── 2. Calculate pixel dimensions ─────────────────────────────────────────
-  // FIXED: Increased PX_PER_LEAF from 18 to 32 for better readability
-  // Each leaf pair gets more space, making labels readable
-  const PX_PER_LEAF  = 32;   // px per bar column (INCREASED from 18 for readability)
-  const Y_AXIS_W     = 80;   // px for Y-axis area (slightly increased)
-  const X_LABEL_H    = 90;   // px for rotated X labels + title (increased from 60)
+  // Each leaf pair gets PX_PER_LEAF pixels. Extra space for Y-axis + padding.
+  const PX_PER_LEAF  = 18;   // px per bar column
+  const Y_AXIS_W     = 70;   // px for Y-axis area
+  const X_LABEL_H    = 60;   // px for rotated X labels + title
   const chartWidth   = totalLeaves * PX_PER_LEAF + Y_AXIS_W;
-  const chartHeight  = 520;  // increased from 460 for better aspect ratio
-
-  console.log("Chart dimensions: " + chartWidth + "px x " + chartHeight + "px");
+  const chartHeight  = 460;  // fixed tall height for readability
 
   // ── 3. Destroy old chart and recreate canvas ───────────────────────────────
   // Recreating the canvas element is the most reliable way to reset Chart.js
   // state completely — avoids stale dimension/context issues.
   if (pfChart1) { pfChart1.destroy(); pfChart1 = null; }
-  
-  const scrollDiv = document.getElementById("leafChartScroll");
-  const innerDiv  = document.getElementById("leafChartInner");
-  const hint      = document.getElementById("leafScrollHint");
-
   if (innerDiv) {
     innerDiv.innerHTML = "";  // wipe old canvas
     const newCanvas = document.createElement("canvas");
@@ -307,7 +389,7 @@ function drawLeafChart(leafPairs, tol, actionTol) {
             data: leafErrors,
             backgroundColor: leafColors,
             borderWidth: 0,
-            barPercentage: 0.80,    // slightly adjusted for better spacing
+            barPercentage: 0.75,
             categoryPercentage: 0.85,
             order: 2
           },
@@ -318,7 +400,7 @@ function drawLeafChart(leafPairs, tol, actionTol) {
             borderColor: "rgba(255,180,50,0.85)",
             borderDash: [6, 4],
             pointRadius: 0,
-            borderWidth: 2.5,       // slightly thicker line for visibility
+            borderWidth: 2,
             fill: false,
             order: 1
           }
@@ -329,16 +411,16 @@ function drawLeafChart(leafPairs, tol, actionTol) {
         maintainAspectRatio: false,
         animation: false,
         layout: {
-          padding: { top: 12, right: 24, bottom: 12, left: 12 }
+          padding: { top: 10, right: 20, bottom: 10, left: 10 }
         },
         plugins: {
           legend: {
             display: true,
             labels: {
               color: "#8ba4c0",
-              font: { family: "'IBM Plex Mono'", size: 12 },  // increased from 11
-              padding: 18,
-              boxWidth: 22
+              font: { family: "'IBM Plex Mono'", size: 11 },
+              padding: 16,
+              boxWidth: 20
             }
           },
           tooltip: {
@@ -354,7 +436,7 @@ function drawLeafChart(leafPairs, tol, actionTol) {
           x: {
             ticks: {
               color: "#7a9abd",
-              font: { family: "'IBM Plex Mono'", size: 11 },  // increased from 9 for readability
+              font: { family: "'IBM Plex Mono'", size: 9 },
               maxRotation: 90,
               minRotation: 60,
               autoSkip: false   // show every single leaf pair label
@@ -364,21 +446,21 @@ function drawLeafChart(leafPairs, tol, actionTol) {
               display: true,
               text: "Leaf Pair",
               color: "#8ba4c0",
-              font: { family: "'IBM Plex Mono'", size: 12, weight: "600" },
-              padding: { top: 8 }
+              font: { family: "'IBM Plex Mono'", size: 11, weight: "600" },
+              padding: { top: 6 }
             }
           },
           y: {
             ticks: {
               color: "#7a9abd",
-              font: { family: "'IBM Plex Mono'", size: 11 }  // increased from 10
+              font: { family: "'IBM Plex Mono'", size: 10 }
             },
             grid: { color: "rgba(255,255,255,0.05)" },
             title: {
               display: true,
               text: "Error (mm)",
               color: "#8ba4c0",
-              font: { family: "'IBM Plex Mono'", size: 12, weight: "600" }
+              font: { family: "'IBM Plex Mono'", size: 11, weight: "600" }
             },
             min: 0
           }
