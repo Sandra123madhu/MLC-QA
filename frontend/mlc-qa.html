@@ -327,105 +327,97 @@ function renderPFCharts(cd, tol) {
   const innerDiv   = document.getElementById("leafChartInner");
   const hint       = document.getElementById("leafScrollHint");
 
-  // ── 1. Extract measured leaf data from backend ────────────────────────────
+  // ── 1. Extract raw data from backend ────────────────────────────────────
   let rawErrors = (cd.leaf_max_errors && cd.leaf_max_errors.length > 0) ? cd.leaf_max_errors : [];
   let rawLabels = (cd.leaf_pairs && cd.leaf_pairs.length > 0)
     ? cd.leaf_pairs.map(lp => String(lp.leaf_pair))
     : rawErrors.map((_, i) => String(i + 1));
 
-  console.log('[PF Chart] leaf count:', rawLabels.length, '| first 5:', rawLabels.slice(0,5).join(','), '| last 5:', rawLabels.slice(-5).join(','));
+  console.log('[PF Chart] leaf count:', rawLabels.length,
+              '| first 5:', rawLabels.slice(0,5).join(','),
+              '| last 5:',  rawLabels.slice(-5).join(','));
 
-  // ── 1b. Detect and fix 0-based or negative-based indexing from pylinac ──
-  // Pylinac may emit 0-based (0..59) or centred (-30..29) keys.
-  // Shift everything so the minimum label maps to 1, giving a clean 1-60 grid.
+  // ── 1b. Normalise to 1-based if pylinac sent 0-based or centred keys ────
   const _numericRaw = rawLabels.map(l => parseInt(l, 10)).filter(n => !isNaN(n));
   const _minLabel   = _numericRaw.length ? Math.min(..._numericRaw) : 1;
   const _labelShift = _minLabel <= 0 ? (1 - _minLabel) : 0;
   if (_labelShift > 0) {
-    console.log('[PF Chart] Shifting leaf labels by +' + _labelShift + ' (min was ' + _minLabel + ')');
+    console.log('[PF Chart] Shifting labels by +' + _labelShift + ' (min was ' + _minLabel + ')');
     rawLabels = rawLabels.map(l => { const n = parseInt(l, 10); return isNaN(n) ? l : String(n + _labelShift); });
   }
 
   if (rawErrors.length === 0) {
     let errEl = document.getElementById("leafChartError");
-    if (!errEl) {
-      errEl = document.createElement("p");
-      errEl.id = "leafChartError";
-      chartsSection.appendChild(errEl);
-    }
+    if (!errEl) { errEl = document.createElement("p"); errEl.id = "leafChartError"; chartsSection.appendChild(errEl); }
     errEl.style.cssText = "color:var(--warn);font-size:0.82rem;font-family:var(--mono);padding:12px";
     errEl.textContent = "⚠ No per-leaf data returned from server. Check server logs for extraction details.";
     return;
   }
 
-  // ── 2. Build a map of measured leaf number → error ────────────────────────
-  // Then expand to full 60-leaf array (1–60), filling unmeasured with null.
-  // This shows the true clinical position of every leaf on the X-axis.
-  const measuredMap = {};
+  // ── 2. Only plot MEASURED leaves (those inside the radiation field) ───────
+  // Pylinac's _leaves_in_view() only measures leaves whose centre falls within
+  // the exposed field — outer leaves of a Millennium MLC (e.g. pairs 1-9 and
+  // 52-60 for a 22cm field) are physically outside the beam and produce no data.
+  // Showing 60 bars with most empty is misleading; we show only what was measured.
+  const leafLabels = [];
+  const leafErrors = [];
+  const leafColors = [];
+
   rawLabels.forEach((lbl, i) => {
-    const n = parseInt(lbl, 10);
-    if (!isNaN(n)) measuredMap[n] = (rawErrors[i] == null || isNaN(rawErrors[i])) ? 0 : rawErrors[i];
-  });
-
-  // Determine display range: always 1–60 for Varian Millennium/HD,
-  // but fall back to just the measured range if labels are non-numeric.
-  const numericLabels = rawLabels.map(l => parseInt(l, 10)).filter(n => !isNaN(n));
-  const TOTAL = 60;  // Varian MLC has 60 leaf pairs
-  const useFullRange = numericLabels.length > 0 && Math.max(...numericLabels) <= TOTAL;
-
-  let leafLabels, leafErrors, leafColors, isMeasured;
-
-  if (useFullRange) {
-    leafLabels  = [];
-    leafErrors  = [];
-    leafColors  = [];
-    isMeasured  = [];
-    for (let i = 1; i <= TOTAL; i++) {
-      leafLabels.push(String(i));
-      if (measuredMap.hasOwnProperty(i)) {
-        const v = measuredMap[i];
-        leafErrors.push(v);
-        isMeasured.push(true);
-        leafColors.push(
-          v > tol       ? "rgba(201,64,80,0.85)"  :
-          v > tol * 0.5 ? "rgba(200,137,42,0.80)" :
-                          "rgba(26,171,117,0.75)"
-        );
-      } else {
-        // Unmeasured leaf — outside radiation field
-        leafErrors.push(0);
-        isMeasured.push(false);
-        leafColors.push("rgba(255,255,255,0.08)");  // very dim grey
-      }
-    }
-  } else {
-    // Non-numeric labels — just show what the backend gave us
-    leafLabels = rawLabels;
-    leafErrors = rawErrors.map(v => (v == null || isNaN(v)) ? 0 : v);
-    isMeasured = leafErrors.map(() => true);
-    leafColors = leafErrors.map(v =>
+    const v = (rawErrors[i] == null || isNaN(rawErrors[i])) ? 0 : Number(rawErrors[i]);
+    leafLabels.push(lbl);
+    leafErrors.push(v);
+    leafColors.push(
       v > tol       ? "rgba(201,64,80,0.85)"  :
       v > tol * 0.5 ? "rgba(200,137,42,0.80)" :
                       "rgba(26,171,117,0.75)"
     );
+  });
+
+  const totalLeaves    = leafLabels.length;
+  const maxMeasuredErr = leafErrors.length > 0 ? Math.max(...leafErrors) : 0;
+
+  // ── 3. Inject info badge + subtitle above the chart ──────────────────────
+  // Shows measured range and explains why outer leaves are absent.
+  const numericAll = leafLabels.map(l => parseInt(l, 10)).filter(n => !isNaN(n));
+  const minLeaf = numericAll.length ? Math.min(...numericAll) : "?";
+  const maxLeaf = numericAll.length ? Math.max(...numericAll) : "?";
+  const totalMLC = 60;
+  const outsideCount = totalMLC - totalLeaves;
+
+  let infoEl = document.getElementById("leafChartInfo");
+  if (!infoEl) {
+    infoEl = document.createElement("div");
+    infoEl.id = "leafChartInfo";
+    // Insert before the scroll container
+    scrollDiv.parentNode.insertBefore(infoEl, scrollDiv);
   }
+  infoEl.innerHTML =
+    '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">' +
+      '<span style="font-family:var(--mono);font-size:0.78rem;color:var(--text-2);">' +
+        '<span style="color:rgba(26,171,117,0.9);margin-right:4px;">■</span>' +
+        'Measured: <strong style="color:var(--text-1);">' + totalLeaves + ' leaf pairs</strong>' +
+        ' (pairs&nbsp;' + minLeaf + '–' + maxLeaf + ')' +
+      '</span>' +
+      (outsideCount > 0
+        ? '<span style="font-family:var(--mono);font-size:0.78rem;color:var(--text-muted);padding:3px 8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:4px;">' +
+            '⚠ ' + outsideCount + ' outer leaf pair' + (outsideCount > 1 ? 's' : '') +
+            ' not shown — outside radiation field' +
+          '</span>'
+        : '') +
+    '</div>';
 
-  const totalLeaves = leafLabels.length;  // 60 for full range
-  const measuredErrors = leafErrors.filter((v, i) => isMeasured[i]);
-  const maxMeasuredErr = measuredErrors.length > 0 ? Math.max(...measuredErrors) : 0;
-
-  // ── 3. Canvas sizing — 60 leaves always needs scroll on small screens ──────
-  const PX_PER_LEAF = 18;
+  // ── 4. Canvas sizing ──────────────────────────────────────────────────────
+  const PX_PER_LEAF = 22;
   const Y_AXIS_W    = 70;
-  const minWidth    = totalLeaves * PX_PER_LEAF + Y_AXIS_W;  // 60*18+70 = 1150px
+  const minWidth    = totalLeaves * PX_PER_LEAF + Y_AXIS_W;
   const cardWidth   = (scrollDiv && scrollDiv.offsetWidth > 0)
-                      ? scrollDiv.offsetWidth
-                      : window.innerWidth * 0.75;
+                      ? scrollDiv.offsetWidth : window.innerWidth * 0.75;
   const needsScroll = minWidth > cardWidth;
   const chartWidth  = needsScroll ? minWidth : cardWidth;
-  const chartHeight = 420;
+  const chartHeight = 380;
 
-  // ── 4. Destroy old chart and recreate canvas ──────────────────────────────
+  // ── 5. Destroy old chart, recreate canvas ────────────────────────────────
   if (pfChart1) { pfChart1.destroy(); pfChart1 = null; }
   innerDiv.innerHTML = "";
 
@@ -450,10 +442,9 @@ function renderPFCharts(cd, tol) {
     if (scrollDiv) scrollDiv.style.height = (chartHeight + 20) + "px";
     if (hint) hint.style.display = "none";
   }
-
   innerDiv.appendChild(newCanvas);
 
-  // ── 5. Build the chart ────────────────────────────────────────────────────
+  // ── 6. Build chart ────────────────────────────────────────────────────────
   pfChart1 = new Chart(newCanvas, {
     type: "bar",
     data: {
@@ -464,8 +455,8 @@ function renderPFCharts(cd, tol) {
           data: leafErrors,
           backgroundColor: leafColors,
           borderWidth: 0,
-          barPercentage: 0.8,
-          categoryPercentage: 0.9,
+          barPercentage: 0.75,
+          categoryPercentage: 0.85,
           order: 2
         },
         {
@@ -478,7 +469,7 @@ function renderPFCharts(cd, tol) {
           borderWidth: 2,
           fill: false,
           order: 1,
-          yAxisID: "yTol"   // separate axis so tolerance value never inflates the main Y scale
+          yAxisID: "yTol"
         }
       ]
     },
@@ -486,9 +477,7 @@ function renderPFCharts(cd, tol) {
       responsive: !needsScroll,
       maintainAspectRatio: false,
       animation: false,
-      layout: {
-        padding: { top: 10, right: 20, bottom: 10, left: 10 }
-      },
+      layout: { padding: { top: 10, right: 20, bottom: 10, left: 10 } },
       plugins: {
         legend: {
           display: true,
@@ -505,9 +494,6 @@ function renderPFCharts(cd, tol) {
             label: item => {
               if (item.dataset.label.startsWith("Tolerance"))
                 return "Tolerance: " + tol + " mm";
-              const idx = item.dataIndex;
-              if (useFullRange && !isMeasured[idx])
-                return "Not measured (outside field)";
               return "Max Error: " + item.raw.toFixed(4) + " mm";
             }
           }
@@ -516,11 +502,7 @@ function renderPFCharts(cd, tol) {
       scales: {
         x: {
           ticks: {
-            color: ctx => {
-              if (!useFullRange) return "#7a9abd";
-              const n = parseInt(ctx.tick.label, 10);
-              return measuredMap.hasOwnProperty(n) ? "#a8c4e0" : "rgba(122,154,189,0.3)";
-            },
+            color: "#a8c4e0",
             font: { family: "'IBM Plex Mono'", size: 9 },
             maxRotation: 90,
             minRotation: 60,
@@ -529,7 +511,7 @@ function renderPFCharts(cd, tol) {
           grid: { color: "rgba(255,255,255,0.05)" },
           title: {
             display: true,
-            text: "Leaf Pair (1 – 60)",
+            text: "Leaf Pair (" + minLeaf + " – " + maxLeaf + "  |  measured in field)",
             color: "#8ba4c0",
             font: { family: "'IBM Plex Mono'", size: 11, weight: "600" },
             padding: { top: 6 }
@@ -548,13 +530,9 @@ function renderPFCharts(cd, tol) {
             font: { family: "'IBM Plex Mono'", size: 11, weight: "600" }
           },
           min: 0,
-          // Zoom Y-axis to actual measured data — tolerance line is on its own
-          // hidden axis (yTol) so it cannot inflate this scale.
-          max: Math.max(maxMeasuredErr * 1.5, tol * 0.2)
+          max: Math.max(maxMeasuredErr * 1.5, tol * 0.25)
         },
         yTol: {
-          // Hidden axis dedicated to the tolerance reference line.
-          // max = tol so the line (data value = tol) always renders at the top of the chart.
           display: false,
           min: 0,
           max: tol
