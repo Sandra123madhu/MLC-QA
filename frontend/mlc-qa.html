@@ -307,10 +307,12 @@ function handlePicketFenceSuccess(result, filename) {
     document.getElementById("plotSection").style.display = "block";
   }
   
-  // Charts — make section visible FIRST so offsetWidth is readable, then render
+  // Charts — make section visible FIRST so offsetWidth is readable, then render.
+  // Double requestAnimationFrame ensures the browser has fully laid out and
+  // painted the section before renderPFCharts reads scrollDiv.offsetWidth.
   document.getElementById("chartsSection").style.display = "block";
   document.getElementById("pdfSection").style.display = "block";
-  requestAnimationFrame(() => renderPFCharts(chartData, tol));
+  requestAnimationFrame(() => requestAnimationFrame(() => renderPFCharts(chartData, tol)));
   
   analyzeBtn.disabled = false;
   analyzeBtn.textContent = "Analyze Another File";
@@ -332,7 +334,16 @@ function renderPFCharts(cd, tol) {
     : rawErrors.map((_, i) => String(i + 1));
 
   if (rawErrors.length === 0) {
-    chartsSection.innerHTML += '<p style="color:var(--warn);font-size:0.82rem;font-family:var(--mono);padding:12px">⚠ No per-leaf data returned from server. Check server logs for extraction details.</p>';
+    // Use a dedicated error element — never overwrite innerHTML on chartsSection
+    // as that destroys the canvas and scroll wrapper nodes.
+    let errEl = document.getElementById("leafChartError");
+    if (!errEl) {
+      errEl = document.createElement("p");
+      errEl.id = "leafChartError";
+      chartsSection.appendChild(errEl);
+    }
+    errEl.style.cssText = "color:var(--warn);font-size:0.82rem;font-family:var(--mono);padding:12px";
+    errEl.textContent = "⚠ No per-leaf data returned from server. Check server logs for extraction details.";
     return;
   }
 
@@ -374,8 +385,11 @@ function renderPFCharts(cd, tol) {
 
     if (scrollDiv) scrollDiv.style.height = (chartHeight + 20) + "px";  // +20 for scrollbar
 
-    // Show scroll hint if chart overflows the visible area
-    const visW = scrollDiv ? scrollDiv.offsetWidth : 0;
+    // Show scroll hint if chart overflows the visible area.
+    // Fall back to window width if offsetWidth is still 0 (e.g. paint not done).
+    const visW = (scrollDiv && scrollDiv.offsetWidth > 0)
+      ? scrollDiv.offsetWidth
+      : window.innerWidth * 0.8;
     if (hint) hint.style.display = chartWidth > visW ? "block" : "none";
 
     // ── 4. Build the chart ───────────────────────────────────────────────────
