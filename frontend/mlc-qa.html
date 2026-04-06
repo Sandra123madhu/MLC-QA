@@ -358,39 +358,49 @@ function renderPFCharts(cd, tol) {
   );
 
   // ── 2. Calculate pixel dimensions ─────────────────────────────────────────
-  // Each leaf pair gets PX_PER_LEAF pixels. Extra space for Y-axis + padding.
-  const PX_PER_LEAF  = 18;   // px per bar column
-  const Y_AXIS_W     = 70;   // px for Y-axis area
-  const X_LABEL_H    = 60;   // px for rotated X labels + title
-  const chartWidth   = totalLeaves * PX_PER_LEAF + Y_AXIS_W;
-  const chartHeight  = 460;  // fixed tall height for readability
+  // For small leaf counts, fill the full card width (responsive).
+  // Only force a minimum width (and enable scrolling) when there are many leaves.
+  const MIN_PX_PER_LEAF = 18;
+  const Y_AXIS_W        = 70;
+  const minChartWidth   = totalLeaves * MIN_PX_PER_LEAF + Y_AXIS_W;
+  const cardWidth       = (scrollDiv && scrollDiv.offsetWidth > 0)
+                          ? scrollDiv.offsetWidth
+                          : window.innerWidth * 0.75;
+  // Only scroll when bars would be too squished; otherwise fill the card.
+  const needsScroll     = minChartWidth > cardWidth;
+  const chartWidth      = needsScroll ? minChartWidth : cardWidth;
+  const chartHeight     = 460;
 
   // ── 3. Destroy old chart and recreate canvas ───────────────────────────────
-  // Recreating the canvas element is the most reliable way to reset Chart.js
-  // state completely — avoids stale dimension/context issues.
   if (pfChart1) { pfChart1.destroy(); pfChart1 = null; }
   if (innerDiv) {
     innerDiv.innerHTML = "";  // wipe old canvas
+
     const newCanvas = document.createElement("canvas");
     newCanvas.id = "leafChart";
-    // Set dimensions BEFORE Chart.js touches it
-    newCanvas.width  = chartWidth;
-    newCanvas.height = chartHeight;
     newCanvas.style.display = "block";
-    newCanvas.style.width   = chartWidth  + "px";
-    newCanvas.style.height  = chartHeight + "px";
-    innerDiv.style.width    = chartWidth  + "px";
-    innerDiv.style.height   = chartHeight + "px";
+
+    if (needsScroll) {
+      // Fixed pixel size — chart must be wider than the visible area
+      newCanvas.width  = chartWidth;
+      newCanvas.height = chartHeight;
+      newCanvas.style.width  = chartWidth  + "px";
+      newCanvas.style.height = chartHeight + "px";
+      innerDiv.style.width   = chartWidth  + "px";
+      innerDiv.style.height  = chartHeight + "px";
+      if (scrollDiv) scrollDiv.style.height = (chartHeight + 20) + "px";
+      if (hint) hint.style.display = "block";
+    } else {
+      // Responsive — let Chart.js fill the container width
+      newCanvas.style.width  = "100%";
+      newCanvas.style.height = chartHeight + "px";
+      innerDiv.style.width   = "100%";
+      innerDiv.style.height  = chartHeight + "px";
+      if (scrollDiv) scrollDiv.style.height = (chartHeight + 20) + "px";
+      if (hint) hint.style.display = "none";
+    }
+
     innerDiv.appendChild(newCanvas);
-
-    if (scrollDiv) scrollDiv.style.height = (chartHeight + 20) + "px";  // +20 for scrollbar
-
-    // Show scroll hint if chart overflows the visible area.
-    // Fall back to window width if offsetWidth is still 0 (e.g. paint not done).
-    const visW = (scrollDiv && scrollDiv.offsetWidth > 0)
-      ? scrollDiv.offsetWidth
-      : window.innerWidth * 0.8;
-    if (hint) hint.style.display = chartWidth > visW ? "block" : "none";
 
     // ── 4. Build the chart ───────────────────────────────────────────────────
     pfChart1 = new Chart(newCanvas, {
@@ -421,7 +431,7 @@ function renderPFCharts(cd, tol) {
         ]
       },
       options: {
-        responsive: false,         // v4: must be false to honour canvas width/height attributes
+        responsive: !needsScroll,  // responsive only when not scrolling
         maintainAspectRatio: false,
         animation: false,
         layout: {
