@@ -333,6 +333,19 @@ function renderPFCharts(cd, tol) {
     ? cd.leaf_pairs.map(lp => String(lp.leaf_pair))
     : rawErrors.map((_, i) => String(i + 1));
 
+  console.log('[PF Chart] leaf count:', rawLabels.length, '| first 5:', rawLabels.slice(0,5).join(','), '| last 5:', rawLabels.slice(-5).join(','));
+
+  // ── 1b. Detect and fix 0-based or negative-based indexing from pylinac ──
+  // Pylinac may emit 0-based (0..59) or centred (-30..29) keys.
+  // Shift everything so the minimum label maps to 1, giving a clean 1-60 grid.
+  const _numericRaw = rawLabels.map(l => parseInt(l, 10)).filter(n => !isNaN(n));
+  const _minLabel   = _numericRaw.length ? Math.min(..._numericRaw) : 1;
+  const _labelShift = _minLabel <= 0 ? (1 - _minLabel) : 0;
+  if (_labelShift > 0) {
+    console.log('[PF Chart] Shifting leaf labels by +' + _labelShift + ' (min was ' + _minLabel + ')');
+    rawLabels = rawLabels.map(l => { const n = parseInt(l, 10); return isNaN(n) ? l : String(n + _labelShift); });
+  }
+
   if (rawErrors.length === 0) {
     let errEl = document.getElementById("leafChartError");
     if (!errEl) {
