@@ -347,11 +347,13 @@ def _extract_pf_chart_data(pf) -> dict:
 
         # ── Helper: build leaf dict from mlc_errors_by_leaf ───────────────────
         def _build_from_dict(errors_dict):
-            """Takes dict {leaf_key: [errors_per_picket]} → sorted (key, max_err) list."""
+            """Takes dict {leaf_key: [errors_per_picket]} → sorted (key, max_err) list.
+            Keys are normalized to 1-based integers so the frontend 1-60 grid is always correct.
+            Pylinac may emit 0-based (0..59) or centred (-30..29) indices — we re-map them."""
             def _sort_key(k):
                 s = str(k).strip()
                 try:
-                    return (int(s) if int(s) >= 0 else int(s) + 10000,)   # negatives after positives
+                    return (int(s) if int(s) >= 0 else int(s) + 10000,)
                 except ValueError:
                     pass
                 m = re.match(r'^(-?\d+)(.*)$', s)
@@ -360,12 +362,32 @@ def _extract_pf_chart_data(pf) -> dict:
                     return (n if n >= 0 else n + 10000, m.group(2))
                 return (9999, s)
 
+            # Collect all numeric keys to detect the base offset
+            numeric_keys = []
+            for k in errors_dict.keys():
+                try:
+                    numeric_keys.append(int(str(k).strip()))
+                except ValueError:
+                    pass
+
+            # If the minimum key is ≤ 0 we need to shift so that min → 1
+            shift = 0
+            if numeric_keys:
+                min_key = min(numeric_keys)
+                if min_key <= 0:
+                    shift = 1 - min_key   # e.g. 0-based → +1;  -30-based → +31
+
             out = []
             for k in sorted(errors_dict.keys(), key=_sort_key):
                 errs = [abs(float(e)) for e in errors_dict[k] if e is not None]
                 max_e  = round(max(errs),            4) if errs else 0.0
                 mean_e = round(sum(errs)/len(errs),  4) if errs else 0.0
-                out.append((str(k), max_e, mean_e))
+                # Apply shift so leaf labels are always 1-based
+                try:
+                    display_label = str(int(str(k).strip()) + shift)
+                except ValueError:
+                    display_label = str(k)
+                out.append((display_label, max_e, mean_e))
             return out
 
         # ── Strategy 1: mlc_errors_by_leaf on results object ─────────────────
