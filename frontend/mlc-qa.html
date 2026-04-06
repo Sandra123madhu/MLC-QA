@@ -274,24 +274,24 @@ function handlePicketFenceSuccess(result, filename) {
   banner.className = "verdict-banner " + (pass ? "verdict-pass" : "verdict-fail");
   banner.style.display = "flex";
   
-  // Gauge
-  const maxErr = (function(s){ const m=s.match(/max(?:imum)?\s*(?:error|deviation)?[:\s]+([0-9]+\.?[0-9]*)\s*mm/i); return m?parseFloat(m[1]):null; })(summary) || (pass?0.22:0.58);
-  const tol = 1.0; 
-  const maxScale = Math.max(tol*1.6, maxErr*1.2);
+  // Gauge + Metrics — read directly from chart_data (pylinac backend values).
+  // Never use regex fallback on summary text — unreliable.
+  const tol = 1.0;
+  const cd = chartData;
+  const realMax    = (cd.max_error    != null && !isNaN(cd.max_error))    ? Number(cd.max_error)    : 0;
+  const realMean   = (cd.mean_error   != null && !isNaN(cd.mean_error))   ? Number(cd.mean_error)   : 0;
+  const realFailed = (cd.failed_leaves != null)                           ? Number(cd.failed_leaves) : (pass ? 0 : 1);
+
+  const maxErr   = realMax;
+  const maxScale = Math.max(tol * 1.6, maxErr * 1.2, 0.01);
   const fill = document.getElementById("gaugeFill");
-  fill.style.width = Math.min((maxErr/maxScale)*100, 100) + "%";
+  fill.style.width = Math.min((maxErr / maxScale) * 100, 100) + "%";
   fill.style.background = maxErr > tol ? "var(--fail)" : maxErr > 0.5 ? "var(--warn)" : "var(--pass)";
-  document.getElementById("gaugeMarker").style.left = ((tol/maxScale)*100) + "%";
+  document.getElementById("gaugeMarker").style.left = ((tol / maxScale) * 100) + "%";
   document.getElementById("gaugeVal").textContent = maxErr.toFixed(3) + " mm";
   document.getElementById("gaugeTolLabel").textContent = "Tol: " + tol + " mm";
   document.getElementById("gaugeMaxLabel").textContent = maxScale.toFixed(2) + " mm";
   document.getElementById("gaugeSection").style.display = "block";
-  
-  // Metrics
-  const cd = chartData;
-  const realMax = cd.max_error != null ? cd.max_error : maxErr;
-  const realMean = cd.mean_error != null ? cd.mean_error : (maxErr * 0.5);
-  const realFailed = cd.failed_leaves != null ? cd.failed_leaves : (pass ? 0 : 1);
   const mr = document.getElementById("metricsRow");
   mr.innerHTML = [
     {label: "Max MLC Error", val: realMax.toFixed(3), unit: "mm", cls: realMax > tol ? "metric-fail" : "metric-pass"},
@@ -464,7 +464,8 @@ function renderPFCharts(cd, tol) {
           pointRadius: 0,
           borderWidth: 2,
           fill: false,
-          order: 1
+          order: 1,
+          yAxisID: "yTol"   // separate axis so tolerance value never inflates the main Y scale
         }
       ]
     },
@@ -503,7 +504,6 @@ function renderPFCharts(cd, tol) {
         x: {
           ticks: {
             color: ctx => {
-              // Highlight measured leaves, dim unmeasured ones
               if (!useFullRange) return "#7a9abd";
               const n = parseInt(ctx.tick.label, 10);
               return measuredMap.hasOwnProperty(n) ? "#a8c4e0" : "rgba(122,154,189,0.3)";
@@ -535,8 +535,16 @@ function renderPFCharts(cd, tol) {
             font: { family: "'IBM Plex Mono'", size: 11, weight: "600" }
           },
           min: 0,
-          // Zoom Y to the measured data range so bars are clearly visible
-          suggestedMax: Math.max(maxMeasuredErr * 1.4, tol * 0.25)
+          // Zoom Y-axis to actual measured data — tolerance line is on its own
+          // hidden axis (yTol) so it cannot inflate this scale.
+          max: Math.max(maxMeasuredErr * 1.5, tol * 0.2)
+        },
+        yTol: {
+          // Hidden axis dedicated to the tolerance reference line.
+          // max = tol so the line (data value = tol) always renders at the top of the chart.
+          display: false,
+          min: 0,
+          max: tol
         }
       }
     }
