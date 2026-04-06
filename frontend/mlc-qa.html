@@ -327,15 +327,13 @@ function renderPFCharts(cd, tol) {
   const innerDiv   = document.getElementById("leafChartInner");
   const hint       = document.getElementById("leafScrollHint");
 
-  // ── 1. Extract leaf errors — only use real data, no zero-padding ─────────
+  // ── 1. Extract measured leaf data from backend ────────────────────────────
   let rawErrors = (cd.leaf_max_errors && cd.leaf_max_errors.length > 0) ? cd.leaf_max_errors : [];
   let rawLabels = (cd.leaf_pairs && cd.leaf_pairs.length > 0)
     ? cd.leaf_pairs.map(lp => String(lp.leaf_pair))
     : rawErrors.map((_, i) => String(i + 1));
 
   if (rawErrors.length === 0) {
-    // Use a dedicated error element — never overwrite innerHTML on chartsSection
-    // as that destroys the canvas and scroll wrapper nodes.
     let errEl = document.getElementById("leafChartError");
     if (!errEl) {
       errEl = document.createElement("p");
@@ -347,151 +345,202 @@ function renderPFCharts(cd, tol) {
     return;
   }
 
-  const totalLeaves = rawErrors.length;
-  const leafErrors  = rawErrors.map(v => (v == null || isNaN(v)) ? 0 : v);
-  const leafLabels  = rawLabels;
+  // ── 2. Build a map of measured leaf number → error ────────────────────────
+  // Then expand to full 60-leaf array (1–60), filling unmeasured with null.
+  // This shows the true clinical position of every leaf on the X-axis.
+  const measuredMap = {};
+  rawLabels.forEach((lbl, i) => {
+    const n = parseInt(lbl, 10);
+    if (!isNaN(n)) measuredMap[n] = (rawErrors[i] == null || isNaN(rawErrors[i])) ? 0 : rawErrors[i];
+  });
 
-  const leafColors = leafErrors.map(v =>
-    v > tol       ? "rgba(201,64,80,0.85)"  :
-    v > tol * 0.5 ? "rgba(200,137,42,0.80)" :
-                    "rgba(26,171,117,0.75)"
-  );
+  // Determine display range: always 1–60 for Varian Millennium/HD,
+  // but fall back to just the measured range if labels are non-numeric.
+  const numericLabels = rawLabels.map(l => parseInt(l, 10)).filter(n => !isNaN(n));
+  const TOTAL = 60;  // Varian MLC has 60 leaf pairs
+  const useFullRange = numericLabels.length > 0 && Math.max(...numericLabels) <= TOTAL;
 
-  // ── 2. Calculate pixel dimensions ─────────────────────────────────────────
-  // For small leaf counts, fill the full card width (responsive).
-  // Only force a minimum width (and enable scrolling) when there are many leaves.
-  const MIN_PX_PER_LEAF = 18;
-  const Y_AXIS_W        = 70;
-  const minChartWidth   = totalLeaves * MIN_PX_PER_LEAF + Y_AXIS_W;
-  const cardWidth       = (scrollDiv && scrollDiv.offsetWidth > 0)
-                          ? scrollDiv.offsetWidth
-                          : window.innerWidth * 0.75;
-  // Only scroll when bars would be too squished; otherwise fill the card.
-  const needsScroll     = minChartWidth > cardWidth;
-  const chartWidth      = needsScroll ? minChartWidth : cardWidth;
-  const chartHeight     = 460;
+  let leafLabels, leafErrors, leafColors, isMeasured;
 
-  // ── 3. Destroy old chart and recreate canvas ───────────────────────────────
-  if (pfChart1) { pfChart1.destroy(); pfChart1 = null; }
-  if (innerDiv) {
-    innerDiv.innerHTML = "";  // wipe old canvas
-
-    const newCanvas = document.createElement("canvas");
-    newCanvas.id = "leafChart";
-    newCanvas.style.display = "block";
-
-    if (needsScroll) {
-      // Fixed pixel size — chart must be wider than the visible area
-      newCanvas.width  = chartWidth;
-      newCanvas.height = chartHeight;
-      newCanvas.style.width  = chartWidth  + "px";
-      newCanvas.style.height = chartHeight + "px";
-      innerDiv.style.width   = chartWidth  + "px";
-      innerDiv.style.height  = chartHeight + "px";
-      if (scrollDiv) scrollDiv.style.height = (chartHeight + 20) + "px";
-      if (hint) hint.style.display = "block";
-    } else {
-      // Responsive — let Chart.js fill the container width
-      newCanvas.style.width  = "100%";
-      newCanvas.style.height = chartHeight + "px";
-      innerDiv.style.width   = "100%";
-      innerDiv.style.height  = chartHeight + "px";
-      if (scrollDiv) scrollDiv.style.height = (chartHeight + 20) + "px";
-      if (hint) hint.style.display = "none";
+  if (useFullRange) {
+    leafLabels  = [];
+    leafErrors  = [];
+    leafColors  = [];
+    isMeasured  = [];
+    for (let i = 1; i <= TOTAL; i++) {
+      leafLabels.push(String(i));
+      if (measuredMap.hasOwnProperty(i)) {
+        const v = measuredMap[i];
+        leafErrors.push(v);
+        isMeasured.push(true);
+        leafColors.push(
+          v > tol       ? "rgba(201,64,80,0.85)"  :
+          v > tol * 0.5 ? "rgba(200,137,42,0.80)" :
+                          "rgba(26,171,117,0.75)"
+        );
+      } else {
+        // Unmeasured leaf — outside radiation field
+        leafErrors.push(0);
+        isMeasured.push(false);
+        leafColors.push("rgba(255,255,255,0.08)");  // very dim grey
+      }
     }
+  } else {
+    // Non-numeric labels — just show what the backend gave us
+    leafLabels = rawLabels;
+    leafErrors = rawErrors.map(v => (v == null || isNaN(v)) ? 0 : v);
+    isMeasured = leafErrors.map(() => true);
+    leafColors = leafErrors.map(v =>
+      v > tol       ? "rgba(201,64,80,0.85)"  :
+      v > tol * 0.5 ? "rgba(200,137,42,0.80)" :
+                      "rgba(26,171,117,0.75)"
+    );
+  }
 
-    innerDiv.appendChild(newCanvas);
+  const totalLeaves = leafLabels.length;  // 60 for full range
+  const measuredErrors = leafErrors.filter((v, i) => isMeasured[i]);
+  const maxMeasuredErr = measuredErrors.length > 0 ? Math.max(...measuredErrors) : 0;
 
-    // ── 4. Build the chart ───────────────────────────────────────────────────
-    pfChart1 = new Chart(newCanvas, {
-      type: "bar",
-      data: {
-        labels: leafLabels,
-        datasets: [
-          {
-            label: "Max Error (mm)",
-            data: leafErrors,
-            backgroundColor: leafColors,
-            borderWidth: 0,
-            barPercentage: 0.75,
-            categoryPercentage: 0.85,
-            order: 2
-          },
-          {
-            label: "Tolerance (" + tol + " mm)",
-            data: Array(totalLeaves).fill(tol),
-            type: "line",
-            borderColor: "rgba(255,180,50,0.85)",
-            borderDash: [6, 4],
-            pointRadius: 0,
-            borderWidth: 2,
-            fill: false,
-            order: 1
-          }
-        ]
+  // ── 3. Canvas sizing — 60 leaves always needs scroll on small screens ──────
+  const PX_PER_LEAF = 18;
+  const Y_AXIS_W    = 70;
+  const minWidth    = totalLeaves * PX_PER_LEAF + Y_AXIS_W;  // 60*18+70 = 1150px
+  const cardWidth   = (scrollDiv && scrollDiv.offsetWidth > 0)
+                      ? scrollDiv.offsetWidth
+                      : window.innerWidth * 0.75;
+  const needsScroll = minWidth > cardWidth;
+  const chartWidth  = needsScroll ? minWidth : cardWidth;
+  const chartHeight = 420;
+
+  // ── 4. Destroy old chart and recreate canvas ──────────────────────────────
+  if (pfChart1) { pfChart1.destroy(); pfChart1 = null; }
+  innerDiv.innerHTML = "";
+
+  const newCanvas = document.createElement("canvas");
+  newCanvas.id = "leafChart";
+  newCanvas.style.display = "block";
+
+  if (needsScroll) {
+    newCanvas.width        = chartWidth;
+    newCanvas.height       = chartHeight;
+    newCanvas.style.width  = chartWidth  + "px";
+    newCanvas.style.height = chartHeight + "px";
+    innerDiv.style.width   = chartWidth  + "px";
+    innerDiv.style.height  = chartHeight + "px";
+    if (scrollDiv) scrollDiv.style.height = (chartHeight + 20) + "px";
+    if (hint) hint.style.display = "block";
+  } else {
+    newCanvas.style.width  = "100%";
+    newCanvas.style.height = chartHeight + "px";
+    innerDiv.style.width   = "100%";
+    innerDiv.style.height  = chartHeight + "px";
+    if (scrollDiv) scrollDiv.style.height = (chartHeight + 20) + "px";
+    if (hint) hint.style.display = "none";
+  }
+
+  innerDiv.appendChild(newCanvas);
+
+  // ── 5. Build the chart ────────────────────────────────────────────────────
+  pfChart1 = new Chart(newCanvas, {
+    type: "bar",
+    data: {
+      labels: leafLabels,
+      datasets: [
+        {
+          label: "Max Error (mm)",
+          data: leafErrors,
+          backgroundColor: leafColors,
+          borderWidth: 0,
+          barPercentage: 0.8,
+          categoryPercentage: 0.9,
+          order: 2
+        },
+        {
+          label: "Tolerance (" + tol + " mm)",
+          data: Array(totalLeaves).fill(tol),
+          type: "line",
+          borderColor: "rgba(255,180,50,0.85)",
+          borderDash: [6, 4],
+          pointRadius: 0,
+          borderWidth: 2,
+          fill: false,
+          order: 1
+        }
+      ]
+    },
+    options: {
+      responsive: !needsScroll,
+      maintainAspectRatio: false,
+      animation: false,
+      layout: {
+        padding: { top: 10, right: 20, bottom: 10, left: 10 }
       },
-      options: {
-        responsive: !needsScroll,  // responsive only when not scrolling
-        maintainAspectRatio: false,
-        animation: false,
-        layout: {
-          padding: { top: 10, right: 20, bottom: 10, left: 10 }
-        },
-        plugins: {
-          legend: {
-            display: true,
-            labels: {
-              color: "#8ba4c0",
-              font: { family: "'IBM Plex Mono'", size: 11 },
-              padding: 16,
-              boxWidth: 20
-            }
-          },
-          tooltip: {
-            callbacks: {
-              title:  items => "Leaf Pair: " + items[0].label,
-              label:  item  => item.dataset.label.startsWith("Tolerance")
-                ? "Tolerance: " + tol + " mm"
-                : "Max Error: " + item.raw.toFixed(4) + " mm"
-            }
+      plugins: {
+        legend: {
+          display: true,
+          labels: {
+            color: "#8ba4c0",
+            font: { family: "'IBM Plex Mono'", size: 11 },
+            padding: 16,
+            boxWidth: 20
           }
         },
-        scales: {
-          x: {
-            ticks: {
-              color: "#7a9abd",
-              font: { family: "'IBM Plex Mono'", size: 9 },
-              maxRotation: 90,
-              minRotation: 60,
-              autoSkip: false   // show every single leaf pair label
-            },
-            grid: { color: "rgba(255,255,255,0.05)" },
-            title: {
-              display: true,
-              text: "Leaf Pair",
-              color: "#8ba4c0",
-              font: { family: "'IBM Plex Mono'", size: 11, weight: "600" },
-              padding: { top: 6 }
+        tooltip: {
+          callbacks: {
+            title: items => "Leaf Pair: " + items[0].label,
+            label: item => {
+              if (item.dataset.label.startsWith("Tolerance"))
+                return "Tolerance: " + tol + " mm";
+              const idx = item.dataIndex;
+              if (useFullRange && !isMeasured[idx])
+                return "Not measured (outside field)";
+              return "Max Error: " + item.raw.toFixed(4) + " mm";
             }
-          },
-          y: {
-            ticks: {
-              color: "#7a9abd",
-              font: { family: "'IBM Plex Mono'", size: 10 }
-            },
-            grid: { color: "rgba(255,255,255,0.05)" },
-            title: {
-              display: true,
-              text: "Error (mm)",
-              color: "#8ba4c0",
-              font: { family: "'IBM Plex Mono'", size: 11, weight: "600" }
-            },
-            min: 0
           }
         }
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: ctx => {
+              // Highlight measured leaves, dim unmeasured ones
+              if (!useFullRange) return "#7a9abd";
+              const n = parseInt(ctx.tick.label, 10);
+              return measuredMap.hasOwnProperty(n) ? "#a8c4e0" : "rgba(122,154,189,0.3)";
+            },
+            font: { family: "'IBM Plex Mono'", size: 9 },
+            maxRotation: 90,
+            minRotation: 60,
+            autoSkip: false
+          },
+          grid: { color: "rgba(255,255,255,0.05)" },
+          title: {
+            display: true,
+            text: "Leaf Pair (1 – 60)",
+            color: "#8ba4c0",
+            font: { family: "'IBM Plex Mono'", size: 11, weight: "600" },
+            padding: { top: 6 }
+          }
+        },
+        y: {
+          ticks: {
+            color: "#7a9abd",
+            font: { family: "'IBM Plex Mono'", size: 10 }
+          },
+          grid: { color: "rgba(255,255,255,0.05)" },
+          title: {
+            display: true,
+            text: "Error (mm)",
+            color: "#8ba4c0",
+            font: { family: "'IBM Plex Mono'", size: 11, weight: "600" }
+          },
+          min: 0,
+          // Zoom Y to the measured data range so bars are clearly visible
+          suggestedMax: Math.max(maxMeasuredErr * 1.4, tol * 0.25)
+        }
       }
-    });
-  }
+    }
+  });
 }
 
 async function downloadPDF() {
