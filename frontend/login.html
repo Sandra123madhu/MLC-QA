@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Sign In — MLC QA</title>
   <link rel="stylesheet" href="style.css"/>
-  <script src="script.js"></script>
+  <!-- script.js deferred so it never blocks DOM or writes to #msg on load -->
+  <script src="script.js" defer></script>
 </head>
 <body>
 <div class="auth-page">
@@ -20,7 +21,8 @@
   <div class="server-status" id="serverStatus">
     <div class="status-dot-sm dot-warn"></div><span>Checking server...</span>
   </div>
-  <div id="msg" class="msg"></div>
+  <!-- msg div is always empty on load — never pre-populated -->
+  <div id="msg" class="msg" style="display:none"></div>
   <div class="field">
     <label>Email Address</label>
     <input type="email" id="email" placeholder="you@hospital.com" autocomplete="email"/>
@@ -31,64 +33,110 @@
       <input type="password" id="password" placeholder="••••••••" autocomplete="current-password"/>
       <span class="toggle-password" onclick="togglePassword('password', this)">🙈</span>
     </div>
-    <div style="text-align:right;margin-top:5px"><a href="#" onclick="showForgotPrompt()" style="font-size:0.75rem;color:var(--text-muted);font-family:var(--mono)">Forgot password?</a></div>
+    <div style="text-align:right;margin-top:5px">
+      <a href="#" onclick="showForgotPrompt(); return false;" style="font-size:0.75rem;color:var(--text-muted);font-family:var(--mono)">Forgot password?</a>
+    </div>
   </div>
   <button class="btn-auth" id="loginBtn" onclick="doLogin()">Sign In</button>
   <div class="auth-divider">— or —</div>
   <div class="auth-link">Don't have an account? <a href="signup.html">Sign up free</a></div>
 </div>
 </div>
-<script>
-if (localStorage.getItem("mlcqa_token")) { window.location.href = "dashboard.html"; }
-document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
 
-// Clear any stale warning banners when the user interacts with the form
-function clearMsg() {
-  const msg = document.getElementById("msg");
-  if (msg && msg.className.includes("warn")) {
-    msg.className = "msg"; msg.textContent = "";
+<script>
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function showMsg(type, text, autoDismissMs) {
+  const el = document.getElementById("msg");
+  el.className = "msg " + type;
+  el.textContent = text;
+  el.style.display = "";
+  if (autoDismissMs) {
+    setTimeout(() => hideMsg(), autoDismissMs);
   }
 }
-document.getElementById("email").addEventListener("focus", clearMsg);
-document.getElementById("password").addEventListener("focus", clearMsg);
-
-// Show a banner if redirected here because the session expired
-if (new URLSearchParams(window.location.search).get("reason") === "session_expired") {
-    const msg = document.getElementById("msg");
-    msg.className = "msg warn";
-    msg.textContent = "⚠️ Your session has expired. Please sign in again.";
+function hideMsg() {
+  const el = document.getElementById("msg");
+  el.style.display = "none";
+  el.className = "msg";
+  el.textContent = "";
 }
 
-async function doLogin() {
-  const email = document.getElementById("email").value.trim();
-  const password = document.getElementById("password").value;
-  const btn = document.getElementById("loginBtn");
-  const msg = document.getElementById("msg");
-  msg.className = "msg"; msg.textContent = "";
-  if (!email || !password) { msg.className = "msg error"; msg.textContent = "Please enter your email and password."; return; }
-  btn.disabled = true; btn.textContent = "Signing in...";
-  try {
-    const res = await fetch(`${BACKEND_URL}/auth/login`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({email,password}) });
-    const data = await res.json();
-    if (!res.ok) { msg.className="msg error"; msg.textContent=data.detail||"Invalid email or password."; btn.disabled=false; btn.textContent="Sign In"; return; }
-    localStorage.setItem("mlcqa_token", data.token || data.access_token);
-    localStorage.setItem("mlcqa_name", data.name);
+// ── On load: redirect if already logged in ───────────────────────────────────
+window.addEventListener("DOMContentLoaded", () => {
+  const t = localStorage.getItem("mlcqa_token");
+  if (t && t !== "undefined" && t !== "null" && t.trim() !== "") {
     window.location.href = "dashboard.html";
+    return;
+  }
+
+  // Show session-expired banner only when explicitly redirected here
+  const reason = new URLSearchParams(window.location.search).get("reason");
+  if (reason === "session_expired") {
+    showMsg("warn", "⚠️ Your session has expired. Please sign in again.", 8000);
+  }
+
+  // Clear msg when user starts interacting with the form
+  ["email", "password"].forEach(id => {
+    document.getElementById(id).addEventListener("input", hideMsg);
+    document.getElementById(id).addEventListener("focus", hideMsg);
+  });
+
+  // Enter key on password → submit
+  document.getElementById("password").addEventListener("keydown", e => {
+    if (e.key === "Enter") doLogin();
+  });
+});
+
+// ── Login ─────────────────────────────────────────────────────────────────────
+async function doLogin() {
+  const email    = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+  const btn      = document.getElementById("loginBtn");
+
+  hideMsg();
+
+  if (!email || !password) {
+    showMsg("error", "Please enter your email and password.");
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Signing in...";
+
+  try {
+    const res  = await fetch(`${BACKEND_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      showMsg("error", data.detail || "Invalid email or password.");
+      btn.disabled = false;
+      btn.textContent = "Sign In";
+      return;
+    }
+
+    localStorage.setItem("mlcqa_token", data.token || data.access_token);
+    localStorage.setItem("mlcqa_name",  data.name);
+    window.location.href = "dashboard.html";
+
   } catch (err) {
-    btn.disabled = false; btn.textContent = "Sign In";
-    // First, check if server is actually reachable before blaming cold start
+    btn.disabled = false;
+    btn.textContent = "Sign In";
+
+    // Check if server is reachable before blaming cold start
     try {
       const ping = await fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(4000) });
       if (ping.ok) {
-        // Server IS online — this was just a network blip, not a cold start
-        msg.className = "msg error";
-        msg.textContent = "Connection error. Please try again.";
+        showMsg("error", "Connection error. Please try again.");
         return;
       }
     } catch (_) {}
-    // Server is genuinely unreachable — show waking up message and auto-retry
-    msg.className = "msg warn";
-    msg.textContent = "⏳ Server is starting up. Will notify you when ready...";
+
+    // Server unreachable — show waking-up message and auto-retry
+    showMsg("warn", "⏳ Server is starting up. Will notify you when ready...");
     let retryCount = 0;
     const retryInterval = setInterval(async () => {
       retryCount++;
@@ -96,28 +144,27 @@ async function doLogin() {
         const ping = await fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(4000) });
         if (ping.ok) {
           clearInterval(retryInterval);
-          msg.className = "msg success";
-          msg.textContent = "✅ Server is online! You can sign in now.";
+          showMsg("success", "✅ Server is online! You can sign in now.");
           const statusEl = document.getElementById("serverStatus");
           if (statusEl) statusEl.innerHTML = `<div class="status-dot-sm dot-ok"></div><span>Server online</span>`;
         }
       } catch (_) {}
       if (retryCount >= 30) {
         clearInterval(retryInterval);
-        msg.className = "msg error";
-        msg.textContent = "Server took too long to respond. Please refresh and try again.";
+        showMsg("error", "Server took too long to respond. Please refresh and try again.");
       }
     }, 2000);
   }
 }
 
+// ── Forgot password ───────────────────────────────────────────────────────────
 function showForgotPrompt() {
-  // Password reset via email is not yet implemented on the backend.
-  // Show a clear, non-scary info message and auto-dismiss after 10s.
-  const msg = document.getElementById("msg");
-  msg.className = "msg warn";
-  msg.textContent = "⚠️ Automated password reset is not yet available. Please contact your administrator to reset your password.";
-  setTimeout(() => { msg.className = "msg"; msg.textContent = ""; }, 10000);
+  // Email-based password reset is not yet implemented.
+  // Show a clear message and auto-dismiss after 8 seconds.
+  showMsg("warn",
+    "⚠️ Automated password reset is not available yet. Please contact your administrator to reset your password.",
+    8000
+  );
 }
 </script>
 </body>
