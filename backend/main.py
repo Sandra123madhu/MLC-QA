@@ -187,11 +187,29 @@ def get_branding():
 
 @app.post("/auth/forgot-password")
 def forgot_password(req: ForgotPasswordRequest):
+    # ── TODO: Implement email delivery ──────────────────────────────────────
+    # This endpoint currently does NOT send any email.
+    # To fully implement, integrate an email provider such as:
+    #   - Resend:   https://resend.com/docs/send-with-python
+    #   - SendGrid: https://docs.sendgrid.com/for-developers/sending-email/quickstarts-python
+    #
+    # Steps:
+    #   1. pip install resend  (or sendgrid)
+    #   2. Add RESEND_API_KEY (or SENDGRID_API_KEY) to your Render environment variables
+    #   3. Generate a signed reset token (e.g. itsdangerous.URLSafeTimedSerializer)
+    #   4. Send the token as a link: https://your-frontend.com/reset-password.html?token=...
+    #   5. Add a /auth/reset-password endpoint that verifies the token and updates the hash
+    # ────────────────────────────────────────────────────────────────────────
     user = get_user_by_email(req.email)
     if not user:
-        return {"message": "If that email is registered, you will receive a reset link."}
-    print(f"PASSWORD RESET REQUEST FOR: {req.email}")
-    return {"message": "Recovery instructions sent. Check your inbox."}
+        # Always return the same message to prevent email enumeration
+        return {"message": "If that email is registered, you will receive a reset link shortly."}
+    # Email delivery not yet implemented — log for operator awareness
+    print(f"[FORGOT PASSWORD] Reset requested for: {req.email} — email NOT sent (not implemented)")
+    raise HTTPException(
+        status_code=503,
+        detail="Password reset is not available yet. Please contact your administrator to reset your password."
+    )
 
 @app.post("/auth/signup")
 def signup(req: SignupRequest):
