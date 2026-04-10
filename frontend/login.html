@@ -42,6 +42,16 @@
 if (localStorage.getItem("mlcqa_token")) { window.location.href = "dashboard.html"; }
 document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
 
+// Clear any stale warning banners when the user interacts with the form
+function clearMsg() {
+  const msg = document.getElementById("msg");
+  if (msg && msg.className.includes("warn")) {
+    msg.className = "msg"; msg.textContent = "";
+  }
+}
+document.getElementById("email").addEventListener("focus", clearMsg);
+document.getElementById("password").addEventListener("focus", clearMsg);
+
 // Show a banner if redirected here because the session expired
 if (new URLSearchParams(window.location.search).get("reason") === "session_expired") {
     const msg = document.getElementById("msg");
@@ -120,6 +130,8 @@ async function showForgotPrompt() {
       // Show the real server message (e.g. "not available yet, contact admin")
       msg.className = "msg warn";
       msg.textContent = data.detail || "Password reset is currently unavailable. Please contact your administrator.";
+      // Auto-dismiss after 8 seconds so it doesn't linger on the login page
+      setTimeout(() => { if (msg.className.includes("warn")) { msg.className = "msg"; msg.textContent = ""; } }, 8000);
     }
   } catch (err) {
     msg.className = "msg error";
