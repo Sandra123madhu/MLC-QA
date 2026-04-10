@@ -767,7 +767,7 @@ window.addEventListener('DOMContentLoaded', () => {
     statusText.textContent = `Connecting to ${BACKEND_URL.replace('https://','').replace('http://','')}`;
   }
   if (document.getElementById('serverStatus')) {
-    checkServer('serverStatus', null);
+    AnalysisHelpers.checkServer('serverStatus', null);
   }
 });
 </script>
