@@ -13,6 +13,7 @@ const BACKEND_URL = "https://mlc-qa.onrender.com";
 
 const isAuthPage = window.location.pathname.includes("login.html") ||
                    window.location.pathname.includes("signup.html") ||
+                   window.location.pathname.includes("index.html") ||
                    window.location.pathname.endsWith("/");
 
 if (!localStorage.getItem("mlcqa_token") && !isAuthPage) {
@@ -41,9 +42,12 @@ function logout() {
 }
 
 // ── Keep-alive ping every 14 min to prevent Render cold starts ────────────────
-setInterval(() => {
-    fetch(`${BACKEND_URL}/`).catch(() => {});
-}, 14 * 60 * 1000);
+// Only run for authenticated users — no need to ping on the landing/auth pages
+if (!isAuthPage && localStorage.getItem("mlcqa_token")) {
+    setInterval(() => {
+        fetch(`${BACKEND_URL}/`).catch(() => {});
+    }, 14 * 60 * 1000);
+}
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
