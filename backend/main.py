@@ -201,15 +201,12 @@ def forgot_password(req: ForgotPasswordRequest):
     #   5. Add a /auth/reset-password endpoint that verifies the token and updates the hash
     # ────────────────────────────────────────────────────────────────────────
     user = get_user_by_email(req.email)
-    if not user:
-        # Always return the same message to prevent email enumeration
-        return {"message": "If that email is registered, you will receive a reset link shortly."}
     # Email delivery not yet implemented — log for operator awareness
-    print(f"[FORGOT PASSWORD] Reset requested for: {req.email} — email NOT sent (not implemented)")
-    raise HTTPException(
-        status_code=503,
-        detail="Password reset is not available yet. Please contact your administrator to reset your password."
-    )
+    if user:
+        print(f"[FORGOT PASSWORD] Reset requested for: {req.email} — email NOT sent (not implemented)")
+    # Always return the same 200 message to prevent email enumeration
+    # and to avoid showing a scary error banner on the login page
+    return {"message": "If that email is registered, you will receive a reset link shortly. Please also contact your administrator if you need immediate access."}
 
 @app.post("/auth/signup")
 def signup(req: SignupRequest):
