@@ -115,10 +115,11 @@ async function showForgotPrompt() {
     const data = await res.json();
     if (res.ok) {
       msg.className = "msg success";
-      msg.textContent = "Recovery instructions sent (if account exists). Check your email.";
+      msg.textContent = data.message || "Recovery instructions sent (if account exists). Check your email.";
     } else {
-      msg.className = "msg error";
-      msg.textContent = data.detail || "Error sending recovery email.";
+      // Show the real server message (e.g. "not available yet, contact admin")
+      msg.className = "msg warn";
+      msg.textContent = data.detail || "Password reset is currently unavailable. Please contact your administrator.";
     }
   } catch (err) {
     msg.className = "msg error";
