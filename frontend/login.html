@@ -111,32 +111,13 @@ async function doLogin() {
   }
 }
 
-async function showForgotPrompt() {
-  const email = prompt("Enter your email address to reset your password:");
-  if (!email) return;
+function showForgotPrompt() {
+  // Password reset via email is not yet implemented on the backend.
+  // Show a clear, non-scary info message and auto-dismiss after 10s.
   const msg = document.getElementById("msg");
-  msg.className = "msg"; msg.textContent = "Processing request...";
-  try {
-    const res = await fetch(`${BACKEND_URL}/auth/forgot-password`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email })
-    });
-    const data = await res.json();
-    if (res.ok) {
-      msg.className = "msg success";
-      msg.textContent = data.message || "Recovery instructions sent (if account exists). Check your email.";
-    } else {
-      // Show the real server message (e.g. "not available yet, contact admin")
-      msg.className = "msg warn";
-      msg.textContent = data.detail || "Password reset is currently unavailable. Please contact your administrator.";
-      // Auto-dismiss after 8 seconds so it doesn't linger on the login page
-      setTimeout(() => { if (msg.className.includes("warn")) { msg.className = "msg"; msg.textContent = ""; } }, 8000);
-    }
-  } catch (err) {
-    msg.className = "msg error";
-    msg.textContent = "Connection failed. Please try again.";
-  }
+  msg.className = "msg warn";
+  msg.textContent = "⚠️ Automated password reset is not yet available. Please contact your administrator to reset your password.";
+  setTimeout(() => { msg.className = "msg"; msg.textContent = ""; }, 10000);
 }
 </script>
 </body>
