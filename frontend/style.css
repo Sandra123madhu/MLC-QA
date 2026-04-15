@@ -105,6 +105,17 @@ a:hover { opacity:0.8; }
 .status-pill { display:flex; align-items:center; gap:7px; background:var(--surface); border:1px solid var(--border); padding:7px 14px; border-radius:100px; font-size:0.77rem; color:var(--text-2); font-family:var(--mono); }
 .status-dot { width:6px; height:6px; border-radius:50%; background:var(--pass); box-shadow:0 0 6px var(--pass); animation:blink 2.5s infinite; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+@keyframes leafMaxPulse {
+  0%,100% { box-shadow: 0 0 0px 0px rgba(255,255,255,0.0), inset 0 0 0px rgba(255,255,255,0.0); opacity: 1; }
+  50%      { box-shadow: 0 0 10px 3px rgba(255,255,255,0.55), inset 0 0 6px rgba(255,255,255,0.25); opacity: 0.65; }
+}
+.leaf-max-error-cell {
+  animation: leafMaxPulse 1.8s ease-in-out infinite !important;
+  outline: 2px solid rgba(255,255,255,0.6) !important;
+  outline-offset: 1px;
+  z-index: 5;
+  position: relative;
+}
 
 /* ── Section heading ── */
 .section-head { margin-bottom:20px; padding-bottom:14px; border-bottom:1px solid var(--border-subtle); }
