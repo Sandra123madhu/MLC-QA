@@ -528,8 +528,8 @@ def _run_picket_fence(job_id: str, filepath: str, email: str, filename: str, tol
     try:
         print(f"Starting Picket Fence analysis for {filename}")
         _validate_dicom_type(filepath, "picket_fence")
-        pf = PicketFence(filepath)
-        pf.analyze(tolerance=tolerance, action_tolerance=action_tolerance, mlc_type=mlc_type)
+        pf = PicketFence(filepath, mlc=mlc_type)
+        pf.analyze(tolerance=tolerance, action_tolerance=action_tolerance)
 
         # Diagnostic: log pylinac result structure so we know exactly what data is available
         try:
