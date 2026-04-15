@@ -121,6 +121,29 @@
 
     <div id="metricsRow" class="metrics-row" style="display:none;margin-top:20px"></div>
 
+    <!-- ── Leaf Pair Map ─────────────────────────────────────────────────── -->
+    <div id="leafMapSection" style="display:none;margin-top:24px;">
+      <div style="font-size:0.82rem;font-weight:600;color:var(--text-1);margin-bottom:10px;font-family:var(--mono);letter-spacing:0.04em;">
+        LEAF PAIR MAP
+        <span style="font-weight:400;color:var(--text-muted);margin-left:8px;font-size:0.75rem;">— each cell = one leaf pair, colored by error</span>
+      </div>
+      <div id="leafMapGrid" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:10px;"></div>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:8px;">
+        <span style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);">
+          <span style="display:inline-block;width:12px;height:12px;background:rgba(26,171,117,0.85);border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Pass (&lt; action tol)
+        </span>
+        <span style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);">
+          <span style="display:inline-block;width:12px;height:12px;background:rgba(200,137,42,0.90);border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Action (≥ 0.5 mm)
+        </span>
+        <span style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);">
+          <span style="display:inline-block;width:12px;height:12px;background:rgba(201,64,80,0.90);border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Fail (≥ 1.0 mm)
+        </span>
+        <span id="leafMapSummary" style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);margin-left:auto;"></span>
+      </div>
+      <div id="leafMapTooltip" style="display:none;position:fixed;background:#0e1621;border:1px solid rgba(100,160,220,0.25);border-radius:6px;padding:8px 12px;font-family:var(--mono);font-size:0.75rem;color:#a8c4e0;pointer-events:none;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.4);"></div>
+    </div>
+    <!-- ── End Leaf Pair Map ──────────────────────────────────────────────── -->
+
     <div id="plotSection" style="display:none;margin-top:20px"></div>
 
     <div id="chartsSection" style="display:none;margin-top:28px">
@@ -242,6 +265,7 @@ async function runAnalysis() {
     // Start polling for results
     btn.textContent = "Analyzing...";
     resultsDiv.innerHTML = `<p>🔬 Analysis running<span id="dots">.</span></p>`;
+    document.getElementById("leafMapSection").style.display = "none";
     
     await AnalysisHelpers.pollForResult(data.job_id, (result) => {
       handlePicketFenceSuccess(result, fileInput.files[0].name);
@@ -312,7 +336,9 @@ function handlePicketFenceSuccess(result, filename) {
   ].map(m => '<div class="metric-card"><div class="metric-label">' + m.label + '</div><div class="metric-value ' + m.cls + '">' + m.val + (m.unit ? '<span class="metric-unit">' + m.unit + '</span>' : '') + '</div></div>').join('');
   mr.style.display = "grid";
   
-  // Plot
+  // ── Leaf Pair Map ──────────────────────────────────────────────────────────
+  renderLeafMap(chartData, tol);
+  // ──────────────────────────────────────────────────────────────────────────
   if (imgUrl) {
     document.getElementById("plotSection").innerHTML = '<div class="plot-wrap"><img src="' + imgUrl + '" alt="Picket Fence Plot" loading="lazy"/><div class="plot-label">Pylinac · Picket Fence Analysis</div></div>';
     document.getElementById("plotSection").style.display = "block";
@@ -329,6 +355,94 @@ function handlePicketFenceSuccess(result, filename) {
   analyzeBtn.textContent = "Analyze Another File";
 }
 
+
+function renderLeafMap(cd, tol) {
+  const section  = document.getElementById("leafMapSection");
+  const grid     = document.getElementById("leafMapGrid");
+  const tooltip  = document.getElementById("leafMapTooltip");
+  const summary  = document.getElementById("leafMapSummary");
+
+  const leafPairs = (cd.leaf_pairs && cd.leaf_pairs.length > 0) ? cd.leaf_pairs : [];
+  if (leafPairs.length === 0) { section.style.display = "none"; return; }
+
+  const actionTol = tol * 0.5;
+  grid.innerHTML = "";
+
+  let nPass = 0, nAction = 0, nFail = 0;
+
+  leafPairs.forEach(lp => {
+    const err    = Number(lp.max_error) || 0;
+    const label  = lp.leaf_pair != null ? String(lp.leaf_pair) : "?";
+    const isFail = err >= tol;
+    const isAct  = !isFail && err >= actionTol;
+
+    if (isFail) nFail++;
+    else if (isAct) nAction++;
+    else nPass++;
+
+    const bg = isFail
+      ? "rgba(201,64,80,0.90)"
+      : isAct
+        ? "rgba(200,137,42,0.90)"
+        : "rgba(26,171,117,0.80)";
+
+    // Intensity: darken pass cells with low error, brighten ones near limit
+    const intensity = Math.min(err / tol, 1.0);
+    const opacity   = isFail || isAct ? 0.90 : 0.45 + intensity * 0.45;
+
+    const cell = document.createElement("div");
+    cell.style.cssText = [
+      "width:28px", "height:28px", "border-radius:3px",
+      "background:" + bg, "opacity:" + opacity.toFixed(2),
+      "cursor:pointer", "display:flex", "align-items:center",
+      "justify-content:center", "font-family:var(--mono)",
+      "font-size:0.6rem", "color:rgba(255,255,255,0.85)",
+      "font-weight:600", "transition:transform 0.1s, opacity 0.1s",
+      "border: 1px solid rgba(255,255,255,0.08)"
+    ].join(";");
+    cell.textContent = label;
+
+    // Hover: show tooltip
+    cell.addEventListener("mouseenter", e => {
+      cell.style.transform = "scale(1.25)";
+      cell.style.opacity   = "1";
+      cell.style.zIndex    = "10";
+      const statusText = isFail ? "FAIL" : isAct ? "ACTION" : "PASS";
+      const statusColor = isFail ? "#e06070" : isAct ? "#e0a040" : "#40c090";
+      tooltip.innerHTML =
+        "<div style='margin-bottom:4px;font-size:0.8rem;color:var(--text-1)'>Leaf Pair <strong>" + label + "</strong></div>" +
+        "<div>Max Error: <strong style='color:" + statusColor + "'>" + err.toFixed(4) + " mm</strong></div>" +
+        "<div style='margin-top:3px;'>Status: <strong style='color:" + statusColor + "'>" + statusText + "</strong></div>" +
+        "<div style='margin-top:3px;color:rgba(168,196,224,0.6)'>Tolerance: " + tol + " mm &nbsp;|&nbsp; Action: " + actionTol.toFixed(1) + " mm</div>";
+      tooltip.style.display = "block";
+    });
+
+    cell.addEventListener("mousemove", e => {
+      const tx = e.clientX + 14;
+      const ty = e.clientY - 10;
+      tooltip.style.left = tx + "px";
+      tooltip.style.top  = ty + "px";
+    });
+
+    cell.addEventListener("mouseleave", () => {
+      cell.style.transform = "";
+      cell.style.opacity   = opacity.toFixed(2);
+      cell.style.zIndex    = "";
+      tooltip.style.display = "none";
+    });
+
+    grid.appendChild(cell);
+  });
+
+  const total = leafPairs.length;
+  summary.textContent =
+    total + " pairs measured" +
+    (nFail   > 0 ? " · " + nFail   + " fail"   : "") +
+    (nAction > 0 ? " · " + nAction + " action"  : "") +
+    " · " + nPass + " pass";
+
+  section.style.display = "block";
+}
 
 let pfChart1 = null;
 
