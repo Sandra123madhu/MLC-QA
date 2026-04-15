@@ -524,12 +524,12 @@ def _extract_pf_chart_data(pf) -> dict:
         print(f"_extract_pf_chart_data error: {e}")
         return {"error": str(e)}
 
-def _run_picket_fence(job_id: str, filepath: str, email: str, filename: str, tolerance: float = 1.0, action_tolerance: float = 0.5):
+def _run_picket_fence(job_id: str, filepath: str, email: str, filename: str, tolerance: float = 1.0, action_tolerance: float = 0.5, mlc_type: str = "Millennium"):
     try:
         print(f"Starting Picket Fence analysis for {filename}")
         _validate_dicom_type(filepath, "picket_fence")
         pf = PicketFence(filepath)
-        pf.analyze(tolerance=tolerance, action_tolerance=action_tolerance)
+        pf.analyze(tolerance=tolerance, action_tolerance=action_tolerance, mlc_type=mlc_type)
 
         # Diagnostic: log pylinac result structure so we know exactly what data is available
         try:
@@ -554,6 +554,16 @@ def _run_picket_fence(job_id: str, filepath: str, email: str, filename: str, tol
 
         chart_data = _extract_pf_chart_data(pf)
 
+        # Extract MLC info for frontend so it can compute outside-field count correctly
+        num_leaves = 60  # default fallback
+        try:
+            mlc_obj = getattr(pf, "mlc", None)
+            if mlc_obj is not None:
+                num_leaves = int(getattr(mlc_obj, "num_leaves", 60))
+            print(f"[PF] num_leaves resolved to: {num_leaves}")
+        except Exception as _mle:
+            print(f"[PF] Could not read num_leaves: {_mle}")
+
         save_analysis(email=email, test_type="Picket Fence", filename=filename,
                       passed=passed, summary=summary, image_url=image_url,
                       chart_data=chart_data, job_id=job_id)
@@ -564,6 +574,8 @@ def _run_picket_fence(job_id: str, filepath: str, email: str, filename: str, tol
             "analysis_summary": summary,
             "image_url": image_url,
             "chart_data": chart_data,
+            "num_leaves": num_leaves,
+            "mlc_type": mlc_type,
         }
         print(f"Picket Fence analysis completed successfully for {filename}")
     except ValueError as e:
@@ -590,6 +602,7 @@ async def analyze_picket_fence(
     file: UploadFile = File(...),
     tolerance: float = 1.0,
     action_tolerance: float = 0.5,
+    mlc_type: str = "Millennium",
     u=Depends(get_current_user),
 ):
     try:
@@ -618,7 +631,8 @@ async def analyze_picket_fence(
         jobs[job_id] = {"status": "Processing"}
         background_tasks.add_task(_run_picket_fence, job_id=job_id, filepath=filepath,
                                    email=u["email"], filename=file.filename,
-                                   tolerance=tolerance, action_tolerance=action_tolerance)
+                                   tolerance=tolerance, action_tolerance=action_tolerance,
+                                   mlc_type=mlc_type)
         return {"status": "Queued", "job_id": job_id}
         
     except HTTPException:
