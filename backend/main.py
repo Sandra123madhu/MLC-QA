@@ -141,11 +141,16 @@ class ForgotPasswordRequest(BaseModel):
 
 app = FastAPI()
 app.add_middleware(
-    CORSMiddleware, 
-    allow_origins=["*"], 
+    CORSMiddleware,
+    allow_origins=[
+        "https://mlc-qa-1.onrender.com",  # production frontend
+        "http://localhost:3000",           # local dev
+        "http://localhost:5500",           # local dev (Live Server)
+        "http://127.0.0.1:5500",
+    ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"], 
-    allow_headers=["*"]
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
 )
 
 from fastapi.responses import JSONResponse
