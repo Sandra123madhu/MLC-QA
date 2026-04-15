@@ -370,11 +370,15 @@ function renderLeafMap(cd, tol) {
 
   let nPass = 0, nAction = 0, nFail = 0;
 
+  // Find the single leaf pair with the highest error for the pulse highlight
+  const maxErrValue = Math.max(...leafPairs.map(lp => Number(lp.max_error) || 0));
+
   leafPairs.forEach(lp => {
     const err    = Number(lp.max_error) || 0;
     const label  = lp.leaf_pair != null ? String(lp.leaf_pair) : "?";
     const isFail = err >= tol;
     const isAct  = !isFail && err >= actionTol;
+    const isMax  = maxErrValue > 0 && err === maxErrValue;
 
     if (isFail) nFail++;
     else if (isAct) nAction++;
@@ -401,6 +405,11 @@ function renderLeafMap(cd, tol) {
       "border: 1px solid rgba(255,255,255,0.08)"
     ].join(";");
     cell.textContent = label;
+
+    // Mark the cell with the highest error for the slow pulse animation
+    if (isMax) {
+      cell.classList.add("leaf-max-error-cell");
+    }
 
     // Hover: show tooltip
     cell.addEventListener("mouseenter", e => {
