@@ -535,8 +535,6 @@ def _run_picket_fence(job_id: str, filepath: str, email: str, filename: str, tol
         _validate_dicom_type(filepath, "picket_fence")
         pf = PicketFence(filepath, mlc=mlc_type)
         pf.analyze(tolerance=tolerance, action_tolerance=action_tolerance)
-        # NOTE: mlc_type is correctly passed to the constructor above, NOT to analyze().
-        # The pylinac API sets MLC geometry at construction time via the `mlc` parameter.
 
         # Diagnostic: log pylinac result structure so we know exactly what data is available
         try:
