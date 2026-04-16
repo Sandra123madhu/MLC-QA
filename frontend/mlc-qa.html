@@ -98,14 +98,6 @@
         <option value="NovalisHD">Novalis HD MLC</option>
       </select>
     </div>
-    <div style="margin: 0 0 18px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-      <label for="edgeThresholdSlider" style="font-family:var(--mono);font-size:0.82rem;color:var(--text-2);white-space:nowrap;">Edge Leaf Detection:</label>
-      <input type="range" id="edgeThresholdSlider" min="20" max="200" step="5" value="50"
-        style="flex:1;min-width:120px;max-width:200px;accent-color:var(--accent);"
-        oninput="document.getElementById('edgeThresholdVal').textContent=this.value">
-      <span id="edgeThresholdVal" style="font-family:var(--mono);font-size:0.82rem;color:var(--text-1);min-width:28px;">50</span>
-      <span style="font-family:var(--mono);font-size:0.75rem;color:var(--text-muted);">↑ raise if edge/jaw leaves are missing &nbsp;|&nbsp; default 50 &nbsp;|&nbsp; try 80–120 for lateral PF</span>
-    </div>
     <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>Run Picket Fence Analysis</button>
   </div>
 
@@ -255,7 +247,6 @@ async function runAnalysis() {
     formData.append("tolerance", "1.0");
     formData.append("action_tolerance", "0.5");
     formData.append("mlc_type", document.getElementById("mlcTypeSelect").value);
-    formData.append("edge_threshold", document.getElementById("edgeThresholdSlider").value);
 
     btn.textContent = "Uploading...";
     
