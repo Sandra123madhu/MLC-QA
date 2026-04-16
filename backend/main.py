@@ -529,12 +529,12 @@ def _extract_pf_chart_data(pf) -> dict:
         print(f"_extract_pf_chart_data error: {e}")
         return {"error": str(e)}
 
-def _run_picket_fence(job_id: str, filepath: str, email: str, filename: str, tolerance: float = 1.0, action_tolerance: float = 0.5, mlc_type: str = "Millennium"):
+def _run_picket_fence(job_id: str, filepath: str, email: str, filename: str, tolerance: float = 1.0, action_tolerance: float = 0.5, mlc_type: str = "Millennium", edge_threshold: float = 50.0):
     try:
         print(f"Starting Picket Fence analysis for {filename}")
         _validate_dicom_type(filepath, "picket_fence")
         pf = PicketFence(filepath, mlc=mlc_type)
-        pf.analyze(tolerance=tolerance, action_tolerance=action_tolerance)
+        pf.analyze(tolerance=tolerance, action_tolerance=action_tolerance, edge_threshold=edge_threshold)
 
         # Diagnostic: log pylinac result structure so we know exactly what data is available
         try:
@@ -608,6 +608,7 @@ async def analyze_picket_fence(
     tolerance: float = 1.0,
     action_tolerance: float = 0.5,
     mlc_type: str = "Millennium",
+    edge_threshold: float = 50.0,
     u=Depends(get_current_user),
 ):
     try:
@@ -637,7 +638,7 @@ async def analyze_picket_fence(
         background_tasks.add_task(_run_picket_fence, job_id=job_id, filepath=filepath,
                                    email=u["email"], filename=file.filename,
                                    tolerance=tolerance, action_tolerance=action_tolerance,
-                                   mlc_type=mlc_type)
+                                   mlc_type=mlc_type, edge_threshold=edge_threshold)
         return {"status": "Queued", "job_id": job_id}
         
     except HTTPException:
