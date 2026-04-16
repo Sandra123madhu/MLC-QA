@@ -1,983 +1,722 @@
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks, Depends, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
-from jose import JWTError, jwt
-from datetime import datetime, timedelta
-from pylinac import PicketFence, WinstonLutz, Starshot, FieldAnalysis
-import os, shutil, tempfile, uuid, hashlib, hmac
-import re
-import bcrypt
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-# Pre-warm font cache so it doesn't block port binding on cold start
-try:
-    plt.plot([])
-    plt.close()
-except Exception:
-    pass
-import httpx
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Picket Fence — MLC QA</title>
+  <link rel="stylesheet" href="style.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="script.js"></script>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <a href="dashboard.html" class="sidebar-logo">
+      <div class="logo-mark"><svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg></div>
+      <div class="logo-text">MLC<span>QA</span></div>
+    </a>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">Menu</div>
+    <a class="nav-item" href="dashboard.html"><span class="nav-icon">▦</span> Dashboard</a>
+    <a class="nav-item active" href="mlc-qa.html"><span class="nav-icon">⚡</span> Picket Fence</a>
+    <a class="nav-item" href="winston-lutz.html"><span class="nav-icon">◎</span> Winston-Lutz</a>
+    <a class="nav-item" href="starshot.html"><span class="nav-icon">✦</span> Starshot</a>
+    <a class="nav-item" href="congruence.html"><span class="nav-icon">⊞</span> Congruence</a>
+    <a class="nav-item" href="history.html"><span class="nav-icon">≡</span> History</a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="user-chip">
+      <div class="avatar" id="avatarInitial">?</div>
+      <div><div class="user-name" id="sidebarName">Loading...</div><div class="user-role">Medical Physicist</div></div>
+    </div>
+    <button class="logout-btn" onclick="logout()">Sign Out</button>
+  </div>
+</aside>
 
-SECRET_KEY   = os.environ.get("SECRET_KEY", "mlcqa-change-this-in-render")
-ALGORITHM    = "HS256"
-TOKEN_HOURS  = 24
+<main class="main">
+  <div class="page-header">
+    <div class="breadcrumb"><a href="dashboard.html">Dashboard</a> <span>/</span> Picket Fence MLC QA</div>
+    <h1>Picket Fence MLC QA</h1>
+    <p>Analyze multi-leaf collimator positioning accuracy against clinical tolerances</p>
+  </div>
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+  <div class="server-status" id="serverStatus">
+    <div class="status-dot-sm dot-warn"></div><span>Checking server...</span>
+  </div>
 
-if not SUPABASE_URL:
-    raise RuntimeError(
-        "SUPABASE_URL environment variable is not set. "
-        "Add it in Render → Environment → Add Environment Variable."
-    )
-if not SUPABASE_KEY:
-    raise RuntimeError(
-        "SUPABASE_KEY environment variable is not set. "
-        "Add it in Render → Environment → Add Environment Variable."
-    )
+  <div id="wrongTestModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(6,12,24,0.88);backdrop-filter:blur(6px);align-items:center;justify-content:center;">
+    <div style="background:var(--surface);border:1px solid rgba(201,64,80,0.5);border-left:4px solid var(--fail);border-radius:var(--r-lg);padding:32px 28px;max-width:480px;width:92%;box-shadow:0 8px 48px rgba(0,0,0,0.6);">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;">
+        <div style="width:46px;height:46px;border-radius:50%;background:rgba(201,64,80,0.18);border:1.5px solid rgba(201,64,80,0.45);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0;">&#9888;</div>
+        <div>
+          <div style="font-family:var(--mono);font-size:0.95rem;font-weight:600;color:var(--fail);letter-spacing:0.05em;">UNACCEPTABLE DATA — WRONG TEST FILE</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px;font-family:var(--mono);">File type mismatch &mdash; analysis blocked</div>
+        </div>
+      </div>
+      <p style="font-size:0.85rem;color:var(--text-2);line-height:1.7;margin-bottom:10px;">
+        The selected file appears to be a <strong id="wtm-detected-name" style="color:var(--accent);">&#8230;</strong> image, not a <strong id="wtm-page-name" style="color:var(--text-1);">&#8230;</strong> file.
+      </p>
+      <p style="font-size:0.85rem;color:var(--text-2);line-height:1.7;margin-bottom:22px;">
+        Analysing the wrong image type will produce <strong style="color:var(--fail);">clinically meaningless or misleading results</strong>. This action is <strong style="color:var(--fail);">blocked</strong> to protect data integrity. Please upload this file on the correct page:
+      </p>
+      <a id="wtm-correct-link" href="#" style="display:flex;align-items:center;gap:12px;padding:13px 16px;background:rgba(43,159,212,0.08);border:1px solid var(--accent-border);border-radius:var(--r);text-decoration:none;margin-bottom:20px;">
+        <span id="wtm-correct-icon" style="font-size:1.2rem;">&#128194;</span>
+        <div>
+          <div id="wtm-correct-label" style="font-size:0.85rem;font-weight:600;color:var(--accent);">Go to correct test</div>
+          <div id="wtm-correct-sub"   style="font-size:0.74rem;color:var(--text-muted);margin-top:2px;">&#8230;</div>
+        </div>
+        <span style="margin-left:auto;color:var(--text-muted);font-size:1rem;">&#8594;</span>
+      </a>
+      <div style="display:flex;gap:10px;">
+        <button onclick="dismissWrongTestModal()" style="width:100%;padding:11px 0;background:transparent;border:1px solid var(--border);border-radius:var(--r);color:var(--text-muted);font-size:0.83rem;cursor:pointer;font-family:var(--mono);">&#8592; Choose a Different File</button>
+      </div>
+      <p style="font-size:0.71rem;color:var(--text-muted);margin-top:14px;text-align:center;line-height:1.55;">Detection is based on DICOM metadata and filename heuristics. If you believe this is a false positive, please verify the file type before uploading.</p>
+    </div>
+  </div>
 
-# ── Supabase helpers ──────────────────────────────────────────────────────────
+  <div class="upload-card">
+    <div class="upload-zone" id="uploadZone">
+      <input type="file" id="dicomFile" accept=".dcm" onchange="onFileSelected(this)"/>
+      <div class="upload-icon">📂</div>
+      <h3>Drop your DICOM file here</h3>
+      <p>or click to browse — .dcm files only</p>
+      <div class="file-selected" id="fileLabel"></div>
+    </div>
+    <div class="tolerances">
+      <div class="tol-item"><div class="tol-label">Tolerance</div><div class="tol-val">1.0 mm</div></div>
+      <div class="tol-item"><div class="tol-label">Action Tolerance</div><div class="tol-val">0.5 mm</div></div>
+      <div class="tol-item"><div class="tol-label">Input Format</div><div class="tol-val">DICOM</div></div>
+    </div>
+    <div style="margin: 0 0 14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <label for="mlcTypeSelect" style="font-family:var(--mono);font-size:0.82rem;color:var(--text-2);white-space:nowrap;">MLC Type:</label>
+      <select id="mlcTypeSelect" style="font-family:var(--mono);font-size:0.82rem;padding:6px 12px;background:var(--surface);color:var(--text-1);border:1px solid var(--border);border-radius:var(--r);cursor:pointer;">
+        <option value="Millennium">Millennium MLC (60 pairs)</option>
+        <option value="HD MLC">HD MLC (60 pairs, 2.5mm centre)</option>
+        <option value="Agility">Agility MLC (80 pairs)</option>
+        <option value="SRS500">SRS 500 MLC</option>
+        <option value="NovalisHD">Novalis HD MLC</option>
+      </select>
+    </div>
+    <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>Run Picket Fence Analysis</button>
+  </div>
 
-def sb_headers():
-    return {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type": "application/json", "Prefer": "return=representation"}
+  <div class="results-card">
+    <h2>Results</h2>
+    <div id="resultsBody"><p>Upload a file and run the analysis to see results here.</p></div>
 
-def sb_storage_headers():
-    return {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "image/png"}
+    <div id="verdictBanner" class="verdict-banner" style="display:none"></div>
 
-def get_user_by_email(email):
-    with httpx.Client() as c:
-        r = c.get(
-            f"{SUPABASE_URL}/rest/v1/users?email=eq.{email}&limit=1&select=name,email,password_hash",
-            headers=sb_headers()
-        )
-        if r.status_code != 200:
-            return None
-        data = r.json()
-        return data[0] if data else None
+    <div id="gaugeSection" style="display:none;margin-top:20px">
+      <div class="gauge-label-row">
+        <span class="gauge-title">Max MLC Error vs Tolerance</span>
+        <span class="gauge-val" id="gaugeVal"></span>
+      </div>
+      <div class="gauge-track">
+        <div class="gauge-fill" id="gaugeFill"></div>
+        <div class="gauge-marker" id="gaugeMarker" title="Tolerance limit"></div>
+      </div>
+      <div class="gauge-ticks"><span>0 mm</span><span id="gaugeTolLabel"></span><span id="gaugeMaxLabel"></span></div>
+    </div>
 
-def create_user(name, email, password_hash):
-    user = {"name": name, "email": email, "password_hash": password_hash, "created_at": datetime.utcnow().isoformat()}
-    with httpx.Client() as c:
-        r = c.post(f"{SUPABASE_URL}/rest/v1/users", json=user, headers=sb_headers())
-        if r.status_code not in (200, 201):
-            raise RuntimeError(f"Failed to create user: {r.text}")
+    <div id="metricsRow" class="metrics-row" style="display:none;margin-top:20px"></div>
 
-def save_analysis(email, test_type, filename, passed, summary, image_url, chart_data, job_id):
-    analysis = {
-        "email": email,
-        "test_type": test_type,
-        "filename": filename,
-        "passed": passed,
-        "summary": summary,
-        "image_url": image_url,
-        "chart_data": chart_data,
-        "job_id": job_id,
-        "created_at": datetime.utcnow().isoformat()
-    }
-    with httpx.Client() as c:
-        r = c.post(f"{SUPABASE_URL}/rest/v1/analyses", json=analysis, headers=sb_headers())
-        if r.status_code not in (200, 201):
-            print(f"Failed to save analysis: {r.text}")
+    <!-- ── Leaf Pair Map ─────────────────────────────────────────────────── -->
+    <div id="leafMapSection" style="display:none;margin-top:24px;">
+      <div style="font-size:0.82rem;font-weight:600;color:var(--text-1);margin-bottom:10px;font-family:var(--mono);letter-spacing:0.04em;">
+        LEAF PAIR MAP
+        <span style="font-weight:400;color:var(--text-muted);margin-left:8px;font-size:0.75rem;">— each cell = one leaf pair, colored by error</span>
+      </div>
+      <div id="leafMapGrid" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:10px;"></div>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:8px;">
+        <span style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);">
+          <span style="display:inline-block;width:12px;height:12px;background:rgba(26,171,117,0.85);border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Pass (&lt; action tol)
+        </span>
+        <span style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);">
+          <span style="display:inline-block;width:12px;height:12px;background:rgba(200,137,42,0.90);border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Action (≥ 0.5 mm)
+        </span>
+        <span style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);">
+          <span style="display:inline-block;width:12px;height:12px;background:rgba(201,64,80,0.90);border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Fail (≥ 1.0 mm)
+        </span>
+        <span id="leafMapSummary" style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);margin-left:auto;"></span>
+      </div>
+      <div id="leafMapTooltip" style="display:none;position:fixed;background:#0e1621;border:1px solid rgba(100,160,220,0.25);border-radius:6px;padding:8px 12px;font-family:var(--mono);font-size:0.75rem;color:#a8c4e0;pointer-events:none;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.4);"></div>
+    </div>
+    <!-- ── End Leaf Pair Map ──────────────────────────────────────────────── -->
 
-def upload_plot(local_path, filename):
-    with open(local_path, "rb") as f:
-        with httpx.Client() as c:
-            r = c.post(f"{SUPABASE_URL}/storage/v1/object/analyses/{filename}", 
-                      data=f.read(), headers=sb_storage_headers())
-            if r.status_code not in (200, 201):
-                print(f"Failed to upload plot: {r.text}")
-                return None
-            return f"{SUPABASE_URL}/storage/v1/object/public/analyses/{filename}"
+    <div id="plotSection" style="display:none;margin-top:20px"></div>
 
-# ── Auth helpers ──────────────────────────────────────────────────────────────
+    <div id="chartsSection" style="display:none;margin-top:28px">
+      <div class="section-head" style="margin-top:0;border-bottom:1px solid var(--border-subtle);padding-bottom:14px;margin-bottom:20px">
+        <h2 style="font-size:0.88rem;font-weight:600">Analysis Charts</h2>
+      </div>
+      <div class="charts-grid" style="grid-template-columns:1fr">
+        <div class="chart-card" style="padding:20px 16px;">
+          <div class="chart-card-title" style="font-size:0.9rem;font-weight:600;margin-bottom:12px;">Leaf Pair Max Error (mm)</div>
+          <!-- Outer scroll container — full card width, scrolls horizontally -->
+          <div id="leafChartScroll" style="width:100%;overflow-x:auto;overflow-y:hidden;border-radius:4px;">
+            <!-- Inner div sized to exact chart pixel width — forces scroll when wider than card -->
+            <div id="leafChartInner" style="min-width:100%;">
+              <canvas id="leafChart"></canvas>
+            </div>
+          </div>
+          <div id="leafScrollHint" style="display:none;text-align:center;font-size:0.72rem;color:var(--text-muted);font-family:var(--mono);margin-top:8px;letter-spacing:0.04em;">← scroll to view all leaf pairs →</div>
+        </div>
+      </div>
+    </div>
 
-def hash_password(pw: str) -> str:
-    return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+    <div id="pdfSection" style="display:none;margin-top:16px">
+      <button class="btn-outline" onclick="downloadPDF()">&#11015; Download PDF Report</button>
+    </div>
+  </div>
+</main>
 
-def verify_password(plain: str, hashed: str) -> bool:
-    try:
-        if hashed.startswith("$2b$") or hashed.startswith("$2a$"):
-            return bcrypt.checkpw(plain.encode(), hashed.encode())
-        legacy = hmac.new(SECRET_KEY.encode(), plain.encode(), hashlib.sha256).hexdigest()
-        if hmac.compare_digest(legacy, hashed):
-            return True
-        default = hmac.new(b"mlcqa-change-this-in-render", plain.encode(), hashlib.sha256).hexdigest()
-        return hmac.compare_digest(default, hashed)
-    except Exception:
-        return False
-
-bearer_scheme = HTTPBearer()
-
-def create_token(email, name):
-    return jwt.encode({"sub": email, "name": name, "exp": datetime.utcnow() + timedelta(hours=TOKEN_HOURS)},
-                      SECRET_KEY, algorithm=ALGORITHM)
-
-def get_current_user(creds: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
-    try:
-        p = jwt.decode(creds.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-        if not p.get("sub"):
-            raise HTTPException(401, "Invalid token")
-        return {"email": p["sub"], "name": p.get("name")}
-    except JWTError:
-        raise HTTPException(401, "Invalid or expired token")
-
-# ── Pydantic models ───────────────────────────────────────────────────────────
-
-class SignupRequest(BaseModel): 
-    name: str; 
-    email: str; 
-    password: str
-    
-class LoginRequest(BaseModel): 
-    email: str; 
-    password: str
-    
-class ForgotPasswordRequest(BaseModel): 
-    email: str
-
-# ── App setup ─────────────────────────────────────────────────────────────────
-
-app = FastAPI()
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "https://mlc-qa-1.onrender.com",  # production frontend
-        "http://localhost:3000",           # local dev
-        "http://localhost:5500",           # local dev (Live Server)
-        "http://127.0.0.1:5500",
-    ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
-)
-
-from fastapi.responses import JSONResponse
-from fastapi.requests import Request
-
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    print(f"Global exception: {exc}")  # Log the actual error
-    return JSONResponse(
-        status_code=500,
-        content={"status": "Error", "message": f"An unexpected server error occurred: {str(exc)}"},
-        headers={"Access-Control-Allow-Origin": "*"},
-    )
-
-jobs = {}
-
-def cleanup():
-    if len(jobs) > 50:
-        for k in list(jobs.keys())[:len(jobs) - 50]:
-            del jobs[k]
-
-# ── Basic routes ──────────────────────────────────────────────────────────────
-
-@app.get("/")
-@app.head("/")
-def home():
-    return {"status": "MLC QA Backend is Live and listening."}
-
-@app.get("/config/branding")
-def get_branding():
-    return {
-        "institution_name": "University Medical Center",
-        "department": "Department of Medical Physics",
-        "logo_url": "https://img.icons8.com/ios-filled/100/ffffff/hospital-placeholder.png",
-        "report_footer": "CONFIDENTIAL: Clinical Quality Assurance Report"
-    }
-
-# ── Auth routes ───────────────────────────────────────────────────────────────
-
-@app.post("/auth/forgot-password")
-def forgot_password(req: ForgotPasswordRequest):
-    # ── TODO: Implement email delivery ──────────────────────────────────────
-    # This endpoint currently does NOT send any email.
-    # To fully implement, integrate an email provider such as:
-    #   - Resend:   https://resend.com/docs/send-with-python
-    #   - SendGrid: https://docs.sendgrid.com/for-developers/sending-email/quickstarts-python
-    #
-    # Steps:
-    #   1. pip install resend  (or sendgrid)
-    #   2. Add RESEND_API_KEY (or SENDGRID_API_KEY) to your Render environment variables
-    #   3. Generate a signed reset token (e.g. itsdangerous.URLSafeTimedSerializer)
-    #   4. Send the token as a link: https://your-frontend.com/reset-password.html?token=...
-    #   5. Add a /auth/reset-password endpoint that verifies the token and updates the hash
-    # ────────────────────────────────────────────────────────────────────────
-    user = get_user_by_email(req.email)
-    # Email delivery not yet implemented — log for operator awareness
-    if user:
-        print(f"[FORGOT PASSWORD] Reset requested for: {req.email} — email NOT sent (not implemented)")
-    # Always return the same 200 message to prevent email enumeration
-    # and to avoid showing a scary error banner on the login page
-    return {"message": "If that email is registered, you will receive a reset link shortly. Please also contact your administrator if you need immediate access."}
-
-@app.post("/auth/signup")
-def signup(req: SignupRequest):
-    try:
-        if not req.name.strip():
-            raise HTTPException(400, "Name required.")
-        if len(req.password) < 6:
-            raise HTTPException(400, "Password min 6 chars.")
-        if get_user_by_email(req.email):
-            raise HTTPException(400, "Email already registered.")
-        create_user(req.name.strip(), req.email, hash_password(req.password))
-        return {"message": "Account created successfully."}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, f"Signup failed: {str(e)}")
-
-@app.post("/auth/login")
-def login(req: LoginRequest):
-    try:
-        user = get_user_by_email(req.email)
-        pw_hash = user.get("password_hash") if user else None
-        if not user or not pw_hash or not verify_password(req.password, pw_hash):
-            raise HTTPException(401, "Invalid email or password")
-        token = create_token(user["email"], user["name"])
-        return {"token": token, "name": user["name"]}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, f"Login failed: {str(e)}")
-
-# ── Analysis history ─────────────────────────────────────────────────────────
-
-@app.get("/history")
-def get_history(u=Depends(get_current_user)):
-    try:
-        with httpx.Client() as c:
-            r = c.get(f"{SUPABASE_URL}/rest/v1/analyses?email=eq.{u['email']}&order=created_at.desc", headers=sb_headers())
-            if r.status_code != 200:
-                return []
-            return r.json()
-    except Exception as e:
-        print(f"History fetch error: {e}")
-        return []
-
-# ── Job status ───────────────────────────────────────────────────────────────
-
-@app.get("/result/{job_id}")
-def get_result(job_id: str):
-    if job_id not in jobs:
-        return {"status": "Error", "message": "Job not found. The server may have restarted — please re-upload your file."}
-    return jobs[job_id]
-
-# ═════════════════════════════════════════════════════════════════════════════
-# DICOM TYPE VALIDATION  (shared by all analysis endpoints)
-# ═════════════════════════════════════════════════════════════════════════════
-
-_DICOM_SIGNATURES = {
-    "picket_fence": {
-        "filename": [r"picket", r"\bpf[_\-\s]", r"mlc[_\-\s]fence", r"leaf[_\-\s]pos",
-                     r"mlcqa", r"pf_test", r"pf-test"],
-        "header":   [r"picket[\s_\-]?fence", r"PicketFence", r"mlc.*picket", r"picket.*mlc",
-                     r"Leaf\s*\d+\s*(Bank|Pair)", r"DMLC|SMLC", r"MLC QA",
-                     r"leaf[\s_\-]?position", r"mlc_qa", r"mlcfence"],
-    },
-    "starshot": {
-        "filename": [r"starshot", r"star[_\-\s]shot", r"gantry[_\-\s]rot",
-                     r"collimator[_\-\s]rot", r"spoke"],
-        "header":   [r"starshot", r"star[\s_\-]?shot", r"spoke[\s_\-]?angle", r"wobble",
-                     r"collimator.*rotat", r"gantry.*spoke", r"radiation[\s_\-]?spoke"],
-    },
-    "winston_lutz": {
-        "filename": [r"winston", r"\bwl\b", r"wl[_\-\s]", r"[_\-\s]wl",
-                     r"winston[_\-]lutz", r"ball[_\-\s]?bear", r"isocent"],
-        "header":   [r"winston[\s_\-]?lutz", r"WinstonLutz", r"ball[\s_\-]?bearing",
-                     r"\bBB\b.*marker", r"isocenter.*bb", r"bb.*isocenter",
-                     r"gantry.*angle.*bb", r"radiation[\s_\-]?isocent"],
-    },
-    "congruence": {
-        "filename": [r"congruence", r"field[_\-\s]?size", r"light[_\-\s]?field",
-                     r"rad[_\-\s]?light", r"open[_\-\s]?field", r"flatness", r"symmetry"],
-        "header":   [r"congruence", r"field[\s_\-]?analysis", r"light[\s_\-]?field",
-                     r"radiation[\s_\-]?field", r"field[\s_\-]?size", r"flatness",
-                     r"symmetry", r"field[\s_\-]?edge"],
-    },
+<script>
+// Initialize user info
+const name = localStorage.getItem("mlcqa_name");
+if (name) {
+  document.getElementById("sidebarName").textContent = name;
+  document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
 }
 
-_TEST_DISPLAY_NAMES = {
-    "picket_fence": "Picket Fence",
-    "starshot":     "Starshot",
-    "winston_lutz": "Winston-Lutz",
-    "congruence":   "Congruence",
+// Check server status on load
+AnalysisHelpers.checkServer('serverStatus', 'analyzeBtn');
+
+async function onFileSelected(input) {
+  const label = document.getElementById("fileLabel");
+  const btn   = document.getElementById("analyzeBtn");
+
+  if (input.files.length > 0) {
+    const file = input.files[0];
+    label.textContent = "Selected: " + file.name;
+    btn.disabled = false;
+
+    const ok = await checkFileAcceptable(file, "picket_fence", btn);
+    if (!ok) return;
+  } else {
+    label.textContent = "";
+    btn.disabled = true;
+  }
 }
 
-def _score_dicom_type(test_type: str, filename: str, header_text: str) -> int:
-    sig = _DICOM_SIGNATURES[test_type]
-    score = 0
-    for pat in sig["filename"]:
-        if re.search(pat, filename, re.IGNORECASE):
-            score += 3
-    for pat in sig["header"]:
-        if re.search(pat, header_text, re.IGNORECASE):
-            score += 2
-    return score
+const zone = document.getElementById("uploadZone");
+zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("dragover"); });
+zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+zone.addEventListener("drop", e => { e.preventDefault(); zone.classList.remove("dragover"); const dt = new DataTransfer(); Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f)); document.getElementById("dicomFile").files = dt.files; onFileSelected(document.getElementById("dicomFile")); });
 
-def _detect_dicom_type(filepath: str) -> str:
-    """Return the best-matching QA test type for a DICOM file, or 'unknown'."""
-    filename = os.path.basename(filepath).lower()
-    try:
-        with open(filepath, "rb") as f:
-            raw = f.read(8192)
-        header_text = raw.decode("latin-1", errors="replace")
-    except Exception:
-        header_text = ""
-    scores = {t: _score_dicom_type(t, filename, header_text) for t in _DICOM_SIGNATURES}
-    best_type, best_score = max(scores.items(), key=lambda kv: kv[1])
-    return best_type if best_score > 0 else "unknown"
+async function runAnalysis() {
+  const fileInput = document.getElementById("dicomFile");
+  const btn = document.getElementById("analyzeBtn");
+  const resultsDiv = document.getElementById("resultsBody");
+  
+  if (!fileInput.files.length) {
+    alert("Please select a file first.");
+    return;
+  }
+  
+  if (!fileInput.files[0].name.toLowerCase().endsWith(".dcm")) {
+    resultsDiv.innerHTML = `<p class="result-fail">❌ Only .dcm files are supported.</p>`;
+    return;
+  }
 
-def _validate_dicom_type(filepath: str, expected: str) -> None:
-    """
-    Raise ValueError with a clear user-facing message if the DICOM file's
-    detected type does not match *expected*.  Files that score 'unknown'
-    (no recognisable metadata) are allowed through unchanged.
-    """
-    detected = _detect_dicom_type(filepath)
-    if detected == "unknown" or detected == expected:
-        return  # OK
-    detected_name = _TEST_DISPLAY_NAMES.get(detected, detected)
-    expected_name = _TEST_DISPLAY_NAMES.get(expected, expected)
-    raise ValueError(
-        f"Unacceptable data: the uploaded file appears to be a {detected_name} image, "
-        f"not a {expected_name} file. "
-        f"Please upload this file on the {detected_name} test page instead. "
-        f"Analysing the wrong image type produces clinically meaningless results."
-    )
+  // Second-pass safety check — blocks wrong/unidentifiable files even if
+  // the user somehow bypassed the onFileSelected guard
+  const _safetyFile = fileInput.files[0];
+  const _safetyOk = await checkFileAcceptable(_safetyFile, "picket_fence", btn);
+  if (!_safetyOk) return;
 
-# ═════════════════════════════════════════════════════════════════════════════
-# PICKET FENCE
-# ═════════════════════════════════════════════════════════════════════════════
+  try {
+    // Check server first
+    resultsDiv.innerHTML = `<p>⏳ Checking server status...</p>`;
+    const serverReady = await AnalysisHelpers.waitForServer();
+    if (!serverReady) {
+      throw new Error("Server not responding. Please refresh the page and try again.");
+    }
 
-def _extract_pf_chart_data(pf) -> dict:
-    """
-    Extract per-leaf-pair errors from a PicketFence result.
-    Handles both single-bank and dual-bank (Bank A + Bank B) MLCs.
-    Tries multiple pylinac API styles for compatibility.
-    """
-    try:
-        results = pf.results_data()
-        tol_mm  = float(getattr(results, "tolerance_mm", 1.0))
+    // Validate authentication
+    const token = localStorage.getItem("mlcqa_token");
+    if (!token) {
+      window.location.href = "login.html";
+      return;
+    }
 
-        leaf_max_errors = []
-        leaf_pairs      = []
+    // Prepare and send request
+    resultsDiv.innerHTML = `<p>📤 Uploading file...</p>`;
+    const formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+    formData.append("tolerance", "1.0");
+    formData.append("action_tolerance", "0.5");
+    formData.append("mlc_type", document.getElementById("mlcTypeSelect").value);
 
-        # ── Helper: build leaf dict from mlc_errors_by_leaf ───────────────────
-        def _build_from_dict(errors_dict):
-            """Takes dict {leaf_key: [errors_per_picket]} → sorted (key, max_err) list.
-            Keys are normalized to 1-based integers so the frontend 1-60 grid is always correct.
-            Pylinac may emit 0-based (0..59) or centred (-30..29) indices — we re-map them."""
-            def _sort_key(k):
-                s = str(k).strip()
-                try:
-                    return (int(s) if int(s) >= 0 else int(s) + 10000,)
-                except ValueError:
-                    pass
-                m = re.match(r'^(-?\d+)(.*)$', s)
-                if m:
-                    n = int(m.group(1))
-                    return (n if n >= 0 else n + 10000, m.group(2))
-                return (9999, s)
+    btn.textContent = "Uploading...";
+    
+    const data = await AnalysisHelpers.makeApiCall(`${BACKEND_URL}/analyze`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`
+      },
+      body: formData
+    }, 30000);
 
-            # Collect all numeric keys to detect the base offset
-            numeric_keys = []
-            for k in errors_dict.keys():
-                try:
-                    numeric_keys.append(int(str(k).strip()))
-                except ValueError:
-                    pass
+    if (data.status === "Error") {
+      throw new Error(data.message || "Server returned an error");
+    }
 
-            # If the minimum key is ≤ 0 we need to shift so that min → 1
-            shift = 0
-            if numeric_keys:
-                min_key = min(numeric_keys)
-                if min_key <= 0:
-                    shift = 1 - min_key   # e.g. 0-based → +1;  -30-based → +31
+    // Start polling for results
+    btn.textContent = "Analyzing...";
+    resultsDiv.innerHTML = `<p>🔬 Analysis running<span id="dots">.</span></p>`;
+    document.getElementById("leafMapSection").style.display = "none";
+    
+    await AnalysisHelpers.pollForResult(data.job_id, (result) => {
+      handlePicketFenceSuccess(result, fileInput.files[0].name);
+    }, (error) => {
+      throw new Error(error);
+    });
 
-            out = []
-            for k in sorted(errors_dict.keys(), key=_sort_key):
-                errs = [abs(float(e)) for e in errors_dict[k] if e is not None]
-                max_e  = round(max(errs),            4) if errs else 0.0
-                mean_e = round(sum(errs)/len(errs),  4) if errs else 0.0
-                # Apply shift so leaf labels are always 1-based
-                try:
-                    display_label = str(int(str(k).strip()) + shift)
-                except ValueError:
-                    display_label = str(k)
-                out.append((display_label, max_e, mean_e))
-            return out
+  } catch (err) {
+    console.error("Picket Fence analysis error:", err);
+    resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
+    btn.disabled = false;
+    btn.textContent = "Run Picket Fence Analysis";
+  }
+}
 
-        # ── Strategy 1: mlc_errors_by_leaf on results object ─────────────────
-        ebl = getattr(results, "mlc_errors_by_leaf", None)
-        if ebl and isinstance(ebl, dict) and len(ebl) > 0:
-            print(f"PF Strategy 1 (results.mlc_errors_by_leaf): {len(ebl)} keys")
-            pairs_data = _build_from_dict(ebl)
-            for label, max_e, mean_e in pairs_data:
-                leaf_max_errors.append(max_e)
-                leaf_pairs.append({"leaf_pair": label, "max_error": max_e,
-                                   "mean_error": mean_e, "passed": max_e <= tol_mm})
+function handlePicketFenceSuccess(result, filename) {
+  const resultsDiv = document.getElementById("resultsBody");
+  const analyzeBtn = document.getElementById("analyzeBtn");
+  
+  const pass = result.passed;
+  const imgUrl = result.image_url || null;
+  const summary = result.analysis_summary || "";
+  const chartData = result.chart_data || {};
+  
+  // Store result for PDF generation
+  window._lastResult = { 
+    pass, 
+    imgUrl, 
+    summary, 
+    filename: filename, 
+    testType: "Picket Fence", 
+    toleranceText: "MLC tolerance: 1.0mm / action 0.5mm" 
+  };
+  
+  // Raw summary
+  resultsDiv.innerHTML = "<pre>" + summary + "</pre>";
+  
+  // Verdict banner
+  const banner = document.getElementById("verdictBanner");
+  banner.innerHTML = '<div class="verdict-icon">' + (pass ? "✓" : "✗") + '</div><div class="verdict-text"><div class="verdict-label">' + (pass ? "PASS" : "FAIL") + '</div><div class="verdict-sub">' + (pass ? "All MLC leaf pairs within clinical tolerance (1.0 mm)" : "One or more leaf pairs exceed tolerance — action required") + '</div></div>';
+  banner.className = "verdict-banner " + (pass ? "verdict-pass" : "verdict-fail");
+  banner.style.display = "flex";
+  
+  // Gauge + Metrics — read directly from chart_data (pylinac backend values).
+  // Never use regex fallback on summary text — unreliable.
+  const tol = 1.0;
+  const cd = chartData;
+  const realMax    = (cd.max_error    != null && !isNaN(cd.max_error))    ? Number(cd.max_error)    : 0;
+  const realMean   = (cd.mean_error   != null && !isNaN(cd.mean_error))   ? Number(cd.mean_error)   : 0;
+  const realFailed = (cd.failed_leaves != null)                           ? Number(cd.failed_leaves) : (pass ? 0 : 1);
 
-        # ── Strategy 2: pf.mlc has bank_a / bank_b attributes ────────────────
-        if not leaf_max_errors:
-            try:
-                mlc = getattr(pf, "mlc", None)
-                if mlc:
-                    all_errs = {}
-                    # Try bank_a and bank_b separately
-                    for bank_attr, offset in [("bank_a", 0), ("bank_b", 1000)]:
-                        bank = getattr(mlc, bank_attr, None)
-                        if bank is not None:
-                            bank_dict = getattr(bank, "mlc_errors_by_leaf", None)
-                            if bank_dict and isinstance(bank_dict, dict):
-                                for k, v in bank_dict.items():
-                                    all_errs[f"{k}{'A' if offset==0 else 'B'}"] = v
-                    if all_errs:
-                        print(f"PF Strategy 2 (mlc banks): {len(all_errs)} keys")
-                        for label, max_e, mean_e in _build_from_dict(all_errs):
-                            leaf_max_errors.append(max_e)
-                            leaf_pairs.append({"leaf_pair": label, "max_error": max_e,
-                                               "mean_error": mean_e, "passed": max_e <= tol_mm})
-            except Exception as ex:
-                print(f"PF Strategy 2 failed: {ex}")
+  const maxErr   = realMax;
+  const maxScale = Math.max(tol * 1.6, maxErr * 1.2, 0.01);
+  const fill = document.getElementById("gaugeFill");
+  fill.style.width = Math.min((maxErr / maxScale) * 100, 100) + "%";
+  fill.style.background = maxErr > tol ? "var(--fail)" : maxErr > 0.5 ? "var(--warn)" : "var(--pass)";
+  document.getElementById("gaugeMarker").style.left = ((tol / maxScale) * 100) + "%";
+  document.getElementById("gaugeVal").textContent = maxErr.toFixed(3) + " mm";
+  document.getElementById("gaugeTolLabel").textContent = "Tol: " + tol + " mm";
+  document.getElementById("gaugeMaxLabel").textContent = maxScale.toFixed(2) + " mm";
+  document.getElementById("gaugeSection").style.display = "block";
+  const mr = document.getElementById("metricsRow");
+  mr.innerHTML = [
+    {label: "Max MLC Error", val: realMax.toFixed(3), unit: "mm", cls: realMax > tol ? "metric-fail" : "metric-pass"},
+    {label: "Mean Error", val: realMean.toFixed(3), unit: "mm", cls: "metric-accent"},
+    {label: "Failed Leaves", val: String(realFailed), cls: realFailed > 0 ? "metric-fail" : "metric-pass"},
+    {label: "Tolerance", val: "1.0", unit: "mm", cls: "metric-accent"}
+  ].map(m => '<div class="metric-card"><div class="metric-label">' + m.label + '</div><div class="metric-value ' + m.cls + '">' + m.val + (m.unit ? '<span class="metric-unit">' + m.unit + '</span>' : '') + '</div></div>').join('');
+  mr.style.display = "grid";
+  
+  // ── Leaf Pair Map ──────────────────────────────────────────────────────────
+  renderLeafMap(chartData, tol);
+  // ──────────────────────────────────────────────────────────────────────────
+  if (imgUrl) {
+    document.getElementById("plotSection").innerHTML = '<div class="plot-wrap"><img src="' + imgUrl + '" alt="Picket Fence Plot" loading="lazy"/><div class="plot-label">Pylinac · Picket Fence Analysis</div></div>';
+    document.getElementById("plotSection").style.display = "block";
+  }
+  
+  // Charts — make section visible FIRST so offsetWidth is readable, then render.
+  // Double requestAnimationFrame ensures the browser has fully laid out and
+  // painted the section before renderPFCharts reads scrollDiv.offsetWidth.
+  document.getElementById("chartsSection").style.display = "block";
+  document.getElementById("pdfSection").style.display = "block";
+  requestAnimationFrame(() => requestAnimationFrame(() => renderPFCharts(chartData, tol)));
+  
+  analyzeBtn.disabled = false;
+  analyzeBtn.textContent = "Analyze Another File";
+}
 
-        # ── Strategy 3: iterate pf.pickets → guards ───────────────────────────
-        if not leaf_max_errors:
-            try:
-                leaf_errs_dict = {}
-                for picket in pf.pickets:
-                    for guard in picket.guards:
-                        ln  = str(getattr(guard, "leaf_num", getattr(guard, "leaf", "?")))
-                        err = abs(float(getattr(guard, "error", 0)))
-                        if ln not in leaf_errs_dict:
-                            leaf_errs_dict[ln] = []
-                        leaf_errs_dict[ln].append(err)
-                if leaf_errs_dict:
-                    print(f"PF Strategy 3 (picket guards): {len(leaf_errs_dict)} leaves")
-                    for label, max_e, mean_e in _build_from_dict(leaf_errs_dict):
-                        leaf_max_errors.append(max_e)
-                        leaf_pairs.append({"leaf_pair": label, "max_error": max_e,
-                                           "mean_error": mean_e, "passed": max_e <= tol_mm})
-            except Exception as ex:
-                print(f"PF Strategy 3 failed: {ex}")
 
-        # ── Strategy 4: results.picket_results list ───────────────────────────
-        if not leaf_max_errors:
-            try:
-                picket_results = getattr(results, "picket_results", None)
-                if picket_results:
-                    leaf_errs_dict = {}
-                    for pr in picket_results:
-                        leaf_errors_attr = getattr(pr, "leaf_errors", getattr(pr, "errors", None))
-                        if leaf_errors_attr and isinstance(leaf_errors_attr, dict):
-                            for k, v in leaf_errors_attr.items():
-                                errs = v if isinstance(v, list) else [v]
-                                if k not in leaf_errs_dict:
-                                    leaf_errs_dict[k] = []
-                                leaf_errs_dict[k].extend([abs(float(e)) for e in errs if e is not None])
-                    if leaf_errs_dict:
-                        print(f"PF Strategy 4 (picket_results): {len(leaf_errs_dict)} leaves")
-                        for label, max_e, mean_e in _build_from_dict(leaf_errs_dict):
-                            leaf_max_errors.append(max_e)
-                            leaf_pairs.append({"leaf_pair": label, "max_error": max_e,
-                                               "mean_error": mean_e, "passed": max_e <= tol_mm})
-            except Exception as ex:
-                print(f"PF Strategy 4 failed: {ex}")
+function renderLeafMap(cd, tol) {
+  const section  = document.getElementById("leafMapSection");
+  const grid     = document.getElementById("leafMapGrid");
+  const tooltip  = document.getElementById("leafMapTooltip");
+  const summary  = document.getElementById("leafMapSummary");
 
-        # ── Fallback: log all available attributes for debugging ──────────────
-        if not leaf_max_errors:
-            r_attrs = [a for a in dir(results) if not a.startswith("_")]
-            pf_attrs = [a for a in dir(pf) if not a.startswith("_")]
-            print(f"PF: all strategies failed.\nresults attrs: {r_attrs}\npf attrs: {pf_attrs}")
-            # Last resort — try any attribute that looks like it contains leaf errors
-            for attr in r_attrs:
-                val = getattr(results, attr, None)
-                if isinstance(val, dict) and len(val) > 5:
-                    print(f"PF: attempting fallback on results.{attr} ({len(val)} keys)")
-                    try:
-                        for label, max_e, mean_e in _build_from_dict(
-                                {k: (v if isinstance(v, list) else [v]) for k, v in val.items()}):
-                            leaf_max_errors.append(max_e)
-                            leaf_pairs.append({"leaf_pair": label, "max_error": max_e,
-                                               "mean_error": mean_e, "passed": max_e <= tol_mm})
-                        if leaf_max_errors:
-                            print(f"PF: fallback on {attr} succeeded with {len(leaf_max_errors)} leaves")
-                            break
-                    except Exception:
-                        leaf_max_errors.clear(); leaf_pairs.clear()
+  const leafPairs = (cd.leaf_pairs && cd.leaf_pairs.length > 0) ? cd.leaf_pairs : [];
+  if (leafPairs.length === 0) { section.style.display = "none"; return; }
 
-        # ── Summary metrics ───────────────────────────────────────────────────
-        max_error = mean_error = failed_leaves = None
-        try:
-            max_error     = round(float(results.max_error_mm),             4)
-            mean_error    = round(float(results.absolute_median_error_mm), 4)
-            failed_leaves = int(results.failed_leaves) if results.failed_leaves is not None else 0
-        except Exception as e:
-            print(f"PF metrics error: {e}")
+  const actionTol = tol * 0.5;
+  grid.innerHTML = "";
 
-        print(f"PF FINAL: {len(leaf_max_errors)} leaf pairs | max={max_error} mean={mean_error}")
-        return {
-            "leaf_pairs":      leaf_pairs,
-            "max_error":       max_error,
-            "mean_error":      mean_error,
-            "failed_leaves":   failed_leaves,
-            "leaf_max_errors": leaf_max_errors,
+  let nPass = 0, nAction = 0, nFail = 0;
+
+  // Find the single leaf pair with the highest error for the pulse highlight
+  const maxErrValue = Math.max(...leafPairs.map(lp => Number(lp.max_error) || 0));
+
+  leafPairs.forEach(lp => {
+    const err    = Number(lp.max_error) || 0;
+    const label  = lp.leaf_pair != null ? String(lp.leaf_pair) : "?";
+    const isFail = err >= tol;
+    const isAct  = !isFail && err >= actionTol;
+    const isMax  = maxErrValue > 0 && err === maxErrValue;
+
+    if (isFail) nFail++;
+    else if (isAct) nAction++;
+    else nPass++;
+
+    const bg = isFail
+      ? "rgba(201,64,80,0.90)"
+      : isAct
+        ? "rgba(200,137,42,0.90)"
+        : "rgba(26,171,117,0.80)";
+
+    // Intensity: darken pass cells with low error, brighten ones near limit
+    const intensity = Math.min(err / tol, 1.0);
+    const opacity   = isFail || isAct ? 0.90 : 0.45 + intensity * 0.45;
+
+    const cell = document.createElement("div");
+    cell.style.cssText = [
+      "width:28px", "height:28px", "border-radius:3px",
+      "background:" + bg, "opacity:" + opacity.toFixed(2),
+      "cursor:pointer", "display:flex", "align-items:center",
+      "justify-content:center", "font-family:var(--mono)",
+      "font-size:0.6rem", "color:rgba(255,255,255,0.85)",
+      "font-weight:600", "transition:transform 0.1s, opacity 0.1s",
+      "border: 1px solid rgba(255,255,255,0.08)"
+    ].join(";");
+    cell.textContent = label;
+
+    // Mark the cell with the highest error for the slow pulse animation
+    if (isMax) {
+      cell.classList.add("leaf-max-error-cell");
+    }
+
+    // Hover: show tooltip
+    cell.addEventListener("mouseenter", e => {
+      cell.style.transform = "scale(1.25)";
+      cell.style.opacity   = "1";
+      cell.style.zIndex    = "10";
+      const statusText = isFail ? "FAIL" : isAct ? "ACTION" : "PASS";
+      const statusColor = isFail ? "#e06070" : isAct ? "#e0a040" : "#40c090";
+      tooltip.innerHTML =
+        "<div style='margin-bottom:4px;font-size:0.8rem;color:var(--text-1)'>Leaf Pair <strong>" + label + "</strong></div>" +
+        "<div>Max Error: <strong style='color:" + statusColor + "'>" + err.toFixed(4) + " mm</strong></div>" +
+        "<div style='margin-top:3px;'>Status: <strong style='color:" + statusColor + "'>" + statusText + "</strong></div>" +
+        "<div style='margin-top:3px;color:rgba(168,196,224,0.6)'>Tolerance: " + tol + " mm &nbsp;|&nbsp; Action: " + actionTol.toFixed(1) + " mm</div>";
+      tooltip.style.display = "block";
+    });
+
+    cell.addEventListener("mousemove", e => {
+      const tx = e.clientX + 14;
+      const ty = e.clientY - 10;
+      tooltip.style.left = tx + "px";
+      tooltip.style.top  = ty + "px";
+    });
+
+    cell.addEventListener("mouseleave", () => {
+      cell.style.transform = "";
+      cell.style.opacity   = opacity.toFixed(2);
+      cell.style.zIndex    = "";
+      tooltip.style.display = "none";
+    });
+
+    grid.appendChild(cell);
+  });
+
+  const total = leafPairs.length;
+  summary.textContent =
+    total + " pairs measured" +
+    (nFail   > 0 ? " · " + nFail   + " fail"   : "") +
+    (nAction > 0 ? " · " + nAction + " action"  : "") +
+    " · " + nPass + " pass";
+
+  section.style.display = "block";
+}
+
+let pfChart1 = null;
+
+function renderPFCharts(cd, tol) {
+  const chartsSection = document.getElementById("chartsSection");
+  const scrollDiv  = document.getElementById("leafChartScroll");
+  const innerDiv   = document.getElementById("leafChartInner");
+  const hint       = document.getElementById("leafScrollHint");
+
+  // ── 1. Extract raw data from backend ────────────────────────────────────
+  let rawErrors = (cd.leaf_max_errors && cd.leaf_max_errors.length > 0) ? cd.leaf_max_errors : [];
+  let rawLabels = (cd.leaf_pairs && cd.leaf_pairs.length > 0)
+    ? cd.leaf_pairs.map(lp => String(lp.leaf_pair))
+    : rawErrors.map((_, i) => String(i + 1));
+
+  console.log('[PF Chart] leaf count:', rawLabels.length,
+              '| first 5:', rawLabels.slice(0,5).join(','),
+              '| last 5:',  rawLabels.slice(-5).join(','));
+
+  // ── 1b. Normalise to 1-based if pylinac sent 0-based or centred keys ────
+  const _numericRaw = rawLabels.map(l => parseInt(l, 10)).filter(n => !isNaN(n));
+  const _minLabel   = _numericRaw.length ? Math.min(..._numericRaw) : 1;
+  const _labelShift = _minLabel <= 0 ? (1 - _minLabel) : 0;
+  if (_labelShift > 0) {
+    console.log('[PF Chart] Shifting labels by +' + _labelShift + ' (min was ' + _minLabel + ')');
+    rawLabels = rawLabels.map(l => { const n = parseInt(l, 10); return isNaN(n) ? l : String(n + _labelShift); });
+  }
+
+  if (rawErrors.length === 0) {
+    let errEl = document.getElementById("leafChartError");
+    if (!errEl) { errEl = document.createElement("p"); errEl.id = "leafChartError"; chartsSection.appendChild(errEl); }
+    errEl.style.cssText = "color:var(--warn);font-size:0.82rem;font-family:var(--mono);padding:12px";
+    errEl.textContent = "⚠ No per-leaf data returned from server. Check server logs for extraction details.";
+    return;
+  }
+
+  // ── 2. Only plot MEASURED leaves (those inside the radiation field) ───────
+  // Pylinac's _leaves_in_view() only measures leaves whose centre falls within
+  // the exposed field — outer leaves of a Millennium MLC (e.g. pairs 1-9 and
+  // 52-60 for a 22cm field) are physically outside the beam and produce no data.
+  // Showing 60 bars with most empty is misleading; we show only what was measured.
+  const leafLabels = [];
+  const leafErrors = [];
+  const leafColors = [];
+
+  rawLabels.forEach((lbl, i) => {
+    const v = (rawErrors[i] == null || isNaN(rawErrors[i])) ? 0 : Number(rawErrors[i]);
+    leafLabels.push(lbl);
+    leafErrors.push(v);
+    leafColors.push(
+      v > tol       ? "rgba(201,64,80,0.85)"  :
+      v > tol * 0.5 ? "rgba(200,137,42,0.80)" :
+                      "rgba(26,171,117,0.75)"
+    );
+  });
+
+  const totalLeaves    = leafLabels.length;
+  const maxMeasuredErr = leafErrors.length > 0 ? Math.max(...leafErrors) : 0;
+
+  // Use num_leaves from backend (pylinac-detected) so the outside-field count
+  // is correct for HD MLC, Agility, etc. — fall back to 60 only if not supplied.
+  const totalMLC = (cd.num_leaves != null && cd.num_leaves > 0) ? cd.num_leaves : 60;
+
+  // ── 3. Inject info badge + subtitle above the chart ──────────────────────
+  // Shows measured range and explains why outer leaves are absent.
+  const numericAll = leafLabels.map(l => parseInt(l, 10)).filter(n => !isNaN(n));
+  const minLeaf = numericAll.length ? Math.min(...numericAll) : "?";
+  const maxLeaf = numericAll.length ? Math.max(...numericAll) : "?";
+  const outsideCount = totalMLC - totalLeaves;
+
+  let infoEl = document.getElementById("leafChartInfo");
+  if (!infoEl) {
+    infoEl = document.createElement("div");
+    infoEl.id = "leafChartInfo";
+    // Insert before the scroll container
+    scrollDiv.parentNode.insertBefore(infoEl, scrollDiv);
+  }
+  infoEl.innerHTML =
+    '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">' +
+      '<span style="font-family:var(--mono);font-size:0.78rem;color:var(--text-2);">' +
+        '<span style="color:rgba(26,171,117,0.9);margin-right:4px;">■</span>' +
+        'Measured: <strong style="color:var(--text-1);">' + totalLeaves + ' of ' + totalMLC + ' leaf pairs</strong>' +
+        ' (pairs&nbsp;' + minLeaf + '–' + maxLeaf + ')' +
+      '</span>' +
+      (outsideCount > 0
+        ? '<span style="font-family:var(--mono);font-size:0.78rem;color:var(--text-muted);padding:3px 8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:4px;">' +
+            'ℹ ' + outsideCount + ' outer leaf pair' + (outsideCount > 1 ? 's' : '') +
+            ' not measured — outside beam field (normal)' +
+          '</span>'
+        : '') +
+    '</div>';
+
+  // ── 4. Canvas sizing ──────────────────────────────────────────────────────
+  const PX_PER_LEAF = 22;
+  const Y_AXIS_W    = 70;
+  const minWidth    = totalLeaves * PX_PER_LEAF + Y_AXIS_W;
+  const cardWidth   = (scrollDiv && scrollDiv.offsetWidth > 0)
+                      ? scrollDiv.offsetWidth : window.innerWidth * 0.75;
+  const needsScroll = minWidth > cardWidth;
+  const chartWidth  = needsScroll ? minWidth : cardWidth;
+  const chartHeight = 380;
+
+  // ── 5. Destroy old chart, recreate canvas ────────────────────────────────
+  if (pfChart1) { pfChart1.destroy(); pfChart1 = null; }
+  innerDiv.innerHTML = "";
+
+  const newCanvas = document.createElement("canvas");
+  newCanvas.id = "leafChart";
+  newCanvas.style.display = "block";
+
+  if (needsScroll) {
+    newCanvas.width        = chartWidth;
+    newCanvas.height       = chartHeight;
+    newCanvas.style.width  = chartWidth  + "px";
+    newCanvas.style.height = chartHeight + "px";
+    innerDiv.style.width   = chartWidth  + "px";
+    innerDiv.style.height  = chartHeight + "px";
+    if (scrollDiv) scrollDiv.style.height = (chartHeight + 20) + "px";
+    if (hint) hint.style.display = "block";
+  } else {
+    newCanvas.style.width  = "100%";
+    newCanvas.style.height = chartHeight + "px";
+    innerDiv.style.width   = "100%";
+    innerDiv.style.height  = chartHeight + "px";
+    if (scrollDiv) scrollDiv.style.height = (chartHeight + 20) + "px";
+    if (hint) hint.style.display = "none";
+  }
+  innerDiv.appendChild(newCanvas);
+
+  // ── 6. Build chart ────────────────────────────────────────────────────────
+  pfChart1 = new Chart(newCanvas, {
+    type: "bar",
+    data: {
+      labels: leafLabels,
+      datasets: [
+        {
+          label: "Max Error (mm)",
+          data: leafErrors,
+          backgroundColor: leafColors,
+          borderWidth: 0,
+          barPercentage: 0.75,
+          categoryPercentage: 0.85,
+          order: 2
+        },
+        {
+          label: "Tolerance (" + tol + " mm)",
+          data: Array(totalLeaves).fill(tol),
+          type: "line",
+          borderColor: "rgba(255,180,50,0.85)",
+          borderDash: [6, 4],
+          pointRadius: 0,
+          borderWidth: 2,
+          fill: false,
+          order: 1,
+          yAxisID: "yTol"
         }
-    except Exception as e:
-        print(f"_extract_pf_chart_data error: {e}")
-        return {"error": str(e)}
-
-def _run_picket_fence(job_id: str, filepath: str, email: str, filename: str, tolerance: float = 1.0, action_tolerance: float = 0.5, mlc_type: str = "Millennium"):
-    try:
-        print(f"Starting Picket Fence analysis for {filename}")
-        _validate_dicom_type(filepath, "picket_fence")
-        pf = PicketFence(filepath, mlc=mlc_type)
-        pf.analyze(tolerance=tolerance, action_tolerance=action_tolerance)
-
-        # Diagnostic: log pylinac result structure so we know exactly what data is available
-        try:
-            _res = pf.results_data()
-            _ebl = getattr(_res, "mlc_errors_by_leaf", None)
-            print(f"[PF DIAG] results_data type: {type(_res).__name__}")
-            print(f"[PF DIAG] mlc_errors_by_leaf: {type(_ebl).__name__ if _ebl is not None else 'None'}, len={len(_ebl) if isinstance(_ebl, dict) else 'N/A'}")
-            if isinstance(_ebl, dict) and len(_ebl) > 0:
-                sample_keys = list(_ebl.keys())[:5]
-                print(f"[PF DIAG] sample keys: {sample_keys}")
-                print(f"[PF DIAG] sample values type: {type(list(_ebl.values())[0]).__name__}")
-            print(f"[PF DIAG] all result attrs: {[a for a in dir(_res) if not a.startswith('_')]}")
-        except Exception as _de:
-            print(f"[PF DIAG] diagnostic failed: {_de}")
-
-        summary   = pf.results()
-        passed    = pf.passed
-
-        plot_path = os.path.join(tempfile.gettempdir(), f"pf_{job_id}.png")
-        pf.save_analyzed_image(filename=plot_path)
-        image_url = upload_plot(plot_path, f"pf_{job_id}.png")
-
-        chart_data = _extract_pf_chart_data(pf)
-
-        # Extract MLC info for frontend so it can compute outside-field count correctly
-        num_leaves = 60  # default fallback
-        try:
-            mlc_obj = getattr(pf, "mlc", None)
-            if mlc_obj is not None:
-                num_leaves = int(getattr(mlc_obj, "num_leaves", 60))
-            print(f"[PF] num_leaves resolved to: {num_leaves}")
-        except Exception as _mle:
-            print(f"[PF] Could not read num_leaves: {_mle}")
-
-        save_analysis(email=email, test_type="Picket Fence", filename=filename,
-                      passed=passed, summary=summary, image_url=image_url,
-                      chart_data=chart_data, job_id=job_id)
-
-        jobs[job_id] = {
-            "status": "Success",
-            "passed": passed,
-            "analysis_summary": summary,
-            "image_url": image_url,
-            "chart_data": chart_data,
-            "num_leaves": num_leaves,
-            "mlc_type": mlc_type,
+      ]
+    },
+    options: {
+      responsive: !needsScroll,
+      maintainAspectRatio: false,
+      animation: false,
+      layout: { padding: { top: 10, right: 20, bottom: 10, left: 10 } },
+      plugins: {
+        legend: {
+          display: true,
+          labels: {
+            color: "#8ba4c0",
+            font: { family: "'IBM Plex Mono'", size: 11 },
+            padding: 16,
+            boxWidth: 20
+          }
+        },
+        tooltip: {
+          callbacks: {
+            title: items => "Leaf Pair: " + items[0].label,
+            label: item => {
+              if (item.dataset.label.startsWith("Tolerance"))
+                return "Tolerance: " + tol + " mm";
+              return "Max Error: " + item.raw.toFixed(4) + " mm";
+            }
+          }
         }
-        print(f"Picket Fence analysis completed successfully for {filename}")
-    except ValueError as e:
-        print(f"Picket Fence validation error: {e}")
-        jobs[job_id] = {"status": "Error", "message": str(e)}
-    except Exception as e:
-        print(f"Picket Fence analysis failed: {e}")
-        jobs[job_id] = {"status": "Error", "message": f"Picket Fence analysis failed: {e}"}
-    finally:
-        try:
-            os.remove(filepath)
-        except Exception:
-            pass
-        try:
-            plot_path = os.path.join(tempfile.gettempdir(), f"pf_{job_id}.png")
-            os.remove(plot_path)
-        except Exception:
-            pass
-        cleanup()
-
-@app.post("/analyze")
-async def analyze_picket_fence(
-    background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    tolerance: float = 1.0,
-    action_tolerance: float = 0.5,
-    mlc_type: str = "Millennium",
-    u=Depends(get_current_user),
-):
-    try:
-        # Validate file
-        if not file.filename:
-            raise HTTPException(400, "No file provided.")
-            
-        if not file.filename.lower().endswith(".dcm"):
-            raise HTTPException(400, "Only .dcm DICOM files are supported.")
-
-        # Read and validate file content
-        contents = await file.read()
-        if len(contents) == 0:
-            raise HTTPException(400, "File is empty.")
-            
-        if len(contents) > 50 * 1024 * 1024:  # 50MB limit
-            raise HTTPException(400, "File too large. Maximum size is 50MB.")
-
-        job_id   = str(uuid.uuid4())
-        tmp_dir  = tempfile.gettempdir()
-        filepath = os.path.join(tmp_dir, f"pf_{job_id}.dcm")
-
-        with open(filepath, "wb") as f:
-            f.write(contents)
-
-        jobs[job_id] = {"status": "Processing"}
-        background_tasks.add_task(_run_picket_fence, job_id=job_id, filepath=filepath,
-                                   email=u["email"], filename=file.filename,
-                                   tolerance=tolerance, action_tolerance=action_tolerance,
-                                   mlc_type=mlc_type)
-        return {"status": "Queued", "job_id": job_id}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, f"Upload failed: {str(e)}")
-
-# ═════════════════════════════════════════════════════════════════════════════
-# STARSHOT
-# ═════════════════════════════════════════════════════════════════════════════
-
-def _extract_starshot_chart_data(ss) -> dict:
-    try:
-        results = ss.results_data()
-        spokes = []
-        try:
-            for spoke in results.spokes:
-                spokes.append({
-                    "angle":       round(float(spoke.angle), 2),
-                    "residual_mm": round(float(spoke.residual_mm), 4),
-                })
-        except Exception:
-            pass
-
-        wobble = None
-        try:
-            wobble = round(float(results.circle_profile.radius), 4)
-        except Exception:
-            try:
-                wobble = round(float(results.wobble_radius_mm), 4)
-            except Exception:
-                pass
-
-        radial_profile = []
-        try:
-            for i, val in enumerate(results.circle_profile.values):
-                radial_profile.append({
-                    "index": i,
-                    "value": round(float(val), 4),
-                })
-        except Exception:
-            pass
-
-        return {"spokes": spokes, "wobble_radius_mm": wobble, "radial_profile": radial_profile}
-    except Exception as e:
-        return {"error": str(e)}
-
-def _run_starshot(job_id: str, filepath: str, email: str, filename: str):
-    try:
-        _validate_dicom_type(filepath, "starshot")
-        ss = Starshot(filepath)
-        ss.analyze()
-
-        summary   = ss.results()
-        passed    = ss.passed
-
-        plot_path = os.path.join(tempfile.gettempdir(), f"ss_{job_id}.png")
-        ss.save_analyzed_image(filename=plot_path)
-        image_url = upload_plot(plot_path, f"ss_{job_id}.png")
-
-        chart_data = _extract_starshot_chart_data(ss)
-
-        save_analysis(email=email, test_type="Starshot", filename=filename,
-                      passed=passed, summary=summary, image_url=image_url,
-                      chart_data=chart_data, job_id=job_id)
-
-        jobs[job_id] = {
-            "status": "Success",
-            "passed": passed,
-            "analysis_summary": summary,
-            "image_url": image_url,
-            "chart_data": chart_data,
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: "#a8c4e0",
+            font: { family: "'IBM Plex Mono'", size: 9 },
+            maxRotation: 90,
+            minRotation: 60,
+            autoSkip: false
+          },
+          grid: { color: "rgba(255,255,255,0.05)" },
+          title: {
+            display: true,
+            text: "Leaf Pair (" + minLeaf + " – " + maxLeaf + "  |  measured in field)",
+            color: "#8ba4c0",
+            font: { family: "'IBM Plex Mono'", size: 11, weight: "600" },
+            padding: { top: 6 }
+          }
+        },
+        y: {
+          ticks: {
+            color: "#7a9abd",
+            font: { family: "'IBM Plex Mono'", size: 10 }
+          },
+          grid: { color: "rgba(255,255,255,0.05)" },
+          title: {
+            display: true,
+            text: "Error (mm)",
+            color: "#8ba4c0",
+            font: { family: "'IBM Plex Mono'", size: 11, weight: "600" }
+          },
+          min: 0,
+          max: Math.max(maxMeasuredErr * 1.5, tol * 0.25)
+        },
+        yTol: {
+          display: false,
+          min: 0,
+          max: tol
         }
-    except ValueError as e:
-        print(f"Starshot validation error: {e}")
-        jobs[job_id] = {"status": "Error", "message": str(e)}
-    except Exception as e:
-        jobs[job_id] = {"status": "Error", "message": f"Starshot analysis failed: {e}"}
-    finally:
-        try:
-            os.remove(filepath)
-        except Exception:
-            pass
-        try:
-            plot_path = os.path.join(tempfile.gettempdir(), f"ss_{job_id}.png")
-            os.remove(plot_path)
-        except Exception:
-            pass
-        cleanup()
+      }
+    }
+  });
+}
 
-@app.post("/analyze/starshot")
-async def analyze_starshot(
-    background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    u=Depends(get_current_user),
-):
-    try:
-        ext = file.filename.lower().rsplit(".", 1)[-1]
-        if ext not in ("dcm", "zip"):
-            raise HTTPException(400, "Only .dcm or .zip files are supported for Starshot.")
+async function downloadPDF() {
+  const r = window._lastResult; if (!r) return; await generatePDF(r);
+}
+async function generatePDF(r) {
+  const { jsPDF } = window.jspdf; const doc = new jsPDF({ orientation:"portrait", unit:"mm", format:"a4" }); const W=210, M=16;
+  doc.setFillColor(15,30,55); doc.rect(0,0,W,26,"F"); doc.setFillColor(0,175,215); doc.rect(0,0,5,26,"F");
+  doc.setFont("helvetica","bold"); doc.setFontSize(13); doc.setTextColor(255,255,255);
+  doc.text(`MLC QA \u2014 ${r.testType||"Analysis"} Report`, M+6, 11);
+  doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(180,210,230);
+  const now = new Date().toLocaleString("en-GB",{dateStyle:"long",timeStyle:"short"});
+  doc.text(`Generated: ${now}`, M+6, 19); doc.text(`File: ${r.filename}`, M+6, 23.5);
+  let y=34;
+  doc.setFillColor(...(r.pass?[0,168,107]:[195,45,70])); doc.roundedRect(M,y,W-M*2,13,2,2,"F");
+  doc.setFont("helvetica","bold"); doc.setFontSize(11); doc.setTextColor(255,255,255);
+  doc.text(r.pass?"\u2713  PASS":"\u2717  FAIL", M+5, y+9);
+  doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(255,255,255);
+  doc.text(r.toleranceText||(r.pass?"Within clinical tolerance":"Outside clinical tolerance"), M+36, y+9);
+  y+=20;
+  if (r.imgUrl) { try { const imgData=await fetchImageAsBase64(r.imgUrl); const imgW=W-M*2; const imgH=imgW*0.5; doc.setDrawColor(180,200,220); doc.setLineWidth(0.3); doc.rect(M,y,imgW,imgH); doc.addImage(imgData,"PNG",M,y,imgW,imgH); y+=imgH+5; doc.setFont("helvetica","italic"); doc.setFontSize(7.5); doc.setTextColor(80,105,135); doc.text(`Figure: Pylinac ${r.testType||""} \u2014 Analyzed Image`,M,y); y+=9; } catch { y+=4; } }
+  doc.setDrawColor(180,200,220); doc.setLineWidth(0.4); doc.line(M,y,W-M,y); y+=7;
+  const summaryLines=doc.splitTextToSize(r.summary,W-M*2-10); const boxH=Math.min(summaryLines.length*5.4+16,230);
+  doc.setFillColor(245,248,252); doc.roundedRect(M,y,W-M*2,boxH,2,2,"F"); doc.setDrawColor(200,215,230); doc.setLineWidth(0.3); doc.roundedRect(M,y,W-M*2,boxH,2,2,"S");
+  y+=7; doc.setFont("helvetica","bold"); doc.setFontSize(8.5); doc.setTextColor(15,40,80); doc.text("ANALYSIS SUMMARY",M+5,y); y+=7;
+  doc.setFont("courier","normal"); doc.setFontSize(8.2); doc.setTextColor(20,45,80);
+  summaryLines.forEach(line => { if(y>272){doc.addPage();y=18;doc.setFillColor(245,248,252);doc.roundedRect(M,y-4,W-M*2,240,2,2,"F");doc.setFont("courier","normal");doc.setFontSize(8.2);doc.setTextColor(20,45,80);} doc.text(line,M+5,y); y+=5.4; });
+  const pages=doc.internal.getNumberOfPages();
+  for(let i=1;i<=pages;i++){doc.setPage(i);doc.setFillColor(235,241,248);doc.rect(0,284,W,13,"F");doc.setDrawColor(180,200,220);doc.setLineWidth(0.3);doc.line(0,284,W,284);doc.setFont("helvetica","normal");doc.setFontSize(7);doc.setTextColor(60,85,120);doc.text("MLC QA Platform  \u00B7  For clinical physics use only  \u00B7  Not for diagnostic use",M,291);doc.text(`Page ${i} of ${pages}`,W-28,291);}
+  const prefix=r.testType?r.testType.replace(/\s+/g,"_").toUpperCase():"REPORT";
+  doc.save(`MLCQA_${prefix}_${r.filename.replace(/\.[^.]+$/,"")}_${Date.now()}.pdf`);
+}
+async function fetchImageAsBase64(url) {
+  const res=await fetch(url); const blob=await res.blob();
+  return new Promise((resolve,reject) => { const reader=new FileReader(); reader.onloadend=()=>resolve(reader.result); reader.onerror=reject; reader.readAsDataURL(blob); });
+}
+function logout() { localStorage.removeItem("mlcqa_token"); localStorage.removeItem("mlcqa_name"); window.location.href="index.html"; }
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-        job_id   = str(uuid.uuid4())
-        tmp_dir  = tempfile.gettempdir()
-        filepath = os.path.join(tmp_dir, f"ss_{job_id}.{ext}")
-
-        contents = await file.read()
-        if len(contents) > 50 * 1024 * 1024:
-            raise HTTPException(400, "File too large. Maximum size is 50MB.")
-            
-        with open(filepath, "wb") as f:
-            f.write(contents)
-
-        jobs[job_id] = {"status": "Processing"}
-        background_tasks.add_task(_run_starshot, job_id=job_id, filepath=filepath,
-                                   email=u["email"], filename=file.filename)
-        return {"status": "Queued", "job_id": job_id}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, f"Upload failed: {str(e)}")
-
-# ═════════════════════════════════════════════════════════════════════════════
-# WINSTON-LUTZ
-# ═════════════════════════════════════════════════════════════════════════════
-
-def _extract_wl_chart_data(wl) -> dict:
-    try:
-        results = wl.results_data()
-        images  = []
-        try:
-            for img in results.image_details:
-                images.append({
-                    "gantry_angle":     round(float(img.gantry_angle), 1),
-                    "bb_offset_mm":     round(float(img.bb_offset_mm), 4),
-                    "passed":           bool(img.passed),
-                })
-        except Exception:
-            pass
-
-        max_offset  = None
-        mean_offset = None
-        try:
-            max_offset  = round(float(results.max_bb_deviation_2d), 4)
-            mean_offset = round(float(results.mean_bb_deviation_2d), 4)
-        except Exception:
-            pass
-
-        return {"images": images, "max_offset_mm": max_offset, "mean_offset_mm": mean_offset}
-    except Exception as e:
-        return {"error": str(e)}
-
-def _run_winston_lutz(job_id: str, dirpath: str, email: str, filename: str):
-    try:
-        # Validate the first DCM file found in the directory
-        dcm_files = sorted([f for f in os.listdir(dirpath) if f.lower().endswith(".dcm")])
-        if dcm_files:
-            _validate_dicom_type(os.path.join(dirpath, dcm_files[0]), "winston_lutz")
-
-        wl = WinstonLutz(dirpath)
-        wl.analyze()
-
-        summary   = wl.results()
-        passed    = wl.passed
-
-        plot_path = os.path.join(dirpath, f"wl_{job_id}.png")
-        wl.save_analyzed_image(filename=plot_path)
-        image_url = upload_plot(plot_path, f"wl_{job_id}.png")
-
-        chart_data = _extract_wl_chart_data(wl)
-
-        save_analysis(email=email, test_type="Winston-Lutz", filename=filename,
-                      passed=passed, summary=summary, image_url=image_url,
-                      chart_data=chart_data, job_id=job_id)
-
-        jobs[job_id] = {
-            "status": "Success",
-            "passed": passed,
-            "analysis_summary": summary,
-            "image_url": image_url,
-            "chart_data": chart_data,
-        }
-    except ValueError as e:
-        print(f"Winston-Lutz validation error: {e}")
-        jobs[job_id] = {"status": "Error", "message": str(e)}
-    except Exception as e:
-        jobs[job_id] = {"status": "Error", "message": f"Winston-Lutz analysis failed: {e}"}
-    finally:
-        try:
-            shutil.rmtree(dirpath, ignore_errors=True)
-        except Exception:
-            pass
-        cleanup()
-
-@app.post("/analyze/winston-lutz")
-async def analyze_winston_lutz(
-    background_tasks: BackgroundTasks,
-    files: list[UploadFile] = File(...),
-    u=Depends(get_current_user),
-):
-    try:
-        if not files:
-            raise HTTPException(400, "No files provided.")
-
-        # Validate files
-        total_size = 0
-        for file in files:
-            if not file.filename.lower().endswith(".dcm"):
-                raise HTTPException(400, "Only .dcm DICOM files are supported for Winston-Lutz.")
-            total_size += len(await file.read())
-            
-        if total_size > 50 * 1024 * 1024:
-            raise HTTPException(400, "Files too large. Maximum total size is 50MB.")
-
-        job_id   = str(uuid.uuid4())
-        tmp_dir  = tempfile.mkdtemp()
-
-        # Reset file pointers and save
-        for file in files:
-            file.file.seek(0)
-            contents = await file.read()
-            filepath = os.path.join(tmp_dir, file.filename)
-            with open(filepath, "wb") as f:
-                f.write(contents)
-
-        jobs[job_id] = {"status": "Processing"}
-        background_tasks.add_task(_run_winston_lutz, job_id=job_id, dirpath=tmp_dir,
-                                   email=u["email"], filename=f"{len(files)} files")
-        return {"status": "Queued", "job_id": job_id}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, f"Upload failed: {str(e)}")
-
-# ═════════════════════════════════════════════════════════════════════════════
-# CONGRUENCE
-# ═════════════════════════════════════════════════════════════════════════════
-
-def _extract_congruence_chart_data(fa) -> dict:
-    try:
-        results = fa.results_data()
-        
-        edges = {}
-        try:
-            # Try different attribute names based on pylinac version
-            if hasattr(results, 'top'):
-                edges = {
-                    "top": round(float(results.top), 4),
-                    "bottom": round(float(results.bottom), 4),
-                    "left": round(float(results.left), 4),
-                    "right": round(float(results.right), 4),
-                }
-        except Exception:
-            pass
-
-        field_size = None
-        try:
-            if hasattr(results, 'field_size_x_mm'):
-                field_size = {
-                    "x": round(float(results.field_size_x_mm), 2),
-                    "y": round(float(results.field_size_y_mm), 2),
-                }
-        except Exception:
-            pass
-
-        return {"edges": edges, "field_size": field_size}
-    except Exception as e:
-        return {"error": str(e)}
-
-def _run_congruence(job_id: str, filepath: str, email: str, filename: str):
-    try:
-        _validate_dicom_type(filepath, "congruence")
-        fa = FieldAnalysis(filepath)
-        fa.analyze()
-
-        summary   = fa.results()
-        passed    = fa.passed
-
-        plot_path = os.path.join(tempfile.gettempdir(), f"cg_{job_id}.png")
-        fa.save_analyzed_image(filename=plot_path)
-        image_url = upload_plot(plot_path, f"cg_{job_id}.png")
-
-        chart_data = _extract_congruence_chart_data(fa)
-
-        save_analysis(email=email, test_type="Congruence", filename=filename,
-                      passed=passed, summary=summary, image_url=image_url,
-                      chart_data=chart_data, job_id=job_id)
-
-        jobs[job_id] = {
-            "status": "Success",
-            "passed": passed,
-            "analysis_summary": summary,
-            "image_url": image_url,
-            "chart_data": chart_data,
-        }
-    except ValueError as e:
-        print(f"Congruence validation error: {e}")
-        jobs[job_id] = {"status": "Error", "message": str(e)}
-    except Exception as e:
-        jobs[job_id] = {"status": "Error", "message": f"Congruence analysis failed: {e}"}
-    finally:
-        try:
-            os.remove(filepath)
-        except Exception:
-            pass
-        try:
-            plot_path = os.path.join(tempfile.gettempdir(), f"cg_{job_id}.png")
-            os.remove(plot_path)
-        except Exception:
-            pass
-        cleanup()
-
-@app.post("/analyze/congruence")
-async def analyze_congruence(
-    background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    u=Depends(get_current_user),
-):
-    try:
-        if not file.filename.lower().endswith(".dcm"):
-            raise HTTPException(400, "Only .dcm DICOM files are supported for Congruence.")
-
-        job_id   = str(uuid.uuid4())
-        tmp_dir  = tempfile.gettempdir()
-        filepath = os.path.join(tmp_dir, f"cg_{job_id}.dcm")
-
-        contents = await file.read()
-        if len(contents) > 50 * 1024 * 1024:
-            raise HTTPException(400, "File too large. Maximum size is 50MB.")
-            
-        with open(filepath, "wb") as f:
-            f.write(contents)
-
-        jobs[job_id] = {"status": "Processing"}
-        background_tasks.add_task(_run_congruence, job_id=job_id, filepath=filepath,
-                                   email=u["email"], filename=file.filename)
-        return {"status": "Queued", "job_id": job_id}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, f"Upload failed: {str(e)}")
+  <script src="dicom-detect.js"></script>
+</body>
+</html>
