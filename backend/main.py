@@ -1,777 +1,797 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Picket Fence — MLC QA</title>
-  <link rel="stylesheet" href="style.css"/>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="script.js"></script>
-</head>
-<body>
-<aside class="sidebar">
-  <div class="sidebar-header">
-    <a href="dashboard.html" class="sidebar-logo">
-      <div class="logo-mark"><svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg></div>
-      <div class="logo-text">MLC<span>QA</span></div>
-    </a>
-  </div>
-  <nav class="sidebar-nav">
-    <div class="nav-label">Menu</div>
-    <a class="nav-item" href="dashboard.html"><span class="nav-icon">▦</span> Dashboard</a>
-    <a class="nav-item active" href="mlc-qa.html"><span class="nav-icon">⚡</span> Picket Fence</a>
-    <a class="nav-item" href="winston-lutz.html"><span class="nav-icon">◎</span> Winston-Lutz</a>
-    <a class="nav-item" href="starshot.html"><span class="nav-icon">✦</span> Starshot</a>
-    <a class="nav-item" href="congruence.html"><span class="nav-icon">⊞</span> Congruence</a>
-    <a class="nav-item" href="history.html"><span class="nav-icon">≡</span> History</a>
-  </nav>
-  <div class="sidebar-footer">
-    <div class="user-chip">
-      <div class="avatar" id="avatarInitial">?</div>
-      <div><div class="user-name" id="sidebarName">Loading...</div><div class="user-role">Medical Physicist</div></div>
-    </div>
-    <button class="logout-btn" onclick="logout()">Sign Out</button>
-  </div>
-</aside>
+# =============================================================================
+# MLC QA Platform — FastAPI Backend
+# =============================================================================
 
-<main class="main">
-  <div class="page-header">
-    <div class="breadcrumb"><a href="dashboard.html">Dashboard</a> <span>/</span> Picket Fence MLC QA</div>
-    <h1>Picket Fence MLC QA</h1>
-    <p>Analyze multi-leaf collimator positioning accuracy against clinical tolerances</p>
-  </div>
+import os
+import io
+import uuid
+import tempfile
+import time
+import threading
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
-  <div class="server-status" id="serverStatus">
-    <div class="status-dot-sm dot-warn"></div><span>Checking server...</span>
-  </div>
+import httpx
+import bcrypt
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, BackgroundTasks, Form
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import jwt, JWTError
+from pydantic import BaseModel
 
-  <div id="wrongTestModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(6,12,24,0.88);backdrop-filter:blur(6px);align-items:center;justify-content:center;">
-    <div style="background:var(--surface);border:1px solid rgba(201,64,80,0.5);border-left:4px solid var(--fail);border-radius:var(--r-lg);padding:32px 28px;max-width:480px;width:92%;box-shadow:0 8px 48px rgba(0,0,0,0.6);">
-      <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;">
-        <div style="width:46px;height:46px;border-radius:50%;background:rgba(201,64,80,0.18);border:1.5px solid rgba(201,64,80,0.45);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0;">&#9888;</div>
-        <div>
-          <div style="font-family:var(--mono);font-size:0.95rem;font-weight:600;color:var(--fail);letter-spacing:0.05em;">UNACCEPTABLE DATA — WRONG TEST FILE</div>
-          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px;font-family:var(--mono);">File type mismatch &mdash; analysis blocked</div>
-        </div>
-      </div>
-      <p style="font-size:0.85rem;color:var(--text-2);line-height:1.7;margin-bottom:10px;">
-        The selected file appears to be a <strong id="wtm-detected-name" style="color:var(--accent);">&#8230;</strong> image, not a <strong id="wtm-page-name" style="color:var(--text-1);">&#8230;</strong> file.
-      </p>
-      <p style="font-size:0.85rem;color:var(--text-2);line-height:1.7;margin-bottom:22px;">
-        Analysing the wrong image type will produce <strong style="color:var(--fail);">clinically meaningless or misleading results</strong>. This action is <strong style="color:var(--fail);">blocked</strong> to protect data integrity. Please upload this file on the correct page:
-      </p>
-      <a id="wtm-correct-link" href="#" style="display:flex;align-items:center;gap:12px;padding:13px 16px;background:rgba(43,159,212,0.08);border:1px solid var(--accent-border);border-radius:var(--r);text-decoration:none;margin-bottom:20px;">
-        <span id="wtm-correct-icon" style="font-size:1.2rem;">&#128194;</span>
-        <div>
-          <div id="wtm-correct-label" style="font-size:0.85rem;font-weight:600;color:var(--accent);">Go to correct test</div>
-          <div id="wtm-correct-sub"   style="font-size:0.74rem;color:var(--text-muted);margin-top:2px;">&#8230;</div>
-        </div>
-        <span style="margin-left:auto;color:var(--text-muted);font-size:1rem;">&#8594;</span>
-      </a>
-      <div style="display:flex;gap:10px;">
-        <button onclick="dismissWrongTestModal()" style="width:100%;padding:11px 0;background:transparent;border:1px solid var(--border);border-radius:var(--r);color:var(--text-muted);font-size:0.83rem;cursor:pointer;font-family:var(--mono);">&#8592; Choose a Different File</button>
-      </div>
-      <p style="font-size:0.71rem;color:var(--text-muted);margin-top:14px;text-align:center;line-height:1.55;">Detection is based on DICOM metadata and filename heuristics. If you believe this is a false positive, please verify the file type before uploading.</p>
-    </div>
-  </div>
+# ── pylinac ──────────────────────────────────────────────────────────────────
+from pylinac import PicketFence, WinstonLutz, Starshot, FieldAnalysis
+from pylinac.core.geometry import Point
 
-  <div class="upload-card">
-    <div class="upload-zone" id="uploadZone">
-      <input type="file" id="dicomFile" accept=".dcm" onchange="onFileSelected(this)"/>
-      <div class="upload-icon">📂</div>
-      <h3>Drop your DICOM file here</h3>
-      <p>or click to browse — .dcm files only</p>
-      <div class="file-selected" id="fileLabel"></div>
-    </div>
-    <div class="tolerances">
-      <div class="tol-item"><div class="tol-label">Tolerance</div><div class="tol-val">1.0 mm</div></div>
-      <div class="tol-item"><div class="tol-label">Action Tolerance</div><div class="tol-val">0.5 mm</div></div>
-      <div class="tol-item"><div class="tol-label">Input Format</div><div class="tol-val">DICOM</div></div>
-    </div>
-    <div style="margin: 0 0 14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-      <label for="mlcTypeSelect" style="font-family:var(--mono);font-size:0.82rem;color:var(--text-2);white-space:nowrap;">MLC Type:</label>
-      <select id="mlcTypeSelect" style="font-family:var(--mono);font-size:0.82rem;padding:6px 12px;background:var(--surface);color:var(--text-1);border:1px solid var(--border);border-radius:var(--r);cursor:pointer;">
-        <option value="Millennium">Millennium MLC (60 pairs)</option>
-        <option value="HD MLC">HD MLC (60 pairs, 2.5mm centre)</option>
-        <option value="Agility">Agility MLC (80 pairs)</option>
-        <option value="SRS500">SRS 500 MLC</option>
-        <option value="NovalisHD">Novalis HD MLC</option>
-      </select>
-    </div>
-    <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>Run Picket Fence Analysis</button>
-  </div>
+# ── Environment / config ─────────────────────────────────────────────────────
+SUPABASE_URL     = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY     = os.environ.get("SUPABASE_KEY", "")   # service-role key
+JWT_SECRET       = os.environ.get("JWT_SECRET", "mlcqa-secret-change-me")
+JWT_ALGORITHM    = "HS256"
+JWT_EXPIRE_HOURS = 72
 
-  <div class="results-card">
-    <h2>Results</h2>
-    <div id="resultsBody"><p>Upload a file and run the analysis to see results here.</p></div>
+# Supabase Storage bucket for plot images
+PLOT_BUCKET      = os.environ.get("PLOT_BUCKET", "mlcqa-plots")
 
-    <div id="verdictBanner" class="verdict-banner" style="display:none"></div>
+# ── In-memory job store (keyed by job_id UUID) ────────────────────────────────
+jobs: dict = {}
 
-    <div id="gaugeSection" style="display:none;margin-top:20px">
-      <div class="gauge-label-row">
-        <span class="gauge-title">Max MLC Error vs Tolerance</span>
-        <span class="gauge-val" id="gaugeVal"></span>
-      </div>
-      <div class="gauge-track">
-        <div class="gauge-fill" id="gaugeFill"></div>
-        <div class="gauge-marker" id="gaugeMarker" title="Tolerance limit"></div>
-      </div>
-      <div class="gauge-ticks"><span>0 mm</span><span id="gaugeTolLabel"></span><span id="gaugeMaxLabel"></span></div>
-    </div>
+# ── App ───────────────────────────────────────────────────────────────────────
+app = FastAPI(title="MLC QA API")
 
-    <div id="metricsRow" class="metrics-row" style="display:none;margin-top:20px"></div>
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    <!-- ── Leaf Pair Map ─────────────────────────────────────────────────── -->
-    <div id="leafMapSection" style="display:none;margin-top:24px;">
-      <div style="font-size:0.82rem;font-weight:600;color:var(--text-1);margin-bottom:10px;font-family:var(--mono);letter-spacing:0.04em;">
-        LEAF PAIR MAP
-        <span style="font-weight:400;color:var(--text-muted);margin-left:8px;font-size:0.75rem;">— each cell = one leaf pair, colored by error</span>
-      </div>
-      <div id="leafMapGrid" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:10px;"></div>
-      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:8px;">
-        <span style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);">
-          <span style="display:inline-block;width:12px;height:12px;background:rgba(26,171,117,0.85);border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Pass (&lt; action tol)
-        </span>
-        <span style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);">
-          <span style="display:inline-block;width:12px;height:12px;background:rgba(200,137,42,0.90);border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Action (≥ 0.5 mm)
-        </span>
-        <span style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);">
-          <span style="display:inline-block;width:12px;height:12px;background:rgba(201,64,80,0.90);border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Fail (≥ 1.0 mm)
-        </span>
-        <span style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);">
-          <span style="display:inline-block;width:12px;height:12px;background:rgba(80,100,130,0.45);border-radius:2px;vertical-align:middle;margin-right:4px;border:1px solid rgba(255,255,255,0.08);"></span>Outside field
-        </span>
-        <span id="leafMapSummary" style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);margin-left:auto;"></span>
-      </div>
-      <div id="leafMapTooltip" style="display:none;position:fixed;background:#0e1621;border:1px solid rgba(100,160,220,0.25);border-radius:6px;padding:8px 12px;font-family:var(--mono);font-size:0.75rem;color:#a8c4e0;pointer-events:none;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.4);"></div>
-    </div>
-    <!-- ── End Leaf Pair Map ──────────────────────────────────────────────── -->
+security = HTTPBearer(auto_error=False)
 
-    <div id="plotSection" style="display:none;margin-top:20px"></div>
 
-    <div id="chartsSection" style="display:none;margin-top:28px">
-      <div class="section-head" style="margin-top:0;border-bottom:1px solid var(--border-subtle);padding-bottom:14px;margin-bottom:20px">
-        <h2 style="font-size:0.88rem;font-weight:600">Analysis Charts</h2>
-      </div>
-      <div class="charts-grid" style="grid-template-columns:1fr">
-        <div class="chart-card" style="padding:20px 16px;">
-          <div class="chart-card-title" style="font-size:0.9rem;font-weight:600;margin-bottom:12px;">Leaf Pair Max Error (mm)</div>
-          <!-- Outer scroll container — full card width, scrolls horizontally -->
-          <div id="leafChartScroll" style="width:100%;overflow-x:auto;overflow-y:hidden;border-radius:4px;">
-            <!-- Inner div sized to exact chart pixel width — forces scroll when wider than card -->
-            <div id="leafChartInner" style="min-width:100%;">
-              <canvas id="leafChart"></canvas>
-            </div>
-          </div>
-          <div id="leafScrollHint" style="display:none;text-align:center;font-size:0.72rem;color:var(--text-muted);font-family:var(--mono);margin-top:8px;letter-spacing:0.04em;">← scroll to view all leaf pairs →</div>
-        </div>
-      </div>
-    </div>
+# =============================================================================
+# Helpers
+# =============================================================================
 
-    <div id="pdfSection" style="display:none;margin-top:16px">
-      <button class="btn-outline" onclick="downloadPDF()">&#11015; Download PDF Report</button>
-    </div>
-  </div>
-</main>
-
-<script>
-// Initialize user info
-const name = localStorage.getItem("mlcqa_name");
-if (name) {
-  document.getElementById("sidebarName").textContent = name;
-  document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
-}
-
-// Check server status on load
-AnalysisHelpers.checkServer('serverStatus', 'analyzeBtn');
-
-async function onFileSelected(input) {
-  const label = document.getElementById("fileLabel");
-  const btn   = document.getElementById("analyzeBtn");
-
-  if (input.files.length > 0) {
-    const file = input.files[0];
-    label.textContent = "Selected: " + file.name;
-    btn.disabled = false;
-
-    const ok = await checkFileAcceptable(file, "picket_fence", btn);
-    if (!ok) return;
-  } else {
-    label.textContent = "";
-    btn.disabled = true;
-  }
-}
-
-const zone = document.getElementById("uploadZone");
-zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("dragover"); });
-zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
-zone.addEventListener("drop", e => { e.preventDefault(); zone.classList.remove("dragover"); const dt = new DataTransfer(); Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f)); document.getElementById("dicomFile").files = dt.files; onFileSelected(document.getElementById("dicomFile")); });
-
-async function runAnalysis() {
-  const fileInput = document.getElementById("dicomFile");
-  const btn = document.getElementById("analyzeBtn");
-  const resultsDiv = document.getElementById("resultsBody");
-  
-  if (!fileInput.files.length) {
-    alert("Please select a file first.");
-    return;
-  }
-  
-  if (!fileInput.files[0].name.toLowerCase().endsWith(".dcm")) {
-    resultsDiv.innerHTML = `<p class="result-fail">❌ Only .dcm files are supported.</p>`;
-    return;
-  }
-
-  // Second-pass safety check — blocks wrong/unidentifiable files even if
-  // the user somehow bypassed the onFileSelected guard
-  const _safetyFile = fileInput.files[0];
-  const _safetyOk = await checkFileAcceptable(_safetyFile, "picket_fence", btn);
-  if (!_safetyOk) return;
-
-  try {
-    // Check server first
-    resultsDiv.innerHTML = `<p>⏳ Checking server status...</p>`;
-    const serverReady = await AnalysisHelpers.waitForServer();
-    if (!serverReady) {
-      throw new Error("Server not responding. Please refresh the page and try again.");
+def supabase_headers(use_service_key: bool = True) -> dict:
+    key = SUPABASE_KEY
+    return {
+        "apikey":        key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type":  "application/json",
     }
 
-    // Validate authentication
-    const token = localStorage.getItem("mlcqa_token");
-    if (!token) {
-      window.location.href = "login.html";
-      return;
-    }
 
-    // Prepare and send request
-    resultsDiv.innerHTML = `<p>📤 Uploading file...</p>`;
-    const formData = new FormData();
-    formData.append("file", fileInput.files[0]);
-    formData.append("tolerance", "1.0");
-    formData.append("action_tolerance", "0.5");
-    formData.append("mlc_type", document.getElementById("mlcTypeSelect").value);
-
-    btn.textContent = "Uploading...";
-    
-    const data = await AnalysisHelpers.makeApiCall(`${BACKEND_URL}/analyze`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`
-      },
-      body: formData
-    }, 30000);
-
-    if (data.status === "Error") {
-      throw new Error(data.message || "Server returned an error");
-    }
-
-    // Start polling for results
-    btn.textContent = "Analyzing...";
-    resultsDiv.innerHTML = `<p>🔬 Analysis running<span id="dots">.</span></p>`;
-    document.getElementById("leafMapSection").style.display = "none";
-    
-    await AnalysisHelpers.pollForResult(data.job_id, (result) => {
-      handlePicketFenceSuccess(result, fileInput.files[0].name);
-    }, (error) => {
-      throw new Error(error);
-    });
-
-  } catch (err) {
-    console.error("Picket Fence analysis error:", err);
-    resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
-    btn.disabled = false;
-    btn.textContent = "Run Picket Fence Analysis";
-  }
-}
-
-function handlePicketFenceSuccess(result, filename) {
-  const resultsDiv = document.getElementById("resultsBody");
-  const analyzeBtn = document.getElementById("analyzeBtn");
-  
-  const pass = result.passed;
-  const imgUrl = result.image_url || null;
-  const summary = result.analysis_summary || "";
-  const chartData = result.chart_data || {};
-  
-  // Store result for PDF generation
-  window._lastResult = { 
-    pass, 
-    imgUrl, 
-    summary, 
-    filename: filename, 
-    testType: "Picket Fence", 
-    toleranceText: "MLC tolerance: 1.0mm / action 0.5mm" 
-  };
-  
-  // Raw summary
-  resultsDiv.innerHTML = "<pre>" + summary + "</pre>";
-  
-  // Verdict banner
-  const banner = document.getElementById("verdictBanner");
-  banner.innerHTML = '<div class="verdict-icon">' + (pass ? "✓" : "✗") + '</div><div class="verdict-text"><div class="verdict-label">' + (pass ? "PASS" : "FAIL") + '</div><div class="verdict-sub">' + (pass ? "All MLC leaf pairs within clinical tolerance (1.0 mm)" : "One or more leaf pairs exceed tolerance — action required") + '</div></div>';
-  banner.className = "verdict-banner " + (pass ? "verdict-pass" : "verdict-fail");
-  banner.style.display = "flex";
-  
-  // Gauge + Metrics — read directly from chart_data (pylinac backend values).
-  // Never use regex fallback on summary text — unreliable.
-  const tol = 1.0;
-  const cd = chartData;
-  const realMax    = (cd.max_error    != null && !isNaN(cd.max_error))    ? Number(cd.max_error)    : 0;
-  const realMean   = (cd.mean_error   != null && !isNaN(cd.mean_error))   ? Number(cd.mean_error)   : 0;
-  const realFailed = (cd.failed_leaves != null)                           ? Number(cd.failed_leaves) : (pass ? 0 : 1);
-
-  const maxErr   = realMax;
-  const maxScale = Math.max(tol * 1.6, maxErr * 1.2, 0.01);
-  const fill = document.getElementById("gaugeFill");
-  fill.style.width = Math.min((maxErr / maxScale) * 100, 100) + "%";
-  fill.style.background = maxErr > tol ? "var(--fail)" : maxErr > 0.5 ? "var(--warn)" : "var(--pass)";
-  document.getElementById("gaugeMarker").style.left = ((tol / maxScale) * 100) + "%";
-  document.getElementById("gaugeVal").textContent = maxErr.toFixed(3) + " mm";
-  document.getElementById("gaugeTolLabel").textContent = "Tol: " + tol + " mm";
-  document.getElementById("gaugeMaxLabel").textContent = maxScale.toFixed(2) + " mm";
-  document.getElementById("gaugeSection").style.display = "block";
-  const mr = document.getElementById("metricsRow");
-  mr.innerHTML = [
-    {label: "Max MLC Error", val: realMax.toFixed(3), unit: "mm", cls: realMax > tol ? "metric-fail" : "metric-pass"},
-    {label: "Mean Error", val: realMean.toFixed(3), unit: "mm", cls: "metric-accent"},
-    {label: "Failed Leaves", val: String(realFailed), cls: realFailed > 0 ? "metric-fail" : "metric-pass"},
-    {label: "Tolerance", val: "1.0", unit: "mm", cls: "metric-accent"}
-  ].map(m => '<div class="metric-card"><div class="metric-label">' + m.label + '</div><div class="metric-value ' + m.cls + '">' + m.val + (m.unit ? '<span class="metric-unit">' + m.unit + '</span>' : '') + '</div></div>').join('');
-  mr.style.display = "grid";
-  
-  // ── Leaf Pair Map ──────────────────────────────────────────────────────────
-  renderLeafMap(chartData, tol);
-  // ──────────────────────────────────────────────────────────────────────────
-  if (imgUrl) {
-    document.getElementById("plotSection").innerHTML = '<div class="plot-wrap"><img src="' + imgUrl + '" alt="Picket Fence Plot" loading="lazy"/><div class="plot-label">Pylinac · Picket Fence Analysis</div></div>';
-    document.getElementById("plotSection").style.display = "block";
-  }
-  
-  // Charts — make section visible FIRST so offsetWidth is readable, then render.
-  // Double requestAnimationFrame ensures the browser has fully laid out and
-  // painted the section before renderPFCharts reads scrollDiv.offsetWidth.
-  document.getElementById("chartsSection").style.display = "block";
-  document.getElementById("pdfSection").style.display = "block";
-  requestAnimationFrame(() => requestAnimationFrame(() => renderPFCharts(chartData, tol)));
-  
-  analyzeBtn.disabled = false;
-  analyzeBtn.textContent = "Analyze Another File";
-}
+def cleanup():
+    """Remove jobs older than 2 hours from the in-memory store."""
+    cutoff = time.time() - 7200
+    stale  = [k for k, v in jobs.items() if isinstance(v, dict) and v.get("_ts", time.time()) < cutoff]
+    for k in stale:
+        jobs.pop(k, None)
 
 
-function renderLeafMap(cd, tol) {
-  const section  = document.getElementById("leafMapSection");
-  const grid     = document.getElementById("leafMapGrid");
-  const tooltip  = document.getElementById("leafMapTooltip");
-  const summary  = document.getElementById("leafMapSummary");
+def create_token(email: str) -> str:
+    expire  = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS)
+    payload = {"sub": email, "exp": expire}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-  const leafPairs = (cd.leaf_pairs && cd.leaf_pairs.length > 0) ? cd.leaf_pairs : [];
-  if (leafPairs.length === 0) { section.style.display = "none"; return; }
 
-  const actionTol = tol * 0.5;
-  grid.innerHTML = "";
+def decode_token(token: str) -> dict:
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return {"email": payload["sub"]}
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-  let nPass = 0, nAction = 0, nFail = 0;
 
-  // ── Determine total MLC pairs for this machine ──────────────────────────
-  // Prefer backend-reported num_leaves, fall back to the MLC-type selector,
-  // then default to 60 (Millennium).
-  let totalMLC = (cd.num_leaves != null && cd.num_leaves > 0) ? Number(cd.num_leaves) : 0;
-  if (!totalMLC) {
-    const sel = document.getElementById("mlcTypeSelect");
-    if (sel) {
-      const v = sel.value;
-      totalMLC = v === "Agility" ? 80 : (v === "SRS500" || v === "NovalisHD") ? 60 : 60;
-    } else {
-      totalMLC = 60;
-    }
-  }
+def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return decode_token(credentials.credentials)
 
-  // ── Build a lookup: pair number → {max_error, ...} ──────────────────────
-  const measuredMap = new Map();
-  leafPairs.forEach(lp => {
-    const pairNum = lp.leaf_pair != null ? Number(lp.leaf_pair) : null;
-    if (pairNum != null) measuredMap.set(pairNum, lp);
-  });
 
-  // ── Find the maximum error for pulse-highlight ───────────────────────────
-  const maxErrValue = Math.max(...leafPairs.map(lp => Number(lp.max_error) || 0));
-
-  // ── Render ALL pairs 1 … totalMLC ───────────────────────────────────────
-  for (let pairNum = 1; pairNum <= totalMLC; pairNum++) {
-    const lp         = measuredMap.get(pairNum);   // undefined if outside field
-    const isMeasured = lp !== undefined;
-    const err        = isMeasured ? (Number(lp.max_error) || 0) : 0;
-    const label      = String(pairNum);
-
-    let bg, opacity, cursor;
-
-    if (!isMeasured) {
-      // Outside beam field — grey, non-interactive appearance
-      bg      = "rgba(80,100,130,0.45)";
-      opacity = 0.40;
-      cursor  = "default";
-    } else {
-      const isFail = err >= tol;
-      const isAct  = !isFail && err >= actionTol;
-
-      if (isFail) nFail++;
-      else if (isAct) nAction++;
-      else nPass++;
-
-      bg = isFail
-        ? "rgba(201,64,80,0.90)"
-        : isAct
-          ? "rgba(200,137,42,0.90)"
-          : "rgba(26,171,117,0.80)";
-
-      const intensity = Math.min(err / tol, 1.0);
-      opacity = isFail || isAct ? 0.90 : 0.45 + intensity * 0.45;
-      cursor  = "pointer";
-    }
-
-    const cell = document.createElement("div");
-    cell.style.cssText = [
-      "width:28px", "height:28px", "border-radius:3px",
-      "background:" + bg, "opacity:" + opacity.toFixed(2),
-      "cursor:" + cursor, "display:flex", "align-items:center",
-      "justify-content:center", "font-family:var(--mono)",
-      "font-size:0.6rem", "color:rgba(255,255,255,0.85)",
-      "font-weight:600", "transition:transform 0.1s, opacity 0.1s",
-      "border: 1px solid rgba(255,255,255,0.08)"
-    ].join(";");
-    cell.textContent = label;
-
-    // Pulse-highlight the worst measured pair
-    if (isMeasured && maxErrValue > 0 && err === maxErrValue) {
-      cell.classList.add("leaf-max-error-cell");
-    }
-
-    // Hover tooltip — measured pairs only
-    if (isMeasured) {
-      const isFail = err >= tol;
-      const isAct  = !isFail && err >= actionTol;
-      cell.addEventListener("mouseenter", e => {
-        cell.style.transform = "scale(1.25)";
-        cell.style.opacity   = "1";
-        cell.style.zIndex    = "10";
-        const statusText  = isFail ? "FAIL" : isAct ? "ACTION" : "PASS";
-        const statusColor = isFail ? "#e06070" : isAct ? "#e0a040" : "#40c090";
-        tooltip.innerHTML =
-          "<div style='margin-bottom:4px;font-size:0.8rem;color:var(--text-1)'>Leaf Pair <strong>" + label + "</strong></div>" +
-          "<div>Max Error: <strong style='color:" + statusColor + "'>" + err.toFixed(4) + " mm</strong></div>" +
-          "<div style='margin-top:3px;'>Status: <strong style='color:" + statusColor + "'>" + statusText + "</strong></div>" +
-          "<div style='margin-top:3px;color:rgba(168,196,224,0.6)'>Tolerance: " + tol + " mm &nbsp;|&nbsp; Action: " + actionTol.toFixed(1) + " mm</div>";
-        tooltip.style.display = "block";
-      });
-      cell.addEventListener("mousemove", e => {
-        tooltip.style.left = (e.clientX + 14) + "px";
-        tooltip.style.top  = (e.clientY - 10) + "px";
-      });
-      cell.addEventListener("mouseleave", () => {
-        cell.style.transform = "";
-        cell.style.opacity   = opacity.toFixed(2);
-        cell.style.zIndex    = "";
-        tooltip.style.display = "none";
-      });
-    } else {
-      // Outside-field tooltip
-      cell.addEventListener("mouseenter", e => {
-        cell.style.opacity = "0.65";
-        tooltip.innerHTML =
-          "<div style='margin-bottom:4px;font-size:0.8rem;color:var(--text-1)'>Leaf Pair <strong>" + label + "</strong></div>" +
-          "<div style='color:rgba(168,196,224,0.7)'>Outside beam field — not measured</div>";
-        tooltip.style.display = "block";
-      });
-      cell.addEventListener("mousemove", e => {
-        tooltip.style.left = (e.clientX + 14) + "px";
-        tooltip.style.top  = (e.clientY - 10) + "px";
-      });
-      cell.addEventListener("mouseleave", () => {
-        cell.style.opacity = opacity.toFixed(2);
-        tooltip.style.display = "none";
-      });
-    }
-
-    grid.appendChild(cell);
-  }
-
-  const nMeasured  = leafPairs.length;
-  const nOutside   = totalMLC - nMeasured;
-  summary.textContent =
-    nMeasured + " of " + totalMLC + " pairs measured" +
-    (nOutside > 0 ? " · " + nOutside + " outside field" : "") +
-    (nFail    > 0 ? " · " + nFail   + " fail"           : "") +
-    (nAction  > 0 ? " · " + nAction + " action"         : "") +
-    " · " + nPass + " pass";
-
-  section.style.display = "block";
-}
-
-let pfChart1 = null;
-
-function renderPFCharts(cd, tol) {
-  const chartsSection = document.getElementById("chartsSection");
-  const scrollDiv  = document.getElementById("leafChartScroll");
-  const innerDiv   = document.getElementById("leafChartInner");
-  const hint       = document.getElementById("leafScrollHint");
-
-  // ── 1. Extract raw data from backend ────────────────────────────────────
-  let rawErrors = (cd.leaf_max_errors && cd.leaf_max_errors.length > 0) ? cd.leaf_max_errors : [];
-  let rawLabels = (cd.leaf_pairs && cd.leaf_pairs.length > 0)
-    ? cd.leaf_pairs.map(lp => String(lp.leaf_pair))
-    : rawErrors.map((_, i) => String(i + 1));
-
-  console.log('[PF Chart] leaf count:', rawLabels.length,
-              '| first 5:', rawLabels.slice(0,5).join(','),
-              '| last 5:',  rawLabels.slice(-5).join(','));
-
-  // ── 1b. Normalise to 1-based if pylinac sent 0-based or centred keys ────
-  const _numericRaw = rawLabels.map(l => parseInt(l, 10)).filter(n => !isNaN(n));
-  const _minLabel   = _numericRaw.length ? Math.min(..._numericRaw) : 1;
-  const _labelShift = _minLabel <= 0 ? (1 - _minLabel) : 0;
-  if (_labelShift > 0) {
-    console.log('[PF Chart] Shifting labels by +' + _labelShift + ' (min was ' + _minLabel + ')');
-    rawLabels = rawLabels.map(l => { const n = parseInt(l, 10); return isNaN(n) ? l : String(n + _labelShift); });
-  }
-
-  if (rawErrors.length === 0) {
-    let errEl = document.getElementById("leafChartError");
-    if (!errEl) { errEl = document.createElement("p"); errEl.id = "leafChartError"; chartsSection.appendChild(errEl); }
-    errEl.style.cssText = "color:var(--warn);font-size:0.82rem;font-family:var(--mono);padding:12px";
-    errEl.textContent = "⚠ No per-leaf data returned from server. Check server logs for extraction details.";
-    return;
-  }
-
-  // ── 2. Only plot MEASURED leaves (those inside the radiation field) ───────
-  // Pylinac's _leaves_in_view() only measures leaves whose centre falls within
-  // the exposed field — outer leaves of a Millennium MLC (e.g. pairs 1-9 and
-  // 52-60 for a 22cm field) are physically outside the beam and produce no data.
-  // Showing 60 bars with most empty is misleading; we show only what was measured.
-  const leafLabels = [];
-  const leafErrors = [];
-  const leafColors = [];
-
-  rawLabels.forEach((lbl, i) => {
-    const v = (rawErrors[i] == null || isNaN(rawErrors[i])) ? 0 : Number(rawErrors[i]);
-    leafLabels.push(lbl);
-    leafErrors.push(v);
-    leafColors.push(
-      v > tol       ? "rgba(201,64,80,0.85)"  :
-      v > tol * 0.5 ? "rgba(200,137,42,0.80)" :
-                      "rgba(26,171,117,0.75)"
-    );
-  });
-
-  const totalLeaves    = leafLabels.length;
-  const maxMeasuredErr = leafErrors.length > 0 ? Math.max(...leafErrors) : 0;
-
-  // Use num_leaves from backend (pylinac-detected) so the outside-field count
-  // is correct for HD MLC, Agility, etc. — fall back to 60 only if not supplied.
-  const totalMLC = (cd.num_leaves != null && cd.num_leaves > 0) ? cd.num_leaves : 60;
-
-  // ── 3. Inject info badge + subtitle above the chart ──────────────────────
-  // Shows measured range and explains why outer leaves are absent.
-  const numericAll = leafLabels.map(l => parseInt(l, 10)).filter(n => !isNaN(n));
-  const minLeaf = numericAll.length ? Math.min(...numericAll) : "?";
-  const maxLeaf = numericAll.length ? Math.max(...numericAll) : "?";
-  const outsideCount = totalMLC - totalLeaves;
-
-  let infoEl = document.getElementById("leafChartInfo");
-  if (!infoEl) {
-    infoEl = document.createElement("div");
-    infoEl.id = "leafChartInfo";
-    // Insert before the scroll container
-    scrollDiv.parentNode.insertBefore(infoEl, scrollDiv);
-  }
-  infoEl.innerHTML =
-    '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">' +
-      '<span style="font-family:var(--mono);font-size:0.78rem;color:var(--text-2);">' +
-        '<span style="color:rgba(26,171,117,0.9);margin-right:4px;">■</span>' +
-        'Measured: <strong style="color:var(--text-1);">' + totalLeaves + ' of ' + totalMLC + ' leaf pairs</strong>' +
-        ' (pairs&nbsp;' + minLeaf + '–' + maxLeaf + ')' +
-      '</span>' +
-      (outsideCount > 0
-        ? '<span style="font-family:var(--mono);font-size:0.78rem;color:var(--text-muted);padding:3px 8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:4px;">' +
-            'ℹ ' + outsideCount + ' outer leaf pair' + (outsideCount > 1 ? 's' : '') +
-            ' not measured — outside beam field (normal)' +
-          '</span>'
-        : '') +
-    '</div>';
-
-  // ── 4. Canvas sizing ──────────────────────────────────────────────────────
-  const PX_PER_LEAF = 22;
-  const Y_AXIS_W    = 70;
-  const minWidth    = totalLeaves * PX_PER_LEAF + Y_AXIS_W;
-  const cardWidth   = (scrollDiv && scrollDiv.offsetWidth > 0)
-                      ? scrollDiv.offsetWidth : window.innerWidth * 0.75;
-  const needsScroll = minWidth > cardWidth;
-  const chartWidth  = needsScroll ? minWidth : cardWidth;
-  const chartHeight = 380;
-
-  // ── 5. Destroy old chart, recreate canvas ────────────────────────────────
-  if (pfChart1) { pfChart1.destroy(); pfChart1 = null; }
-  innerDiv.innerHTML = "";
-
-  const newCanvas = document.createElement("canvas");
-  newCanvas.id = "leafChart";
-  newCanvas.style.display = "block";
-
-  if (needsScroll) {
-    newCanvas.width        = chartWidth;
-    newCanvas.height       = chartHeight;
-    newCanvas.style.width  = chartWidth  + "px";
-    newCanvas.style.height = chartHeight + "px";
-    innerDiv.style.width   = chartWidth  + "px";
-    innerDiv.style.height  = chartHeight + "px";
-    if (scrollDiv) scrollDiv.style.height = (chartHeight + 20) + "px";
-    if (hint) hint.style.display = "block";
-  } else {
-    newCanvas.style.width  = "100%";
-    newCanvas.style.height = chartHeight + "px";
-    innerDiv.style.width   = "100%";
-    innerDiv.style.height  = chartHeight + "px";
-    if (scrollDiv) scrollDiv.style.height = (chartHeight + 20) + "px";
-    if (hint) hint.style.display = "none";
-  }
-  innerDiv.appendChild(newCanvas);
-
-  // ── 6. Build chart ────────────────────────────────────────────────────────
-  pfChart1 = new Chart(newCanvas, {
-    type: "bar",
-    data: {
-      labels: leafLabels,
-      datasets: [
-        {
-          label: "Max Error (mm)",
-          data: leafErrors,
-          backgroundColor: leafColors,
-          borderWidth: 0,
-          barPercentage: 0.75,
-          categoryPercentage: 0.85,
-          order: 2
-        },
-        {
-          label: "Tolerance (" + tol + " mm)",
-          data: Array(totalLeaves).fill(tol),
-          type: "line",
-          borderColor: "rgba(255,180,50,0.85)",
-          borderDash: [6, 4],
-          pointRadius: 0,
-          borderWidth: 2,
-          fill: false,
-          order: 1,
-          yAxisID: "yTol"
+def upload_plot(local_path: str, storage_name: str) -> str:
+    """Upload a PNG to Supabase Storage and return its public URL."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return ""
+    try:
+        with open(local_path, "rb") as f:
+            data = f.read()
+        url = f"{SUPABASE_URL}/storage/v1/object/{PLOT_BUCKET}/{storage_name}"
+        headers = {
+            "apikey":          SUPABASE_KEY,
+            "Authorization":   f"Bearer {SUPABASE_KEY}",
+            "Content-Type":    "image/png",
+            "x-upsert":        "true",
         }
-      ]
-    },
-    options: {
-      responsive: !needsScroll,
-      maintainAspectRatio: false,
-      animation: false,
-      layout: { padding: { top: 10, right: 20, bottom: 10, left: 10 } },
-      plugins: {
-        legend: {
-          display: true,
-          labels: {
-            color: "#8ba4c0",
-            font: { family: "'IBM Plex Mono'", size: 11 },
-            padding: 16,
-            boxWidth: 20
-          }
-        },
-        tooltip: {
-          callbacks: {
-            title: items => "Leaf Pair: " + items[0].label,
-            label: item => {
-              if (item.dataset.label.startsWith("Tolerance"))
-                return "Tolerance: " + tol + " mm";
-              return "Max Error: " + item.raw.toFixed(4) + " mm";
+        resp = httpx.put(url, content=data, headers=headers, timeout=30)
+        if resp.status_code in (200, 201):
+            return f"{SUPABASE_URL}/storage/v1/object/public/{PLOT_BUCKET}/{storage_name}"
+    except Exception:
+        pass
+    return ""
+
+
+def save_analysis(*, email: str, test_type: str, filename: str,
+                  passed: bool, summary: str, image_url: str,
+                  chart_data: dict, job_id: str):
+    """Persist a completed analysis record to Supabase (analyses table)."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
+    try:
+        payload = {
+            "email":             email,
+            "test_type":         test_type,
+            "filename":          filename,
+            "passed":            passed,
+            "summary":           summary,
+            "image_url":         image_url,
+            "chart_data":        chart_data,
+            "job_id":            job_id,
+            "created_at":        datetime.now(timezone.utc).isoformat(),
+        }
+        httpx.post(
+            f"{SUPABASE_URL}/rest/v1/analyses",
+            json=payload,
+            headers=supabase_headers(),
+            timeout=15,
+        )
+    except Exception:
+        pass
+
+
+# =============================================================================
+# Auth endpoints
+# =============================================================================
+
+class AuthBody(BaseModel):
+    email:    str
+    password: str
+    name:     Optional[str] = None
+
+
+@app.post("/auth/signup")
+async def signup(body: AuthBody):
+    if not SUPABASE_URL:
+        raise HTTPException(500, "Backend not configured")
+    hashed = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
+    resp = httpx.post(
+        f"{SUPABASE_URL}/rest/v1/users",
+        json={"email": body.email, "password_hash": hashed, "name": body.name or ""},
+        headers=supabase_headers(),
+        timeout=10,
+    )
+    if resp.status_code == 409 or (resp.status_code == 201 and "duplicate" in resp.text.lower()):
+        raise HTTPException(409, "Email already registered")
+    if resp.status_code not in (200, 201):
+        raise HTTPException(400, "Could not create account")
+    token = create_token(body.email)
+    return {"token": token}
+
+
+@app.post("/auth/login")
+async def login(body: AuthBody):
+    if not SUPABASE_URL:
+        raise HTTPException(500, "Backend not configured")
+    resp = httpx.get(
+        f"{SUPABASE_URL}/rest/v1/users?email=eq.{body.email}&select=email,password_hash",
+        headers=supabase_headers(),
+        timeout=10,
+    )
+    rows = resp.json() if resp.status_code == 200 else []
+    if not rows:
+        raise HTTPException(401, "Invalid email or password")
+    row = rows[0]
+    if not bcrypt.checkpw(body.password.encode(), row["password_hash"].encode()):
+        raise HTTPException(401, "Invalid email or password")
+    token = create_token(body.email)
+    return {"token": token}
+
+
+# =============================================================================
+# Health check
+# =============================================================================
+
+@app.get("/")
+async def health():
+    return {"status": "ok", "service": "MLC QA API"}
+
+
+# =============================================================================
+# Result polling
+# =============================================================================
+
+@app.get("/result/{job_id}")
+async def get_result(job_id: str, u=Depends(get_current_user)):
+    job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+    return job
+
+
+# =============================================================================
+# History
+# =============================================================================
+
+@app.get("/history")
+async def get_history(u=Depends(get_current_user)):
+    if not SUPABASE_URL:
+        return {"analyses": []}
+    email = u["email"]
+    resp  = httpx.get(
+        f"{SUPABASE_URL}/rest/v1/analyses"
+        f"?email=eq.{email}&order=created_at.desc&limit=200"
+        f"&select=id,test_type,filename,passed,summary,image_url,chart_data,created_at",
+        headers=supabase_headers(),
+        timeout=15,
+    )
+    analyses = resp.json() if resp.status_code == 200 else []
+    return {"analyses": analyses}
+
+
+# =============================================================================
+# Picket Fence  —  /analyze
+# =============================================================================
+
+MLC_TYPE_MAP = {
+    "Millennium": "Millennium",
+    "HD MLC":     "HD MLC",
+    "Agility":    "Agility",
+    "SRS500":     "SRS500",
+    "NovalisHD":  "NovalisHD",
+}
+
+
+def _extract_pf_chart_data(pf) -> dict:
+    """Extract per-leaf-pair errors and summary metrics from a pylinac PicketFence result."""
+    chart_data: dict = {}
+    try:
+        rd = pf.results_data()
+
+        # ── Scalar metrics ────────────────────────────────────────────────────
+        def _f(attr, fallback=None):
+            v = getattr(rd, attr, None)
+            if v is None:
+                v = getattr(pf, attr, fallback)
+            try:
+                return float(v)
+            except Exception:
+                return fallback
+
+        chart_data["max_error"]     = round(_f("max_error", 0), 4)
+        chart_data["mean_error"]    = round(_f("mean_error", 0), 4)
+        chart_data["failed_leaves"] = int(_f("num_failed_leaves", 0) or 0)
+
+        # ── num_leaves (total MLC pairs, not just measured) ───────────────────
+        # pylinac PicketFence exposes .num_leaves on the mlc attribute
+        try:
+            chart_data["num_leaves"] = int(pf.mlc.num_leaves)
+        except Exception:
+            chart_data["num_leaves"] = 60   # Millennium default
+
+        # ── Per-leaf-pair data ────────────────────────────────────────────────
+        leaf_pairs      = []
+        leaf_max_errors = []
+        try:
+            # pylinac >= 3.x: results_data().mlc_meas is a list of MLCMeasurement objects
+            mlc_measurements = getattr(rd, "mlc_meas", None) or []
+            for m in mlc_measurements:
+                pair_num   = int(getattr(m, "leaf_pair", getattr(m, "pair_num", 0)))
+                max_err    = float(getattr(m, "max_error", getattr(m, "error", 0)))
+                leaf_pairs.append({"leaf_pair": pair_num, "max_error": round(max_err, 4)})
+                leaf_max_errors.append(round(max_err, 4))
+        except Exception:
+            # Fallback: iterate pf.mlc.leaf_pairs directly
+            try:
+                for pair in pf.mlc.leaf_pairs:
+                    pair_num = int(pair.pair_num)
+                    max_err  = float(max(abs(e) for e in pair.errors) if pair.errors else 0)
+                    leaf_pairs.append({"leaf_pair": pair_num, "max_error": round(max_err, 4)})
+                    leaf_max_errors.append(round(max_err, 4))
+            except Exception:
+                pass
+
+        chart_data["leaf_pairs"]       = leaf_pairs
+        chart_data["leaf_max_errors"]  = leaf_max_errors
+
+        # ── Extra summary fields (shown in the raw text block) ────────────────
+        try:
+            chart_data["picket_offsets"] = [round(float(o), 3) for o in (getattr(rd, "offsets", None) or [])]
+        except Exception:
+            chart_data["picket_offsets"] = []
+        try:
+            chart_data["mlc_skew"] = round(float(getattr(rd, "mlc_skew", 0) or 0), 4)
+        except Exception:
+            chart_data["mlc_skew"] = 0.0
+
+    except Exception as e:
+        chart_data["error"] = str(e)
+
+    return chart_data
+
+
+def _run_picket_fence(job_id: str, filepath: str, email: str,
+                      filename: str, tolerance: float,
+                      action_tolerance: float, mlc_type: str):
+    try:
+        pf = PicketFence(filepath)
+
+        # Pass MLC type if pylinac accepts it
+        try:
+            pf.analyze(
+                tolerance        = tolerance,
+                action_tolerance = action_tolerance,
+                mlc              = mlc_type,
+            )
+        except TypeError:
+            # Older pylinac versions do not accept mlc= kwarg
+            pf.analyze(
+                tolerance        = tolerance,
+                action_tolerance = action_tolerance,
+            )
+
+        summary    = pf.results()
+        passed     = pf.passed
+
+        # Plot
+        plot_path = filepath.replace(".dcm", "_pf.png")
+        pf.plot_analyzed_image(filename=plot_path, show=False)
+        image_url = upload_plot(plot_path, f"pf_{job_id}.png")
+
+        chart_data = _extract_pf_chart_data(pf)
+
+        save_analysis(
+            email      = email,
+            test_type  = "Picket Fence",
+            filename   = filename,
+            passed     = passed,
+            summary    = summary,
+            image_url  = image_url,
+            chart_data = chart_data,
+            job_id     = job_id,
+        )
+
+        jobs[job_id] = {
+            "status":           "Success",
+            "passed":           passed,
+            "analysis_summary": summary,
+            "image_url":        image_url,
+            "chart_data":       chart_data,
+        }
+
+    except Exception as e:
+        jobs[job_id] = {
+            "status":  "Error",
+            "message": f"Picket Fence analysis failed: {e}",
+        }
+    finally:
+        try:
+            os.remove(filepath)
+        except Exception:
+            pass
+        try:
+            os.remove(filepath.replace(".dcm", "_pf.png"))
+        except Exception:
+            pass
+        cleanup()
+
+
+@app.post("/analyze")
+async def analyze_picket_fence(
+    background_tasks: BackgroundTasks,
+    file:             UploadFile   = File(...),
+    tolerance:        float        = Form(1.0),
+    action_tolerance: float        = Form(0.5),
+    mlc_type:         str          = Form("Millennium"),
+    u=Depends(get_current_user),
+):
+    if not file.filename.lower().endswith(".dcm"):
+        raise HTTPException(400, "Only .dcm DICOM files are supported for Picket Fence.")
+
+    job_id   = str(uuid.uuid4())
+    tmp_dir  = tempfile.gettempdir()
+    filepath = os.path.join(tmp_dir, f"pf_{job_id}.dcm")
+
+    contents = await file.read()
+    with open(filepath, "wb") as f:
+        f.write(contents)
+
+    jobs[job_id] = {"status": "Processing", "_ts": time.time()}
+
+    background_tasks.add_task(
+        _run_picket_fence,
+        job_id           = job_id,
+        filepath         = filepath,
+        email            = u["email"],
+        filename         = file.filename,
+        tolerance        = tolerance,
+        action_tolerance = action_tolerance,
+        mlc_type         = MLC_TYPE_MAP.get(mlc_type, "Millennium"),
+    )
+
+    return {"status": "Queued", "job_id": job_id}
+
+
+# =============================================================================
+# Winston-Lutz  —  /analyze/winston-lutz
+# =============================================================================
+
+def _extract_wl_chart_data(wl) -> dict:
+    chart_data: dict = {}
+    try:
+        rd = wl.results_data()
+        chart_data["max_offset_mm"]  = round(float(getattr(rd, "max_2d_cax_to_bb_mm",  0)), 4)
+        chart_data["mean_offset_mm"] = round(float(getattr(rd, "mean_2d_cax_to_bb_mm", 0)), 4)
+        chart_data["num_images"]     = int(getattr(rd, "num_total_images", 0))
+
+        images_out = []
+        for img in getattr(wl, "images", []):
+            try:
+                images_out.append({
+                    "gantry_angle": round(float(getattr(img, "gantry_angle", 0)), 1),
+                    "bb_offset_mm": round(float(getattr(img, "cax2bb_distance", 0)), 4),
+                })
+            except Exception:
+                pass
+        chart_data["images"] = images_out
+    except Exception as e:
+        chart_data["error"] = str(e)
+    return chart_data
+
+
+def _run_winston_lutz(job_id: str, filepaths: list, email: str, filenames: str):
+    tmp_dir = None
+    try:
+        import tempfile as _tf
+        tmp_dir = _tf.mkdtemp(prefix=f"wl_{job_id}_")
+
+        wl      = WinstonLutz(tmp_dir)
+        summary = wl.results()
+        passed  = wl.passed
+
+        plot_path = os.path.join(tmp_dir, "wl_plot.png")
+        wl.plot_summary(filename=plot_path, show=False)
+        image_url = upload_plot(plot_path, f"wl_{job_id}.png")
+
+        chart_data = _extract_wl_chart_data(wl)
+
+        save_analysis(
+            email      = email,
+            test_type  = "Winston-Lutz",
+            filename   = filenames,
+            passed     = passed,
+            summary    = summary,
+            image_url  = image_url,
+            chart_data = chart_data,
+            job_id     = job_id,
+        )
+
+        jobs[job_id] = {
+            "status":           "Success",
+            "passed":           passed,
+            "analysis_summary": summary,
+            "image_url":        image_url,
+            "chart_data":       chart_data,
+        }
+
+    except Exception as e:
+        jobs[job_id] = {
+            "status":  "Error",
+            "message": f"Winston-Lutz analysis failed: {e}",
+        }
+    finally:
+        if tmp_dir:
+            import shutil
+            try:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+            except Exception:
+                pass
+        cleanup()
+
+
+@app.post("/analyze/winston-lutz")
+async def analyze_winston_lutz(
+    background_tasks: BackgroundTasks,
+    files: list[UploadFile] = File(...),
+    u=Depends(get_current_user),
+):
+    if not files:
+        raise HTTPException(400, "No files uploaded")
+
+    job_id  = str(uuid.uuid4())
+    tmp_dir = tempfile.mkdtemp(prefix=f"wl_{job_id}_")
+    saved   = []
+
+    for f in files:
+        if not f.filename.lower().endswith(".dcm"):
+            continue
+        fp = os.path.join(tmp_dir, f.filename)
+        contents = await f.read()
+        with open(fp, "wb") as out:
+            out.write(contents)
+        saved.append(fp)
+
+    if not saved:
+        raise HTTPException(400, "No valid .dcm files found")
+
+    filenames = f"{len(saved)} DICOM image(s)"
+    jobs[job_id] = {"status": "Processing", "_ts": time.time()}
+
+    background_tasks.add_task(
+        _run_winston_lutz,
+        job_id    = job_id,
+        filepaths = saved,
+        email     = u["email"],
+        filenames = filenames,
+    )
+
+    return {"status": "Queued", "job_id": job_id}
+
+
+# =============================================================================
+# Starshot  —  /analyze/starshot
+# =============================================================================
+
+def _extract_ss_chart_data(ss) -> dict:
+    chart_data: dict = {}
+    try:
+        rd = ss.results_data()
+        chart_data["wobble_radius"] = round(float(getattr(rd, "circle_profile_radius", 0) or 0), 4)
+
+        spokes_out = []
+        for spoke in getattr(ss, "lines", []):
+            try:
+                spokes_out.append({
+                    "angle":    round(float(getattr(spoke, "angle_to_positive_x", 0)), 1),
+                    "distance": round(float(getattr(spoke, "distance_from_center", 0)), 4),
+                })
+            except Exception:
+                pass
+        chart_data["spokes"] = spokes_out
+
+        # Radial profile around the determined wobble circle
+        try:
+            import numpy as np
+            arr     = ss.image.array.astype(float)
+            arr_min, arr_max = arr.min(), arr.max()
+            if arr_max > arr_min:
+                arr = (arr - arr_min) / (arr_max - arr_min)
+            cy, cx = arr.shape[0] // 2, arr.shape[1] // 2
+            row = arr[cy, :].tolist()
+            step = max(1, len(row) // 100)
+            chart_data["radial_profile"] = [round(float(row[i]), 4) for i in range(0, len(row), step)][:100]
+        except Exception:
+            chart_data["radial_profile"] = []
+
+    except Exception as e:
+        chart_data["error"] = str(e)
+    return chart_data
+
+
+def _run_starshot(job_id: str, filepath: str, email: str, filename: str):
+    try:
+        ss = Starshot(filepath)
+        ss.analyze(radius=0.85, min_peak_height=0.25, tolerance=1.0)
+
+        summary = ss.results()
+        passed  = ss.passed
+
+        plot_path = filepath.replace(".dcm", "_ss.png")
+        ss.plot_analyzed_image(filename=plot_path, show=False)
+        image_url = upload_plot(plot_path, f"ss_{job_id}.png")
+
+        chart_data = _extract_ss_chart_data(ss)
+
+        save_analysis(
+            email      = email,
+            test_type  = "Starshot",
+            filename   = filename,
+            passed     = passed,
+            summary    = summary,
+            image_url  = image_url,
+            chart_data = chart_data,
+            job_id     = job_id,
+        )
+
+        jobs[job_id] = {
+            "status":           "Success",
+            "passed":           passed,
+            "analysis_summary": summary,
+            "image_url":        image_url,
+            "chart_data":       chart_data,
+        }
+
+    except Exception as e:
+        jobs[job_id] = {
+            "status":  "Error",
+            "message": f"Starshot analysis failed: {e}",
+        }
+    finally:
+        try:
+            os.remove(filepath)
+        except Exception:
+            pass
+        try:
+            os.remove(filepath.replace(".dcm", "_ss.png"))
+        except Exception:
+            pass
+        cleanup()
+
+
+@app.post("/analyze/starshot")
+async def analyze_starshot(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    u=Depends(get_current_user),
+):
+    if not file.filename.lower().endswith((".dcm", ".zip")):
+        raise HTTPException(400, "Only .dcm or .zip files are supported for Starshot.")
+
+    job_id   = str(uuid.uuid4())
+    tmp_dir  = tempfile.gettempdir()
+    ext      = ".zip" if file.filename.lower().endswith(".zip") else ".dcm"
+    filepath = os.path.join(tmp_dir, f"ss_{job_id}{ext}")
+
+    contents = await file.read()
+    with open(filepath, "wb") as f:
+        f.write(contents)
+
+    jobs[job_id] = {"status": "Processing", "_ts": time.time()}
+
+    background_tasks.add_task(
+        _run_starshot,
+        job_id   = job_id,
+        filepath = filepath,
+        email    = u["email"],
+        filename = file.filename,
+    )
+
+    return {"status": "Queued", "job_id": job_id}
+
+
+# =============================================================================
+# Congruence  —  /analyze/congruence
+# (full implementation in congruencebackend.py — pasted here verbatim)
+# =============================================================================
+
+def _extract_congruence_chart_data(fa) -> dict:
+    try:
+        results = fa.results_data()
+        edges   = {}
+        try:
+            attrs = vars(results) if hasattr(results, "__dict__") else {}
+
+            def _get(candidates, default=None):
+                for name in candidates:
+                    v = attrs.get(name) or getattr(results, name, None)
+                    if v is not None:
+                        return float(v)
+                return default
+
+            top    = _get(["top_penumbra_mm",    "top_field_edge_mm",    "top_mm"])
+            bottom = _get(["bottom_penumbra_mm",  "bottom_field_edge_mm", "bottom_mm"])
+            left   = _get(["left_penumbra_mm",    "left_field_edge_mm",   "left_mm"])
+            right  = _get(["right_penumbra_mm",   "right_field_edge_mm",  "right_mm"])
+
+            if top is None:
+                fs_v   = _get(["field_size_vertical_mm",   "vertical_field_size"])
+                fs_h   = _get(["field_size_horizontal_mm", "horizontal_field_size"])
+                top    = round(fs_v  / 2, 3) if fs_v else None
+                bottom = round(-fs_v / 2, 3) if fs_v else None
+                left   = round(-fs_h / 2, 3) if fs_h else None
+                right  = round(fs_h  / 2, 3) if fs_h else None
+
+            edges = {
+                "top":    round(top,    3) if top    is not None else None,
+                "bottom": round(bottom, 3) if bottom is not None else None,
+                "left":   round(left,   3) if left   is not None else None,
+                "right":  round(right,  3) if right  is not None else None,
             }
-          }
-        }
-      },
-      scales: {
-        x: {
-          ticks: {
-            color: "#a8c4e0",
-            font: { family: "'IBM Plex Mono'", size: 9 },
-            maxRotation: 90,
-            minRotation: 60,
-            autoSkip: false
-          },
-          grid: { color: "rgba(255,255,255,0.05)" },
-          title: {
-            display: true,
-            text: "Leaf Pair (" + minLeaf + " – " + maxLeaf + "  |  measured in field)",
-            color: "#8ba4c0",
-            font: { family: "'IBM Plex Mono'", size: 11, weight: "600" },
-            padding: { top: 6 }
-          }
-        },
-        y: {
-          ticks: {
-            color: "#7a9abd",
-            font: { family: "'IBM Plex Mono'", size: 10 }
-          },
-          grid: { color: "rgba(255,255,255,0.05)" },
-          title: {
-            display: true,
-            text: "Error (mm)",
-            color: "#8ba4c0",
-            font: { family: "'IBM Plex Mono'", size: 11, weight: "600" }
-          },
-          min: 0,
-          max: Math.max(maxMeasuredErr * 1.5, tol * 0.25)
-        },
-        yTol: {
-          display: false,
-          min: 0,
-          max: tol
-        }
-      }
-    }
-  });
-}
+        except Exception:
+            edges = {"top": None, "bottom": None, "left": None, "right": None}
 
-async function downloadPDF() {
-  const r = window._lastResult; if (!r) return; await generatePDF(r);
-}
-async function generatePDF(r) {
-  const { jsPDF } = window.jspdf; const doc = new jsPDF({ orientation:"portrait", unit:"mm", format:"a4" }); const W=210, M=16;
-  doc.setFillColor(15,30,55); doc.rect(0,0,W,26,"F"); doc.setFillColor(0,175,215); doc.rect(0,0,5,26,"F");
-  doc.setFont("helvetica","bold"); doc.setFontSize(13); doc.setTextColor(255,255,255);
-  doc.text(`MLC QA \u2014 ${r.testType||"Analysis"} Report`, M+6, 11);
-  doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(180,210,230);
-  const now = new Date().toLocaleString("en-GB",{dateStyle:"long",timeStyle:"short"});
-  doc.text(`Generated: ${now}`, M+6, 19); doc.text(`File: ${r.filename}`, M+6, 23.5);
-  let y=34;
-  doc.setFillColor(...(r.pass?[0,168,107]:[195,45,70])); doc.roundedRect(M,y,W-M*2,13,2,2,"F");
-  doc.setFont("helvetica","bold"); doc.setFontSize(11); doc.setTextColor(255,255,255);
-  doc.text(r.pass?"\u2713  PASS":"\u2717  FAIL", M+5, y+9);
-  doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(255,255,255);
-  doc.text(r.toleranceText||(r.pass?"Within clinical tolerance":"Outside clinical tolerance"), M+36, y+9);
-  y+=20;
-  if (r.imgUrl) { try { const imgData=await fetchImageAsBase64(r.imgUrl); const imgW=W-M*2; const imgH=imgW*0.5; doc.setDrawColor(180,200,220); doc.setLineWidth(0.3); doc.rect(M,y,imgW,imgH); doc.addImage(imgData,"PNG",M,y,imgW,imgH); y+=imgH+5; doc.setFont("helvetica","italic"); doc.setFontSize(7.5); doc.setTextColor(80,105,135); doc.text(`Figure: Pylinac ${r.testType||""} \u2014 Analyzed Image`,M,y); y+=9; } catch { y+=4; } }
-  doc.setDrawColor(180,200,220); doc.setLineWidth(0.4); doc.line(M,y,W-M,y); y+=7;
-  const summaryLines=doc.splitTextToSize(r.summary,W-M*2-10); const boxH=Math.min(summaryLines.length*5.4+16,230);
-  doc.setFillColor(245,248,252); doc.roundedRect(M,y,W-M*2,boxH,2,2,"F"); doc.setDrawColor(200,215,230); doc.setLineWidth(0.3); doc.roundedRect(M,y,W-M*2,boxH,2,2,"S");
-  y+=7; doc.setFont("helvetica","bold"); doc.setFontSize(8.5); doc.setTextColor(15,40,80); doc.text("ANALYSIS SUMMARY",M+5,y); y+=7;
-  doc.setFont("courier","normal"); doc.setFontSize(8.2); doc.setTextColor(20,45,80);
-  summaryLines.forEach(line => { if(y>272){doc.addPage();y=18;doc.setFillColor(245,248,252);doc.roundedRect(M,y-4,W-M*2,240,2,2,"F");doc.setFont("courier","normal");doc.setFontSize(8.2);doc.setTextColor(20,45,80);} doc.text(line,M+5,y); y+=5.4; });
-  const pages=doc.internal.getNumberOfPages();
-  for(let i=1;i<=pages;i++){doc.setPage(i);doc.setFillColor(235,241,248);doc.rect(0,284,W,13,"F");doc.setDrawColor(180,200,220);doc.setLineWidth(0.3);doc.line(0,284,W,284);doc.setFont("helvetica","normal");doc.setFontSize(7);doc.setTextColor(60,85,120);doc.text("MLC QA Platform  \u00B7  For clinical physics use only  \u00B7  Not for diagnostic use",M,291);doc.text(`Page ${i} of ${pages}`,W-28,291);}
-  const prefix=r.testType?r.testType.replace(/\s+/g,"_").toUpperCase():"REPORT";
-  doc.save(`MLCQA_${prefix}_${r.filename.replace(/\.[^.]+$/,"")}_${Date.now()}.pdf`);
-}
-async function fetchImageAsBase64(url) {
-  const res=await fetch(url); const blob=await res.blob();
-  return new Promise((resolve,reject) => { const reader=new FileReader(); reader.onloadend=()=>resolve(reader.result); reader.onerror=reject; reader.readAsDataURL(blob); });
-}
-function logout() { localStorage.removeItem("mlcqa_token"); localStorage.removeItem("mlcqa_name"); window.location.href="index.html"; }
-</script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+        inline_profile, crossline_profile = [], []
+        try:
+            import numpy as np
+            arr = fa.image.array.astype(float)
+            arr_min, arr_max = arr.min(), arr.max()
+            if arr_max > arr_min:
+                arr = (arr - arr_min) / (arr_max - arr_min)
+            cy, cx = arr.shape[0] // 2, arr.shape[1] // 2
+            inline_raw    = arr[cy, :].tolist()
+            crossline_raw = arr[:, cx].tolist()
 
-  <script src="dicom-detect.js"></script>
-</body>
-</html>
+            def downsample(lst, n=100):
+                step = max(1, len(lst) // n)
+                return [round(float(lst[i]), 4) for i in range(0, len(lst), step)][:n]
+
+            inline_profile    = downsample(inline_raw)
+            crossline_profile = downsample(crossline_raw)
+        except Exception:
+            pass
+
+        return {
+            "edges":             edges,
+            "inline_profile":    inline_profile,
+            "crossline_profile": crossline_profile,
+            "tolerance_mm":      2.0,
+        }
+    except Exception as e:
+        return {"error": str(e), "edges": {}, "inline_profile": [], "crossline_profile": [], "tolerance_mm": 2.0}
+
+
+def _run_congruence(job_id: str, filepath: str, email: str, filename: str):
+    try:
+        fa = FieldAnalysis(filepath)
+        fa.analyze(protocol=None, is_FFF=False)
+
+        summary   = fa.results()
+        passed    = fa.passed
+
+        plot_path = filepath.replace(".dcm", "_congruence.png")
+        fa.plot_analyzed_image(filename=plot_path, show=False)
+        image_url = upload_plot(plot_path, f"congruence_{job_id}.png")
+
+        chart_data = _extract_congruence_chart_data(fa)
+
+        save_analysis(
+            email      = email,
+            test_type  = "Congruence",
+            filename   = filename,
+            passed     = passed,
+            summary    = summary,
+            image_url  = image_url,
+            chart_data = chart_data,
+            job_id     = job_id,
+        )
+
+        jobs[job_id] = {
+            "status":           "Success",
+            "passed":           passed,
+            "analysis_summary": summary,
+            "image_url":        image_url,
+            "chart_data":       chart_data,
+        }
+
+    except Exception as e:
+        jobs[job_id] = {
+            "status":  "Error",
+            "message": f"Congruence analysis failed: {e}",
+        }
+    finally:
+        try:
+            os.remove(filepath)
+        except Exception:
+            pass
+        cleanup()
+
+
+@app.post("/analyze/congruence")
+async def analyze_congruence(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    u=Depends(get_current_user),
+):
+    if not file.filename.lower().endswith(".dcm"):
+        raise HTTPException(400, "Only .dcm DICOM files are supported for the Congruence test.")
+
+    job_id   = str(uuid.uuid4())
+    tmp_dir  = tempfile.gettempdir()
+    filepath = os.path.join(tmp_dir, f"congruence_{job_id}.dcm")
+
+    contents = await file.read()
+    with open(filepath, "wb") as f:
+        f.write(contents)
+
+    jobs[job_id] = {"status": "Processing", "_ts": time.time()}
+
+    background_tasks.add_task(
+        _run_congruence,
+        job_id   = job_id,
+        filepath = filepath,
+        email    = u["email"],
+        filename = file.filename,
+    )
+
+    return {"status": "Queued", "job_id": job_id}
