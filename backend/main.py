@@ -244,64 +244,71 @@ MLC_TYPE_MAP = {
 
 
 def _extract_pf_chart_data(pf) -> dict:
-    """Extract per-leaf-pair errors and summary metrics from a pylinac PicketFence result."""
+    """Extract per-leaf-pair errors and summary metrics from a pylinac 3.42 PicketFence result.
+
+    In pylinac 3.42 the key data lives in PFResult:
+      - max_error_mm          → float
+      - absolute_median_error_mm → float (used as mean proxy)
+      - failed_leaves         → list[str|int]
+      - mlc_errors_by_leaf    → dict[str, list[float]]
+            keys  = str(leaf_number)  e.g. "1", "2" … "60"
+            values = list of errors (mm) — one per picket
+      - offsets_from_cax_mm   → list[float]
+      - mlc_skew              → float
+    Total MLC pairs = length of the MLC arrangement used (60 for Millennium, 80 for Agility).
+    """
     chart_data: dict = {}
     try:
-        rd = pf.results_data()
+        rd = pf.results_data()   # returns PFResult pydantic model
 
         # ── Scalar metrics ────────────────────────────────────────────────────
-        def _f(attr, fallback=None):
-            v = getattr(rd, attr, None)
-            if v is None:
-                v = getattr(pf, attr, fallback)
-            try:
-                return float(v)
-            except Exception:
-                return fallback
+        chart_data["max_error"]     = round(float(rd.max_error_mm), 4)
+        chart_data["mean_error"]    = round(float(rd.absolute_median_error_mm), 4)
+        chart_data["failed_leaves"] = len(rd.failed_leaves) if rd.failed_leaves else 0
 
-        chart_data["max_error"]     = round(_f("max_error", 0), 4)
-        chart_data["mean_error"]    = round(_f("mean_error", 0), 4)
-        chart_data["failed_leaves"] = int(_f("num_failed_leaves", 0) or 0)
-
-        # ── num_leaves (total MLC pairs, not just measured) ───────────────────
-        # pylinac PicketFence exposes .num_leaves on the mlc attribute
+        # ── Total MLC leaf count ──────────────────────────────────────────────
+        # Derive from the MLC arrangement that was used for this analysis.
         try:
-            chart_data["num_leaves"] = int(pf.mlc.num_leaves)
+            # pf.mlc is the MLC enum member; .value is a dict with 'arrangement'
+            num_leaves = len(pf.mlc.value["arrangement"].leaves)
         except Exception:
-            chart_data["num_leaves"] = 60   # Millennium default
+            # Fallback: count unique keys in the errors dict (only measured leaves)
+            # and default to 60 — the rendering layer will show grey for unmeasured ones.
+            num_leaves = 60
+        chart_data["num_leaves"] = num_leaves
 
-        # ── Per-leaf-pair data ────────────────────────────────────────────────
+        # ── Per-leaf-pair data from mlc_errors_by_leaf ────────────────────────
+        # mlc_errors_by_leaf: { "1": [e_picket0, e_picket1, ...], "2": [...], ... }
+        # We want, for each leaf: max(abs(error)) across all pickets.
         leaf_pairs      = []
         leaf_max_errors = []
-        try:
-            # pylinac >= 3.x: results_data().mlc_meas is a list of MLCMeasurement objects
-            mlc_measurements = getattr(rd, "mlc_meas", None) or []
-            for m in mlc_measurements:
-                pair_num   = int(getattr(m, "leaf_pair", getattr(m, "pair_num", 0)))
-                max_err    = float(getattr(m, "max_error", getattr(m, "error", 0)))
-                leaf_pairs.append({"leaf_pair": pair_num, "max_error": round(max_err, 4)})
-                leaf_max_errors.append(round(max_err, 4))
-        except Exception:
-            # Fallback: iterate pf.mlc.leaf_pairs directly
+
+        errors_by_leaf: dict = rd.mlc_errors_by_leaf  # already sorted ascending by key
+
+        for leaf_key, errors in errors_by_leaf.items():
             try:
-                for pair in pf.mlc.leaf_pairs:
-                    pair_num = int(pair.pair_num)
-                    max_err  = float(max(abs(e) for e in pair.errors) if pair.errors else 0)
-                    leaf_pairs.append({"leaf_pair": pair_num, "max_error": round(max_err, 4)})
-                    leaf_max_errors.append(round(max_err, 4))
-            except Exception:
-                pass
+                # Keys are plain integers as strings for standard (non-separate) analysis
+                pair_num = int(leaf_key)
+            except ValueError:
+                # Separate-leaves mode: keys look like "A30", "B30" — skip or combine
+                import re
+                m = re.search(r"(\d+)", leaf_key)
+                pair_num = int(m.group(1)) if m else 0
 
-        chart_data["leaf_pairs"]       = leaf_pairs
-        chart_data["leaf_max_errors"]  = leaf_max_errors
+            max_err = max((abs(float(e)) for e in errors), default=0.0)
+            leaf_pairs.append({"leaf_pair": pair_num, "max_error": round(max_err, 4)})
+            leaf_max_errors.append(round(max_err, 4))
 
-        # ── Extra summary fields (shown in the raw text block) ────────────────
+        chart_data["leaf_pairs"]      = leaf_pairs
+        chart_data["leaf_max_errors"] = leaf_max_errors
+
+        # ── Extra fields ──────────────────────────────────────────────────────
         try:
-            chart_data["picket_offsets"] = [round(float(o), 3) for o in (getattr(rd, "offsets", None) or [])]
+            chart_data["picket_offsets"] = [round(float(o), 3) for o in rd.offsets_from_cax_mm]
         except Exception:
             chart_data["picket_offsets"] = []
         try:
-            chart_data["mlc_skew"] = round(float(getattr(rd, "mlc_skew", 0) or 0), 4)
+            chart_data["mlc_skew"] = round(float(rd.mlc_skew), 4)
         except Exception:
             chart_data["mlc_skew"] = 0.0
 
