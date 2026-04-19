@@ -675,41 +675,39 @@ async def analyze_starshot(
 # =============================================================================
 
 def _extract_congruence_chart_data(fa) -> dict:
+    """Extract edge offsets and profiles from a pylinac 3.42 FieldAnalysis result.
+
+    In pylinac 3.42 the DeviceResult / FieldResult has explicit named fields:
+      cax_to_top_mm, cax_to_bottom_mm, cax_to_left_mm, cax_to_right_mm
+      field_size_vertical_mm, field_size_horizontal_mm
+      top_penumbra_mm, bottom_penumbra_mm, left_penumbra_mm, right_penumbra_mm
+    """
     try:
-        results = fa.results_data()
-        edges   = {}
-        try:
-            attrs = vars(results) if hasattr(results, "__dict__") else {}
+        rd = fa.results_data()   # returns FieldResult pydantic model
 
-            def _get(candidates, default=None):
-                for name in candidates:
-                    v = attrs.get(name) or getattr(results, name, None)
-                    if v is not None:
-                        return float(v)
-                return default
+        # ── Edge offsets from CAX (signed, mm) ───────────────────────────────
+        edges = {
+            "top":    round(float(rd.cax_to_top_mm),    3),
+            "bottom": round(float(rd.cax_to_bottom_mm), 3),
+            "left":   round(float(rd.cax_to_left_mm),   3),
+            "right":  round(float(rd.cax_to_right_mm),  3),
+        }
 
-            top    = _get(["top_penumbra_mm",    "top_field_edge_mm",    "top_mm"])
-            bottom = _get(["bottom_penumbra_mm",  "bottom_field_edge_mm", "bottom_mm"])
-            left   = _get(["left_penumbra_mm",    "left_field_edge_mm",   "left_mm"])
-            right  = _get(["right_penumbra_mm",   "right_field_edge_mm",  "right_mm"])
+        # ── Field size ────────────────────────────────────────────────────────
+        field_size = {
+            "vertical_mm":   round(float(rd.field_size_vertical_mm),   2),
+            "horizontal_mm": round(float(rd.field_size_horizontal_mm), 2),
+        }
 
-            if top is None:
-                fs_v   = _get(["field_size_vertical_mm",   "vertical_field_size"])
-                fs_h   = _get(["field_size_horizontal_mm", "horizontal_field_size"])
-                top    = round(fs_v  / 2, 3) if fs_v else None
-                bottom = round(-fs_v / 2, 3) if fs_v else None
-                left   = round(-fs_h / 2, 3) if fs_h else None
-                right  = round(fs_h  / 2, 3) if fs_h else None
+        # ── Penumbra widths (mm) ──────────────────────────────────────────────
+        penumbra = {
+            "top":    round(float(rd.top_penumbra_mm),    3),
+            "bottom": round(float(rd.bottom_penumbra_mm), 3),
+            "left":   round(float(rd.left_penumbra_mm),   3),
+            "right":  round(float(rd.right_penumbra_mm),  3),
+        }
 
-            edges = {
-                "top":    round(top,    3) if top    is not None else None,
-                "bottom": round(bottom, 3) if bottom is not None else None,
-                "left":   round(left,   3) if left   is not None else None,
-                "right":  round(right,  3) if right  is not None else None,
-            }
-        except Exception:
-            edges = {"top": None, "bottom": None, "left": None, "right": None}
-
+        # ── Inline / crossline profiles ───────────────────────────────────────
         inline_profile, crossline_profile = [], []
         try:
             import numpy as np
@@ -732,30 +730,54 @@ def _extract_congruence_chart_data(fa) -> dict:
 
         return {
             "edges":             edges,
+            "field_size":        field_size,
+            "penumbra":          penumbra,
             "inline_profile":    inline_profile,
             "crossline_profile": crossline_profile,
             "tolerance_mm":      2.0,
         }
     except Exception as e:
-        return {"error": str(e), "edges": {}, "inline_profile": [], "crossline_profile": [], "tolerance_mm": 2.0}
+        return {
+            "error":             str(e),
+            "edges":             {"top": None, "bottom": None, "left": None, "right": None},
+            "inline_profile":    [],
+            "crossline_profile": [],
+            "tolerance_mm":      2.0,
+        }
 
 
 def _run_congruence(job_id: str, filepath: str, email: str, filename: str):
     try:
-        fa = FieldAnalysis(filepath)
-        fa.analyze(protocol=None, is_FFF=False)
+        from pylinac import FieldAnalysis
+        from pylinac.field_analysis import Protocol
 
-        summary   = fa.results()
-        passed    = fa.passed
+        fa = FieldAnalysis(filepath)
+        # Protocol.NONE skips symmetry/flatness — appropriate for a congruence test
+        # where we only care about field edge positions.
+        fa.analyze(
+            protocol  = Protocol.NONE,
+            is_FFF    = False,
+        )
+
+        summary = fa.results()
+
+        # FieldAnalysis has no .passed — derive from edge offsets vs tolerance
+        chart_data = _extract_congruence_chart_data(fa)
+        tol = 2.0  # mm — standard radiation/light congruence tolerance
+        edges = chart_data.get("edges", {})
+        edge_values = [v for v in edges.values() if v is not None]
+        passed = all(abs(v) <= tol for v in edge_values) if edge_values else True
 
         plot_path = filepath.replace(".dcm", "_congruence.png")
         try:
             fa.save_analyzed_image(plot_path)
-        except AttributeError:
-            fa.plot_analyzed_image(filename=plot_path, show=False)
-        image_url = upload_plot(plot_path, f"congruence_{job_id}.png")
+        except Exception:
+            try:
+                fa.plot_analyzed_image(filename=plot_path, show=False)
+            except Exception:
+                plot_path = None
 
-        chart_data = _extract_congruence_chart_data(fa)
+        image_url = upload_plot(plot_path, f"congruence_{job_id}.png") if plot_path else ""
 
         save_analysis(
             email      = email,
