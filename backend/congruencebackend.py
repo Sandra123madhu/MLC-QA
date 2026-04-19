@@ -43,15 +43,24 @@ def _extract_congruence_chart_data(fa) -> dict:
             left   = _get(["left_penumbra_mm",  "left_field_edge_mm",  "left_mm"])
             right  = _get(["right_penumbra_mm",  "right_field_edge_mm", "right_mm"])
 
-            # Fallback: derive from symmetry / field size difference
+            # Fallback: derive deviations from cax_to_edge distances minus nominal half-field size.
+            # cax_to_*_mm returns the raw distance from CAX to the field edge (~50 mm for a
+            # 100x100 mm field). The clinically meaningful value is the DEVIATION from nominal,
+            # i.e. cax_to_edge - (field_size / 2). This keeps values near 0 and comparable
+            # against the ±1 mm tolerance.
             if top is None:
-                fs_v = _get(["field_size_vertical_mm", "vertical_field_size"])
+                cax_top    = _get(["cax_to_top_mm"])
+                cax_bottom = _get(["cax_to_bottom_mm"])
+                cax_left   = _get(["cax_to_left_mm"])
+                cax_right  = _get(["cax_to_right_mm"])
+                fs_v = _get(["field_size_vertical_mm",   "vertical_field_size"])
                 fs_h = _get(["field_size_horizontal_mm", "horizontal_field_size"])
-                # Nominal field size is unknown here, so report deltas as 0 if we can't compute
-                top    = round(fs_v / 2, 3) if fs_v else None
-                bottom = round(-fs_v / 2, 3) if fs_v else None
-                left   = round(-fs_h / 2, 3) if fs_h else None
-                right  = round(fs_h / 2, 3) if fs_h else None
+                nom_v = fs_v / 2.0 if fs_v else None
+                nom_h = fs_h / 2.0 if fs_h else None
+                top    = round(cax_top    - nom_v, 3) if cax_top    is not None and nom_v is not None else None
+                bottom = round(cax_bottom - nom_v, 3) if cax_bottom is not None and nom_v is not None else None
+                left   = round(cax_left   - nom_h, 3) if cax_left   is not None and nom_h is not None else None
+                right  = round(cax_right  - nom_h, 3) if cax_right  is not None and nom_h is not None else None
 
             edges = {
                 "top":    round(top,    3) if top    is not None else None,
