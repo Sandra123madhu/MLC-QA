@@ -237,10 +237,10 @@ function handleSuccess(result, filename) {
   banner.className = "verdict-banner " + (pass ? "verdict-pass" : "verdict-fail");
   banner.style.display = "flex";
 
-  // Gauge — max absolute edge deviation
+  // Gauge — max absolute edge deviation (values are now true deviations, near 0 mm)
   const edgeVals = [edges.top, edges.bottom, edges.left, edges.right].filter(v => v != null).map(Math.abs);
   const maxEdge = edgeVals.length ? Math.max(...edgeVals) : 0;
-  const maxScale = Math.max(tol * 1.6, maxEdge * 1.2);
+  const maxScale = Math.max(tol * 2, maxEdge * 1.5, 2.0);  // sensible scale for small deviations
   const fill = document.getElementById("gaugeFill");
   fill.style.width = Math.min((maxEdge / maxScale) * 100, 100) + "%";
   fill.style.background = maxEdge > tol ? "var(--fail)" : maxEdge > 0.5 ? "var(--warn)" : "var(--pass)";
@@ -250,13 +250,13 @@ function handleSuccess(result, filename) {
   document.getElementById("gaugeMaxLabel").textContent = maxScale.toFixed(2) + " mm";
   document.getElementById("gaugeSection").style.display = "block";
 
-  // Metrics
+  // Metrics — show true deviations (should be near 0 for a well-configured field)
   const mr = document.getElementById("metricsRow");
   mr.innerHTML = [
-    { label: "Top Edge",    val: edges.top    != null ? edges.top.toFixed(3)    : "N/A", unit: "mm", cls: edges.top    != null && Math.abs(edges.top)    > tol ? "metric-fail" : "metric-pass" },
-    { label: "Bottom Edge", val: edges.bottom != null ? edges.bottom.toFixed(3) : "N/A", unit: "mm", cls: edges.bottom != null && Math.abs(edges.bottom) > tol ? "metric-fail" : "metric-pass" },
-    { label: "Left Edge",   val: edges.left   != null ? edges.left.toFixed(3)   : "N/A", unit: "mm", cls: edges.left   != null && Math.abs(edges.left)   > tol ? "metric-fail" : "metric-pass" },
-    { label: "Right Edge",  val: edges.right  != null ? edges.right.toFixed(3)  : "N/A", unit: "mm", cls: edges.right  != null && Math.abs(edges.right)  > tol ? "metric-fail" : "metric-pass" }
+    { label: "Top Deviation",    val: edges.top    != null ? edges.top.toFixed(3)    : "N/A", unit: "mm", cls: edges.top    != null && Math.abs(edges.top)    > tol ? "metric-fail" : Math.abs(edges.top)    > 0.5 ? "metric-warn" : "metric-pass" },
+    { label: "Bottom Deviation", val: edges.bottom != null ? edges.bottom.toFixed(3) : "N/A", unit: "mm", cls: edges.bottom != null && Math.abs(edges.bottom) > tol ? "metric-fail" : Math.abs(edges.bottom) > 0.5 ? "metric-warn" : "metric-pass" },
+    { label: "Left Deviation",   val: edges.left   != null ? edges.left.toFixed(3)   : "N/A", unit: "mm", cls: edges.left   != null && Math.abs(edges.left)   > tol ? "metric-fail" : Math.abs(edges.left)   > 0.5 ? "metric-warn" : "metric-pass" },
+    { label: "Right Deviation",  val: edges.right  != null ? edges.right.toFixed(3)  : "N/A", unit: "mm", cls: edges.right  != null && Math.abs(edges.right)  > tol ? "metric-fail" : Math.abs(edges.right)  > 0.5 ? "metric-warn" : "metric-pass" }
   ].map(m => '<div class="metric-card"><div class="metric-label">' + m.label + '</div><div class="metric-value ' + m.cls + '">' + m.val + (m.unit ? '<span class="metric-unit">' + m.unit + '</span>' : '') + '</div></div>').join('');
   mr.style.display = "grid";
 
@@ -288,7 +288,7 @@ function renderCharts(cd, tol) {
     plugins: { legend: { labels: { color: "#8ba4c0", font: { family: "'IBM Plex Mono'", size: 9 } } } },
     scales: {
       x: { ticks: { color: "#546a85", font: { size: 9 } }, grid: { color: "rgba(36,53,82,0.8)" } },
-      y: { title: { display: true, text: "Edge Deviation (mm)", color: "#546a85", font: { size: 9 } }, ticks: { color: "#546a85", font: { family: "'IBM Plex Mono'", size: 9 } }, grid: { color: "rgba(36,53,82,0.8)" } }
+      y: { title: { display: true, text: "Edge Deviation from Nominal (mm)", color: "#546a85", font: { size: 9 } }, ticks: { color: "#546a85", font: { family: "'IBM Plex Mono'", size: 9 } }, grid: { color: "rgba(36,53,82,0.8)" } }
     }
   };
   if (congruenceChart) congruenceChart.destroy();
