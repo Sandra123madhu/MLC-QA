@@ -699,18 +699,26 @@ def _extract_congruence_chart_data(fa) -> dict:
     try:
         rd = fa.results_data()   # returns FieldResult pydantic model
 
-        # ── Edge offsets from CAX (signed, mm) ───────────────────────────────
-        edges = {
-            "top":    round(safe_float(rd.cax_to_top_mm),    3),
-            "bottom": round(safe_float(rd.cax_to_bottom_mm), 3),
-            "left":   round(safe_float(rd.cax_to_left_mm),   3),
-            "right":  round(safe_float(rd.cax_to_right_mm),  3),
-        }
-
         # ── Field size ────────────────────────────────────────────────────────
         field_size = {
             "vertical_mm":   round(safe_float(rd.field_size_vertical_mm),   2),
             "horizontal_mm": round(safe_float(rd.field_size_horizontal_mm), 2),
+        }
+
+        # ── Edge deviations from nominal (signed, mm) ─────────────────────────
+        # pylinac's cax_to_*_mm reports the distance from CAX to each field edge
+        # (e.g. ~50 mm for a 100x100 mm field). To get the clinically meaningful
+        # DEVIATION we subtract the nominal half-field size (field_size / 2).
+        # A positive deviation means the edge has moved away from CAX (field too big);
+        # a negative deviation means the edge has moved toward CAX (field too small).
+        nominal_half_v = safe_float(rd.field_size_vertical_mm)   / 2.0
+        nominal_half_h = safe_float(rd.field_size_horizontal_mm) / 2.0
+
+        edges = {
+            "top":    round(safe_float(rd.cax_to_top_mm)    - nominal_half_v, 3),
+            "bottom": round(safe_float(rd.cax_to_bottom_mm) - nominal_half_v, 3),
+            "left":   round(safe_float(rd.cax_to_left_mm)   - nominal_half_h, 3),
+            "right":  round(safe_float(rd.cax_to_right_mm)  - nominal_half_h, 3),
         }
 
         # ── Penumbra widths (mm) ──────────────────────────────────────────────
