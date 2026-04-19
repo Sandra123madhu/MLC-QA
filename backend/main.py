@@ -682,29 +682,43 @@ def _extract_congruence_chart_data(fa) -> dict:
       field_size_vertical_mm, field_size_horizontal_mm
       top_penumbra_mm, bottom_penumbra_mm, left_penumbra_mm, right_penumbra_mm
     """
+    import numpy as np
+
+    def safe_float(v):
+        """Convert any numpy scalar, 0-d array, or plain number to a Python float."""
+        if v is None:
+            return None
+        arr = np.asarray(v)
+        if arr.ndim == 0:
+            return float(arr)          # 0-dimensional numpy array → scalar
+        if arr.size == 1:
+            return float(arr.flat[0])  # single-element array → scalar
+        # Multi-element: return the mean so we never crash
+        return float(arr.mean())
+
     try:
         rd = fa.results_data()   # returns FieldResult pydantic model
 
         # ── Edge offsets from CAX (signed, mm) ───────────────────────────────
         edges = {
-            "top":    round(float(rd.cax_to_top_mm),    3),
-            "bottom": round(float(rd.cax_to_bottom_mm), 3),
-            "left":   round(float(rd.cax_to_left_mm),   3),
-            "right":  round(float(rd.cax_to_right_mm),  3),
+            "top":    round(safe_float(rd.cax_to_top_mm),    3),
+            "bottom": round(safe_float(rd.cax_to_bottom_mm), 3),
+            "left":   round(safe_float(rd.cax_to_left_mm),   3),
+            "right":  round(safe_float(rd.cax_to_right_mm),  3),
         }
 
         # ── Field size ────────────────────────────────────────────────────────
         field_size = {
-            "vertical_mm":   round(float(rd.field_size_vertical_mm),   2),
-            "horizontal_mm": round(float(rd.field_size_horizontal_mm), 2),
+            "vertical_mm":   round(safe_float(rd.field_size_vertical_mm),   2),
+            "horizontal_mm": round(safe_float(rd.field_size_horizontal_mm), 2),
         }
 
         # ── Penumbra widths (mm) ──────────────────────────────────────────────
         penumbra = {
-            "top":    round(float(rd.top_penumbra_mm),    3),
-            "bottom": round(float(rd.bottom_penumbra_mm), 3),
-            "left":   round(float(rd.left_penumbra_mm),   3),
-            "right":  round(float(rd.right_penumbra_mm),  3),
+            "top":    round(safe_float(rd.top_penumbra_mm),    3),
+            "bottom": round(safe_float(rd.bottom_penumbra_mm), 3),
+            "left":   round(safe_float(rd.left_penumbra_mm),   3),
+            "right":  round(safe_float(rd.right_penumbra_mm),  3),
         }
 
         # ── Inline / crossline profiles ───────────────────────────────────────
