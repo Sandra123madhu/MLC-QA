@@ -336,7 +336,10 @@ def _run_picket_fence(job_id: str, filepath: str, email: str,
 
         # Plot
         plot_path = filepath.replace(".dcm", "_pf.png")
-        pf.plot_analyzed_image(filename=plot_path, show=False)
+        try:
+            pf.save_analyzed_image(plot_path)
+        except AttributeError:
+            pf.plot_analyzed_image(filename=plot_path, show=False)
         image_url = upload_plot(plot_path, f"pf_{job_id}.png")
 
         chart_data = _extract_pf_chart_data(pf)
@@ -451,7 +454,13 @@ def _run_winston_lutz(job_id: str, filepaths: list, email: str, filenames: str):
         passed  = wl.passed
 
         plot_path = os.path.join(tmp_dir, "wl_plot.png")
-        wl.plot_summary(filename=plot_path, show=False)
+        try:
+            wl.save_summary_plot(plot_path)
+        except AttributeError:
+            try:
+                wl.plot_summary(filename=plot_path, show=False)
+            except Exception:
+                wl.plot_analyzed_image(filename=plot_path, show=False)
         image_url = upload_plot(plot_path, f"wl_{job_id}.png")
 
         chart_data = _extract_wl_chart_data(wl)
@@ -578,7 +587,10 @@ def _run_starshot(job_id: str, filepath: str, email: str, filename: str):
         passed  = ss.passed
 
         plot_path = filepath.replace(".dcm", "_ss.png")
-        ss.plot_analyzed_image(filename=plot_path, show=False)
+        try:
+            ss.save_analyzed_image(plot_path)
+        except AttributeError:
+            ss.plot_analyzed_image(filename=plot_path, show=False)
         image_url = upload_plot(plot_path, f"ss_{job_id}.png")
 
         chart_data = _extract_ss_chart_data(ss)
@@ -730,7 +742,10 @@ def _run_congruence(job_id: str, filepath: str, email: str, filename: str):
         passed    = fa.passed
 
         plot_path = filepath.replace(".dcm", "_congruence.png")
-        fa.plot_analyzed_image(filename=plot_path, show=False)
+        try:
+            fa.save_analyzed_image(plot_path)
+        except AttributeError:
+            fa.plot_analyzed_image(filename=plot_path, show=False)
         image_url = upload_plot(plot_path, f"congruence_{job_id}.png")
 
         chart_data = _extract_congruence_chart_data(fa)
