@@ -138,6 +138,9 @@
         <span style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);">
           <span style="display:inline-block;width:12px;height:12px;background:rgba(201,64,80,0.90);border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Fail (≥ 1.0 mm)
         </span>
+        <span style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);">
+          <span style="display:inline-block;width:12px;height:12px;background:rgba(80,100,130,0.45);border-radius:2px;vertical-align:middle;margin-right:4px;border:1px solid rgba(255,255,255,0.08);"></span>Outside field
+        </span>
         <span id="leafMapSummary" style="font-family:var(--mono);font-size:0.72rem;color:var(--text-muted);margin-left:auto;"></span>
       </div>
       <div id="leafMapTooltip" style="display:none;position:fixed;background:#0e1621;border:1px solid rgba(100,160,220,0.25);border-radius:6px;padding:8px 12px;font-family:var(--mono);font-size:0.75rem;color:#a8c4e0;pointer-events:none;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.4);"></div>
@@ -370,35 +373,68 @@ function renderLeafMap(cd, tol) {
 
   let nPass = 0, nAction = 0, nFail = 0;
 
-  // Find the single leaf pair with the highest error for the pulse highlight
+  // ── Determine total MLC pairs for this machine ──────────────────────────
+  // Prefer backend-reported num_leaves, fall back to the MLC-type selector,
+  // then default to 60 (Millennium).
+  let totalMLC = (cd.num_leaves != null && cd.num_leaves > 0) ? Number(cd.num_leaves) : 0;
+  if (!totalMLC) {
+    const sel = document.getElementById("mlcTypeSelect");
+    if (sel) {
+      const v = sel.value;
+      totalMLC = v === "Agility" ? 80 : (v === "SRS500" || v === "NovalisHD") ? 60 : 60;
+    } else {
+      totalMLC = 60;
+    }
+  }
+
+  // ── Build a lookup: pair number → {max_error, ...} ──────────────────────
+  const measuredMap = new Map();
+  leafPairs.forEach(lp => {
+    const pairNum = lp.leaf_pair != null ? Number(lp.leaf_pair) : null;
+    if (pairNum != null) measuredMap.set(pairNum, lp);
+  });
+
+  // ── Find the maximum error for pulse-highlight ───────────────────────────
   const maxErrValue = Math.max(...leafPairs.map(lp => Number(lp.max_error) || 0));
 
-  leafPairs.forEach(lp => {
-    const err    = Number(lp.max_error) || 0;
-    const label  = lp.leaf_pair != null ? String(lp.leaf_pair) : "?";
-    const isFail = err >= tol;
-    const isAct  = !isFail && err >= actionTol;
-    const isMax  = maxErrValue > 0 && err === maxErrValue;
+  // ── Render ALL pairs 1 … totalMLC ───────────────────────────────────────
+  for (let pairNum = 1; pairNum <= totalMLC; pairNum++) {
+    const lp         = measuredMap.get(pairNum);   // undefined if outside field
+    const isMeasured = lp !== undefined;
+    const err        = isMeasured ? (Number(lp.max_error) || 0) : 0;
+    const label      = String(pairNum);
 
-    if (isFail) nFail++;
-    else if (isAct) nAction++;
-    else nPass++;
+    let bg, opacity, cursor;
 
-    const bg = isFail
-      ? "rgba(201,64,80,0.90)"
-      : isAct
-        ? "rgba(200,137,42,0.90)"
-        : "rgba(26,171,117,0.80)";
+    if (!isMeasured) {
+      // Outside beam field — grey, non-interactive appearance
+      bg      = "rgba(80,100,130,0.45)";
+      opacity = 0.40;
+      cursor  = "default";
+    } else {
+      const isFail = err >= tol;
+      const isAct  = !isFail && err >= actionTol;
 
-    // Intensity: darken pass cells with low error, brighten ones near limit
-    const intensity = Math.min(err / tol, 1.0);
-    const opacity   = isFail || isAct ? 0.90 : 0.45 + intensity * 0.45;
+      if (isFail) nFail++;
+      else if (isAct) nAction++;
+      else nPass++;
+
+      bg = isFail
+        ? "rgba(201,64,80,0.90)"
+        : isAct
+          ? "rgba(200,137,42,0.90)"
+          : "rgba(26,171,117,0.80)";
+
+      const intensity = Math.min(err / tol, 1.0);
+      opacity = isFail || isAct ? 0.90 : 0.45 + intensity * 0.45;
+      cursor  = "pointer";
+    }
 
     const cell = document.createElement("div");
     cell.style.cssText = [
       "width:28px", "height:28px", "border-radius:3px",
       "background:" + bg, "opacity:" + opacity.toFixed(2),
-      "cursor:pointer", "display:flex", "align-items:center",
+      "cursor:" + cursor, "display:flex", "align-items:center",
       "justify-content:center", "font-family:var(--mono)",
       "font-size:0.6rem", "color:rgba(255,255,255,0.85)",
       "font-weight:600", "transition:transform 0.1s, opacity 0.1s",
@@ -406,48 +442,67 @@ function renderLeafMap(cd, tol) {
     ].join(";");
     cell.textContent = label;
 
-    // Mark the cell with the highest error for the slow pulse animation
-    if (isMax) {
+    // Pulse-highlight the worst measured pair
+    if (isMeasured && maxErrValue > 0 && err === maxErrValue) {
       cell.classList.add("leaf-max-error-cell");
     }
 
-    // Hover: show tooltip
-    cell.addEventListener("mouseenter", e => {
-      cell.style.transform = "scale(1.25)";
-      cell.style.opacity   = "1";
-      cell.style.zIndex    = "10";
-      const statusText = isFail ? "FAIL" : isAct ? "ACTION" : "PASS";
-      const statusColor = isFail ? "#e06070" : isAct ? "#e0a040" : "#40c090";
-      tooltip.innerHTML =
-        "<div style='margin-bottom:4px;font-size:0.8rem;color:var(--text-1)'>Leaf Pair <strong>" + label + "</strong></div>" +
-        "<div>Max Error: <strong style='color:" + statusColor + "'>" + err.toFixed(4) + " mm</strong></div>" +
-        "<div style='margin-top:3px;'>Status: <strong style='color:" + statusColor + "'>" + statusText + "</strong></div>" +
-        "<div style='margin-top:3px;color:rgba(168,196,224,0.6)'>Tolerance: " + tol + " mm &nbsp;|&nbsp; Action: " + actionTol.toFixed(1) + " mm</div>";
-      tooltip.style.display = "block";
-    });
-
-    cell.addEventListener("mousemove", e => {
-      const tx = e.clientX + 14;
-      const ty = e.clientY - 10;
-      tooltip.style.left = tx + "px";
-      tooltip.style.top  = ty + "px";
-    });
-
-    cell.addEventListener("mouseleave", () => {
-      cell.style.transform = "";
-      cell.style.opacity   = opacity.toFixed(2);
-      cell.style.zIndex    = "";
-      tooltip.style.display = "none";
-    });
+    // Hover tooltip — measured pairs only
+    if (isMeasured) {
+      const isFail = err >= tol;
+      const isAct  = !isFail && err >= actionTol;
+      cell.addEventListener("mouseenter", e => {
+        cell.style.transform = "scale(1.25)";
+        cell.style.opacity   = "1";
+        cell.style.zIndex    = "10";
+        const statusText  = isFail ? "FAIL" : isAct ? "ACTION" : "PASS";
+        const statusColor = isFail ? "#e06070" : isAct ? "#e0a040" : "#40c090";
+        tooltip.innerHTML =
+          "<div style='margin-bottom:4px;font-size:0.8rem;color:var(--text-1)'>Leaf Pair <strong>" + label + "</strong></div>" +
+          "<div>Max Error: <strong style='color:" + statusColor + "'>" + err.toFixed(4) + " mm</strong></div>" +
+          "<div style='margin-top:3px;'>Status: <strong style='color:" + statusColor + "'>" + statusText + "</strong></div>" +
+          "<div style='margin-top:3px;color:rgba(168,196,224,0.6)'>Tolerance: " + tol + " mm &nbsp;|&nbsp; Action: " + actionTol.toFixed(1) + " mm</div>";
+        tooltip.style.display = "block";
+      });
+      cell.addEventListener("mousemove", e => {
+        tooltip.style.left = (e.clientX + 14) + "px";
+        tooltip.style.top  = (e.clientY - 10) + "px";
+      });
+      cell.addEventListener("mouseleave", () => {
+        cell.style.transform = "";
+        cell.style.opacity   = opacity.toFixed(2);
+        cell.style.zIndex    = "";
+        tooltip.style.display = "none";
+      });
+    } else {
+      // Outside-field tooltip
+      cell.addEventListener("mouseenter", e => {
+        cell.style.opacity = "0.65";
+        tooltip.innerHTML =
+          "<div style='margin-bottom:4px;font-size:0.8rem;color:var(--text-1)'>Leaf Pair <strong>" + label + "</strong></div>" +
+          "<div style='color:rgba(168,196,224,0.7)'>Outside beam field — not measured</div>";
+        tooltip.style.display = "block";
+      });
+      cell.addEventListener("mousemove", e => {
+        tooltip.style.left = (e.clientX + 14) + "px";
+        tooltip.style.top  = (e.clientY - 10) + "px";
+      });
+      cell.addEventListener("mouseleave", () => {
+        cell.style.opacity = opacity.toFixed(2);
+        tooltip.style.display = "none";
+      });
+    }
 
     grid.appendChild(cell);
-  });
+  }
 
-  const total = leafPairs.length;
+  const nMeasured  = leafPairs.length;
+  const nOutside   = totalMLC - nMeasured;
   summary.textContent =
-    total + " pairs measured" +
-    (nFail   > 0 ? " · " + nFail   + " fail"   : "") +
-    (nAction > 0 ? " · " + nAction + " action"  : "") +
+    nMeasured + " of " + totalMLC + " pairs measured" +
+    (nOutside > 0 ? " · " + nOutside + " outside field" : "") +
+    (nFail    > 0 ? " · " + nFail   + " fail"           : "") +
+    (nAction  > 0 ? " · " + nAction + " action"         : "") +
     " · " + nPass + " pass";
 
   section.style.display = "block";
