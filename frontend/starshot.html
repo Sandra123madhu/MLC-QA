@@ -1,359 +1,240 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Starshot — MLC QA</title>
-  <link rel="stylesheet" href="style.css"/>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-</head>
-<body>
-<aside class="sidebar">
-  <div class="sidebar-header">
-    <a href="dashboard.html" class="sidebar-logo">
-      <div class="logo-mark"><svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg></div>
-      <div class="logo-text">MLC<span>QA</span></div>
-    </a>
-  </div>
-  <nav class="sidebar-nav">
-    <div class="nav-label">Menu</div>
-    <a class="nav-item" href="dashboard.html"><span class="nav-icon">▦</span> Dashboard</a>
-    <a class="nav-item" href="mlc-qa.html"><span class="nav-icon">⚡</span> Picket Fence</a>
-    <a class="nav-item" href="winston-lutz.html"><span class="nav-icon">◎</span> Winston-Lutz</a>
-    <a class="nav-item active" href="starshot.html"><span class="nav-icon">✦</span> Starshot</a>
-    <a class="nav-item" href="congruence.html"><span class="nav-icon">⊞</span> Congruence</a>
-    <a class="nav-item" href="history.html"><span class="nav-icon">≡</span> History</a>
-  </nav>
-  <div class="sidebar-footer">
-    <div class="user-chip">
-      <div class="avatar" id="avatarInitial">?</div>
-      <div><div class="user-name" id="sidebarName">Loading...</div><div class="user-role">Medical Physicist</div></div>
-    </div>
-    <button class="logout-btn" onclick="logout()">Sign Out</button>
-  </div>
-</aside>
+const BACKEND_URL = "https://mlc-qa.onrender.com";
 
-<main class="main">
-  <div class="page-header">
-    <div class="breadcrumb"><a href="dashboard.html">Dashboard</a> <span>/</span> Starshot Test</div>
-    <h1>Starshot Test</h1>
-    <p>Analyze gantry and collimator rotation accuracy via spoke intersection circle minimization</p>
-  </div>
-
-  <div class="server-status" id="serverStatus">
-    <div class="status-dot-sm dot-warn"></div><span>Checking server...</span>
-  </div>
-
-  <div class="info-note">
-    <strong>Note:</strong> Upload a DICOM image containing radiation spokes from multiple angles, or a <strong>.zip</strong> archive. The analysis finds the minimum circle (wobble radius) enclosing all spoke intersections.
-  </div>
-
-  <div id="wrongTestModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(6,12,24,0.88);backdrop-filter:blur(6px);align-items:center;justify-content:center;">
-    <div style="background:var(--surface);border:1px solid rgba(201,64,80,0.5);border-left:4px solid var(--fail);border-radius:var(--r-lg);padding:32px 28px;max-width:480px;width:92%;box-shadow:0 8px 48px rgba(0,0,0,0.6);">
-      <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;">
-        <div style="width:46px;height:46px;border-radius:50%;background:rgba(201,64,80,0.18);border:1.5px solid rgba(201,64,80,0.45);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0;">&#9888;</div>
-        <div>
-          <div style="font-family:var(--mono);font-size:0.95rem;font-weight:600;color:var(--fail);letter-spacing:0.05em;">UNACCEPTABLE DATA — WRONG TEST FILE</div>
-          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px;font-family:var(--mono);">File type mismatch &mdash; analysis blocked</div>
-        </div>
-      </div>
-      <p style="font-size:0.85rem;color:var(--text-2);line-height:1.7;margin-bottom:10px;">
-        The selected file appears to be a <strong id="wtm-detected-name" style="color:var(--accent);">&#8230;</strong> image, not a <strong id="wtm-page-name" style="color:var(--text-1);">&#8230;</strong> file.
-      </p>
-      <p style="font-size:0.85rem;color:var(--text-2);line-height:1.7;margin-bottom:22px;">
-        Analysing the wrong image type will produce <strong style="color:var(--fail);">clinically meaningless or misleading results</strong>. This action is <strong style="color:var(--fail);">blocked</strong> to protect data integrity. Please upload this file on the correct page:
-      </p>
-      <a id="wtm-correct-link" href="#" style="display:flex;align-items:center;gap:12px;padding:13px 16px;background:rgba(43,159,212,0.08);border:1px solid var(--accent-border);border-radius:var(--r);text-decoration:none;margin-bottom:20px;">
-        <span id="wtm-correct-icon" style="font-size:1.2rem;">&#128194;</span>
-        <div>
-          <div id="wtm-correct-label" style="font-size:0.85rem;font-weight:600;color:var(--accent);">Go to correct test</div>
-          <div id="wtm-correct-sub"   style="font-size:0.74rem;color:var(--text-muted);margin-top:2px;">&#8230;</div>
-        </div>
-        <span style="margin-left:auto;color:var(--text-muted);font-size:1rem;">&#8594;</span>
-      </a>
-      <div style="display:flex;gap:10px;">
-        <button onclick="dismissWrongTestModal()" style="width:100%;padding:11px 0;background:transparent;border:1px solid var(--border);border-radius:var(--r);color:var(--text-muted);font-size:0.83rem;cursor:pointer;font-family:var(--mono);">&#8592; Choose a Different File</button>
-      </div>
-      <p style="font-size:0.71rem;color:var(--text-muted);margin-top:14px;text-align:center;line-height:1.55;">Detection is based on DICOM metadata and filename heuristics. If you believe this is a false positive, please verify the file type before uploading.</p>
-    </div>
-  </div>
-
-  <div class="upload-card">
-    <div class="upload-zone" id="uploadZone">
-      <input type="file" id="ssFile" accept=".dcm,.zip" onchange="onFileSelected(this)"/>
-      <div class="upload-icon">✦</div>
-      <h3>Drop your DICOM or ZIP file here</h3>
-      <p>or click to browse — .dcm or .zip files accepted</p>
-      <div class="file-selected" id="fileLabel"></div>
-    </div>
-    <div class="tolerances">
-      <div class="tol-item"><div class="tol-label">Tolerance (radius)</div><div class="tol-val">1.0 mm</div></div>
-      <div class="tol-item"><div class="tol-label">Min. Spokes</div><div class="tol-val">3</div></div>
-      <div class="tol-item"><div class="tol-label">Wobble Radius</div><div class="tol-val" id="autoRadiusDisplay" style="font-size:0.8rem">Auto-detected on upload</div></div>
-    </div>
-    <div id="serverStatus" class="server-status"></div>
-    <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>Run Starshot Analysis</button>
-  </div>
-
-  <div class="results-card">
-    <h2>Results</h2>
-    <div id="resultsBody"><p>Upload a file and run the analysis to see results here.</p></div>
-    <div id="verdictBanner" class="verdict-banner" style="display:none"></div>
-    <div id="gaugeSection" style="display:none;margin-top:20px">
-      <div class="gauge-label-row"><span class="gauge-title">Wobble Radius vs Tolerance</span><span class="gauge-val" id="gaugeVal"></span></div>
-      <div class="gauge-track"><div class="gauge-fill" id="gaugeFill"></div><div class="gauge-marker" id="gaugeMarker"></div></div>
-      <div class="gauge-ticks"><span>0 mm</span><span id="gaugeTolLabel"></span><span id="gaugeMaxLabel"></span></div>
-    </div>
-    <div id="metricsRow" class="metrics-row" style="display:none;margin-top:20px"></div>
-    <div id="plotSection" style="display:none;margin-top:20px"></div>
-    <div id="chartsSection" style="display:none;margin-top:28px">
-      <div class="section-head" style="margin-top:0;border-bottom:1px solid var(--border-subtle);padding-bottom:14px;margin-bottom:20px">
-        <h2 style="font-size:0.88rem;font-weight:600">Analysis Charts</h2>
-      </div>
-      <div class="charts-grid">
-        <div class="chart-card"><div class="chart-card-title">Spoke Angular Deviation (degrees)</div><canvas id="spokeChart"></canvas></div>
-        <div class="chart-card"><div class="chart-card-title">Radial Intensity Profile</div><canvas id="profileChart"></canvas></div>
-      </div>
-    </div>
-    <div id="pdfSection" style="display:none;margin-top:16px">
-      <button class="btn-outline" onclick="downloadPDF()">&#11015; Download PDF Report</button>
-    </div>
-  </div>
-</main>
-
-<script>
-// Redundant BACKEND_URL, token, name, and server status logic removed.
-// These are now handled globally in script.js.
-if (name) {
-  document.getElementById("sidebarName").textContent = name;
-  document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
-}
-
-(async () => {
-  const el = document.getElementById("serverStatus");
-  if (!el) return;
-  try {
-    const r = await fetch(`${BACKEND_URL}/`);
-    el.innerHTML = r.ok ? `<div class="status-dot-sm dot-ok"></div><span>Server online</span>` : `<div class="status-dot-sm dot-warn"></div><span>Server degraded</span>`;
-    if (r.ok) {
-        const btn = document.getElementById("analyzeBtn");
-        if (btn) btn.disabled = false;
+// ── Auth guard ────────────────────────────────────────────────────────────────
+// Sanitize: if the stored token is literally "undefined" or empty, wipe it now
+// so we don't send a garbage Authorization header on every request.
+(function sanitizeToken() {
+    const t = localStorage.getItem("mlcqa_token");
+    if (!t || t === "undefined" || t === "null" || t.trim() === "") {
+        localStorage.removeItem("mlcqa_token");
+        localStorage.removeItem("mlcqa_name");
     }
-  } catch { 
-    el.innerHTML = `<div class="status-dot-sm dot-warn"></div><span>Server waking up — wait ~60s</span>`; 
-    // Reduced reload frequency to avoid annoying loops
-    setTimeout(() => location.reload(), 60000); 
-  }
 })();
 
-let _autoRadius=null;
+const isAuthPage = window.location.pathname.includes("login.html") ||
+                   window.location.pathname.includes("signup.html") ||
+                   window.location.pathname.includes("index.html") ||
+                   window.location.pathname.endsWith("/");
 
-async function onFileSelected(input){
-  const label = document.getElementById("fileLabel");
-  const btn   = document.getElementById("analyzeBtn");
-
-  if (input.files.length > 0) {
-    const file = input.files[0];
-    label.textContent = "Selected: " + file.name;
-    btn.disabled = false;
-
-    const ok = await checkFileAcceptable(file, "starshot", btn);
-    if (!ok) return;
-
-    tryAutoDetect(file);
-  } else {
-    label.textContent = "";
-    btn.disabled = true;
-  }
-}
-function tryAutoDetect(file){
-  const url=URL.createObjectURL(file);
-  const img=new Image();
-  img.onload=()=>{
-    const cv=document.createElement("canvas"); cv.width=img.naturalWidth; cv.height=img.naturalHeight;
-    const ctx=cv.getContext("2d"); ctx.drawImage(img,0,0);
-    try{
-      const idata=ctx.getImageData(0,0,cv.width,cv.height); const d=idata.data;
-      let sx=0,sy=0,count=0;
-      for(let y=0;y<cv.height;y++) for(let x=0;x<cv.width;x++){
-        const i=(y*cv.width+x)*4;
-        if((d[i]+d[i+1]+d[i+2])/3>180){sx+=x;sy+=y;count++;}
-      }
-      if(count>0){
-        const r=parseFloat((Math.sqrt(count/Math.PI)*0.336*0.9).toFixed(3));
-        _autoRadius=r;
-        document.getElementById("autoRadiusDisplay").textContent=r+" mm (auto)";
-        document.getElementById("autoRadiusDisplay").style.color="var(--accent)";
-      }
-    }catch(e){}
-    URL.revokeObjectURL(url);
-  };
-  img.onerror=()=>{
-    _autoRadius=parseFloat((0.4+Math.random()*0.8).toFixed(3));
-    document.getElementById("autoRadiusDisplay").textContent=_autoRadius+" mm (estimated)";
-    document.getElementById("autoRadiusDisplay").style.color="var(--accent)";
-    URL.revokeObjectURL(url);
-  };
-  img.src=url;
+if (!localStorage.getItem("mlcqa_token") && !isAuthPage) {
+    window.location.href = "login.html";
 }
 
-const zone=document.getElementById("uploadZone");
-zone.addEventListener("dragover",e=>{e.preventDefault();zone.classList.add("dragover");});
-zone.addEventListener("dragleave",()=>zone.classList.remove("dragover"));
-zone.addEventListener("drop",e=>{e.preventDefault();zone.classList.remove("dragover");const dt=new DataTransfer();Array.from(e.dataTransfer.files).forEach(f=>dt.items.add(f));document.getElementById("ssFile").files=dt.files;onFileSelected(document.getElementById("ssFile"));});
-
-async function runAnalysis(){
-  const fileInput=document.getElementById("ssFile");const btn=document.getElementById("analyzeBtn");const resultsDiv=document.getElementById("resultsBody");
-  if(!fileInput.files.length){alert("Please select a file first.");return;}
-  const file=fileInput.files[0];const ext=file.name.split(".").pop().toLowerCase();
-  if(!["dcm","zip"].includes(ext)){resultsDiv.innerHTML=`<p class="result-fail">❌ Only .dcm or .zip files are supported.</p>`;return;}
-
-  // Second-pass safety check — re-run detection in case user bypassed the onFileSelected guard
-  if (ext === "dcm") {
-    const ok = await checkFileAcceptable(file, "starshot", btn);
-    if (!ok) { btn.disabled = false; btn.textContent = "Run Starshot Analysis"; return; }
-  }
-  btn.disabled=true;btn.textContent="Uploading...";resultsDiv.innerHTML=`<p>⏳ Uploading file...</p>`;
-  try{
-    const formData=new FormData();formData.append("file",file);
-    const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),60000);
-    const res=await fetch(`${BACKEND_URL}/analyze/starshot`,{method:"POST",headers:{"Authorization":`Bearer ${token}`},body:formData,signal:controller.signal});
-    clearTimeout(timeout);
-    const data=await res.json();
-    if(data.status==="Error"){resultsDiv.innerHTML=`<p class="result-fail">❌ ${data.message}</p>`;btn.disabled=false;btn.textContent="Run Starshot Analysis";return;}
-    const jobId=data.job_id;btn.textContent="Analysing...";
-    resultsDiv.innerHTML=`<p>🔬 Analysis running<span id="dots">.</span></p>`;
-    let dotCount=0;const dotAnim=setInterval(()=>{dotCount=(dotCount+1)%4;const d=document.getElementById("dots");if(d)d.textContent=".".repeat(dotCount+1);},500);
-    let attempts=0;let networkFails=0;const getDelay=a=>a<5?2000:a<15?3000:5000;
-    const poll=async()=>{
-      attempts++;if(attempts>60){clearInterval(dotAnim);resultsDiv.innerHTML=`<p>⚠️ Analysis taking longer than expected.</p>`;btn.disabled=false;btn.textContent="Run Starshot Analysis";return;}
-      try{
-        const r=await fetch(`${BACKEND_URL}/result/${jobId}`,{headers:{"Authorization":`Bearer ${token}`}});
-        if(!r.ok){
-          networkFails=0;
-          if(r.status===404){clearInterval(dotAnim);resultsDiv.innerHTML=`<p class="result-fail">❌ Job not found. The server may have restarted — please re-upload and try again.</p>`;btn.disabled=false;btn.textContent="Run Starshot Analysis";}
-          else{setTimeout(poll,getDelay(attempts));}
-          return;
-        }
-        networkFails=0;
-        const result=await r.json();
-        if(result.status==="Processing"){setTimeout(poll,getDelay(attempts));}
-        else if(result.status==="Success"){
-          clearInterval(dotAnim);
-          const pass=result.passed;const imgUrl=result.image_url||null;const summary=result.analysis_summary||"";
-          window._lastResult={pass,imgUrl,summary,filename:file.name,testType:"Starshot",toleranceText:"Wobble radius tolerance: 1.0mm"};
-          resultsDiv.innerHTML="<pre>"+summary+"</pre>";
-          const banner=document.getElementById("verdictBanner");
-          banner.innerHTML='<div class="verdict-icon">'+(pass?"✓":"✗")+'</div><div class="verdict-text"><div class="verdict-label">'+(pass?"PASS":"FAIL")+'</div><div class="verdict-sub">'+(pass?"Wobble radius within tolerance (1.0 mm) — rotation axis acceptable":"Wobble radius exceeds tolerance — collimator/gantry investigation required")+'</div></div>';
-          banner.className="verdict-banner "+(pass?"verdict-pass":"verdict-fail");
-          banner.style.display="flex";
-          const cdSS=result.chart_data||{};
-          const wobble=cdSS.wobble_radius!=null?cdSS.wobble_radius:(_autoRadius||(pass?0.42:1.18));
-          document.getElementById("autoRadiusDisplay").textContent=wobble.toFixed(3)+" mm";
-          document.getElementById("autoRadiusDisplay").style.color=wobble>1.0?"var(--fail)":"var(--pass)";
-          const tolSS=1.0; const msSS=Math.max(tolSS*1.6,wobble*1.2);
-          const fillSS=document.getElementById("gaugeFill");
-          fillSS.style.width=Math.min((wobble/msSS)*100,100)+"%";
-          fillSS.style.background=wobble>tolSS?"var(--fail)":wobble>0.6?"var(--warn)":"var(--pass)";
-          document.getElementById("gaugeMarker").style.left=((tolSS/msSS)*100)+"%";
-          document.getElementById("gaugeVal").textContent=wobble.toFixed(3)+" mm";
-          document.getElementById("gaugeTolLabel").textContent="Tol: 1.0 mm";
-          document.getElementById("gaugeMaxLabel").textContent=msSS.toFixed(2)+" mm";
-          document.getElementById("gaugeSection").style.display="block";
-          const mrSS=document.getElementById("metricsRow");
-          const nSpokes=cdSS.spokes?cdSS.spokes.length:"—";
-          mrSS.innerHTML=[
-            {label:"Wobble Radius",val:wobble.toFixed(3),unit:"mm",cls:wobble>tolSS?"metric-fail":"metric-pass"},
-            {label:"Spokes Detected",val:String(nSpokes),cls:"metric-accent"},
-            {label:"Tolerance",val:"1.0",unit:"mm",cls:"metric-accent"},
-            {label:"Status",val:pass?"PASS":"FAIL",cls:pass?"metric-pass":"metric-fail"}
-          ].map(m=>'<div class="metric-card"><div class="metric-label">'+m.label+'</div><div class="metric-value '+m.cls+'">'+m.val+(m.unit?'<span class="metric-unit">'+m.unit+'</span>':'')+'</div></div>').join('');
-          mrSS.style.display="grid";
-          if(imgUrl){document.getElementById("plotSection").innerHTML='<div class="plot-wrap"><img src="'+imgUrl+'" alt="Starshot Plot" loading="lazy"/><div class="plot-label">Pylinac · Starshot Analysis</div></div>';document.getElementById("plotSection").style.display="block";}
-          renderSSCharts(result.chart_data||{});
-          document.getElementById("chartsSection").style.display="block";
-          document.getElementById("pdfSection").style.display="block";
-          btn.disabled=false;btn.textContent="Analyse Another File";
-        }else{clearInterval(dotAnim);resultsDiv.innerHTML=`<p class="result-fail">❌ ${result.message}</p>`;btn.disabled=false;btn.textContent="Run Starshot Analysis";}
-      } catch {
-        networkFails++;
-        if (networkFails < 10) {
-          const d = document.getElementById("dots");
-          if (d) d.textContent = ` (retrying… ${networkFails}/10)`;
-          setTimeout(poll, 6000);
-        } else {
-          clearInterval(dotAnim);
-          resultsDiv.innerHTML = `<p class="result-fail">❌ Cannot reach the server after 10 retries. Please wait 60 seconds, refresh the page, and try again.</p>`;
-          btn.disabled = false; btn.textContent = "Run Starshot Analysis";
-        }
-      }
+// Returns headers for JSON API calls (NOT for FormData uploads)
+function authHeaders() {
+    return {
+        "Authorization": `Bearer ${localStorage.getItem("mlcqa_token")}`,
+        "Content-Type": "application/json"
     };
-    setTimeout(poll,getDelay(0));
-  }catch(err){resultsDiv.innerHTML=`<p class="result-fail">❌ ${err.name==="AbortError"?"Upload timed out.":"Unexpected error."}</p>`;btn.disabled=false;btn.textContent="Run Starshot Analysis";}
+}
+
+// Returns just the Authorization header — use this for FormData/file uploads
+function authHeadersOnly() {
+    return {
+        "Authorization": `Bearer ${localStorage.getItem("mlcqa_token")}`
+    };
+}
+
+function logout() {
+    localStorage.removeItem("mlcqa_token");
+    localStorage.removeItem("mlcqa_name");
+    window.location.href = "login.html";
+}
+
+// ── Keep-alive ping every 14 min to prevent Render cold starts ────────────────
+// Only run for authenticated users — no need to ping on the landing/auth pages
+if (!isAuthPage && localStorage.getItem("mlcqa_token")) {
+    setInterval(() => {
+        fetch(`${BACKEND_URL}/`).catch(() => {});
+    }, 14 * 60 * 1000);
 }
 
 
-let ssChart1=null, ssChart2=null;
-function renderSSCharts(cd) {
-  // cd = chart_data from backend — real pylinac spoke + radial data
-  if (cd.error) {
-    document.getElementById("chartsSection").innerHTML += '<p style="color:var(--text-muted);font-size:0.8rem;font-family:var(--mono);padding:12px">Chart error: ' + cd.error + '</p>';
-    return;
-  }
-  const spokes = cd.spokes || [];
-  const spokeLabels = spokes.map(s=>s.angle.toFixed(1)+"°");
-  const residuals = spokes.map(s=>s.residual_mm);
-  const dColors = residuals.map(v=>v>0.5?"rgba(201,64,80,0.85)":"rgba(26,171,117,0.75)");
-  const radial = cd.radial_profile || [];
-  const radialLabels = Array.from({length:radial.length},(_,i)=>((i/radial.length).toFixed(2)));
-  const cOpts={plugins:{legend:{labels:{color:"#8ba4c0",font:{family:"'IBM Plex Mono'",size:9}}}},scales:{x:{ticks:{color:"#546a85",font:{size:9}},grid:{color:"rgba(36,53,82,0.8)"}},y:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"}}}};
-  if(ssChart1) ssChart1.destroy();
-  ssChart1=new Chart(document.getElementById("spokeChart"),{
-    type:"bar",
-    data:{labels:spokeLabels,datasets:[{label:"Residual Distance (mm)",data:residuals,backgroundColor:dColors,borderWidth:0}]},
-    options:{responsive:true,maintainAspectRatio:true,...cOpts,scales:{
-      x:{ticks:{color:"#546a85",font:{size:9}},grid:{color:"rgba(36,53,82,0.8)"}},
-      y:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"Distance to wobble centre (mm)",color:"#546a85",font:{size:9}}}
-    }}
-  });
-  if(ssChart2) ssChart2.destroy();
-  ssChart2=new Chart(document.getElementById("profileChart"),{
-    type:"line",
-    data:{labels:radialLabels,datasets:[{label:"Radial Intensity",data:radial,borderColor:"var(--accent)",backgroundColor:"rgba(43,159,212,0.07)",fill:true,tension:0.3,pointRadius:0}]},
-    options:{responsive:true,maintainAspectRatio:true,...cOpts,scales:{
-      x:{ticks:{color:"#546a85",font:{size:8},maxTicksLimit:10},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"Normalised Radius",color:"#546a85",font:{size:9}}},
-      y:{ticks:{color:"#546a85",font:{family:"'IBM Plex Mono'",size:9}},grid:{color:"rgba(36,53,82,0.8)"},title:{display:true,text:"Intensity (norm.)",color:"#546a85",font:{size:9}}}
-    }}
-  });
-}
+// ═══════════════════════════════════════════════════════════════════════════════
+//  AnalysisHelpers — shared utility used by all analysis pages
+// ═══════════════════════════════════════════════════════════════════════════════
+const AnalysisHelpers = {
 
-async function downloadPDF(){const r=window._lastResult;if(!r)return;await generatePDF(r);}
-async function generatePDF(r){
-  const{jsPDF}=window.jspdf;const doc=new jsPDF({orientation:"portrait",unit:"mm",format:"a4"});const W=210,M=16;
-  doc.setFillColor(15,30,55);doc.rect(0,0,W,26,"F");doc.setFillColor(0,175,215);doc.rect(0,0,5,26,"F");
-  doc.setFont("helvetica","bold");doc.setFontSize(13);doc.setTextColor(255,255,255);doc.text(`MLC QA \u2014 ${r.testType||"Analysis"} Report`,M+6,11);
-  doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(180,210,230);
-  const now=new Date().toLocaleString("en-GB",{dateStyle:"long",timeStyle:"short"});doc.text(`Generated: ${now}`,M+6,19);doc.text(`File: ${r.filename}`,M+6,23.5);
-  let y=34;doc.setFillColor(...(r.pass?[0,168,107]:[195,45,70]));doc.roundedRect(M,y,W-M*2,13,2,2,"F");
-  doc.setFont("helvetica","bold");doc.setFontSize(11);doc.setTextColor(255,255,255);doc.text(r.pass?"\u2713  PASS":"\u2717  FAIL",M+5,y+9);
-  doc.setFont("helvetica","normal");doc.setFontSize(9);doc.setTextColor(255,255,255);doc.text(r.toleranceText||(r.pass?"Within clinical tolerance":"Outside clinical tolerance"),M+36,y+9);y+=20;
-  if(r.imgUrl){try{const imgData=await fetchImageAsBase64(r.imgUrl);const imgW=W-M*2;const imgH=imgW*0.5;doc.setDrawColor(180,200,220);doc.setLineWidth(0.3);doc.rect(M,y,imgW,imgH);doc.addImage(imgData,"PNG",M,y,imgW,imgH);y+=imgH+5;doc.setFont("helvetica","italic");doc.setFontSize(7.5);doc.setTextColor(80,105,135);doc.text(`Figure: Pylinac ${r.testType||""} \u2014 Analyzed Image`,M,y);y+=9;}catch{y+=4;}}
-  doc.setDrawColor(180,200,220);doc.setLineWidth(0.4);doc.line(M,y,W-M,y);y+=7;
-  const summaryLines=doc.splitTextToSize(r.summary,W-M*2-10);const boxH=Math.min(summaryLines.length*5.4+16,230);
-  doc.setFillColor(245,248,252);doc.roundedRect(M,y,W-M*2,boxH,2,2,"F");doc.setDrawColor(200,215,230);doc.setLineWidth(0.3);doc.roundedRect(M,y,W-M*2,boxH,2,2,"S");
-  y+=7;doc.setFont("helvetica","bold");doc.setFontSize(8.5);doc.setTextColor(15,40,80);doc.text("ANALYSIS SUMMARY",M+5,y);y+=7;
-  doc.setFont("courier","normal");doc.setFontSize(8.2);doc.setTextColor(20,45,80);
-  summaryLines.forEach(line=>{if(y>272){doc.addPage();y=18;doc.setFillColor(245,248,252);doc.roundedRect(M,y-4,W-M*2,240,2,2,"F");doc.setFont("courier","normal");doc.setFontSize(8.2);doc.setTextColor(20,45,80);}doc.text(line,M+5,y);y+=5.4;});
-  const pages=doc.internal.getNumberOfPages();
-  for(let i=1;i<=pages;i++){doc.setPage(i);doc.setFillColor(235,241,248);doc.rect(0,284,W,13,"F");doc.setDrawColor(180,200,220);doc.setLineWidth(0.3);doc.line(0,284,W,284);doc.setFont("helvetica","normal");doc.setFontSize(7);doc.setTextColor(60,85,120);doc.text("MLC QA Platform  \u00B7  For clinical physics use only  \u00B7  Not for diagnostic use",M,291);doc.text(`Page ${i} of ${pages}`,W-28,291);}
-  const prefix=r.testType?r.testType.replace(/\\s+/g,"_").toUpperCase():"REPORT";
-  doc.save(`MLCQA_${prefix}_${r.filename.replace(/\.[^.]+$/,"")}_${Date.now()}.pdf`);
-}
-async function fetchImageAsBase64(url){const res=await fetch(url);const blob=await res.blob();return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onloadend=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(blob);});}
-function logout(){localStorage.removeItem("mlcqa_token");localStorage.removeItem("mlcqa_name");window.location.href="index.html";}
-</script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    // ── checkServer(elementId, btnId?) ────────────────────────────────────────
+    // Polls the backend and updates a status indicator element.
+    checkServer(elementId, btnId) {
+        const el  = document.getElementById(elementId);
+        const btn = btnId ? document.getElementById(btnId) : null;
+        if (!el) return;
 
-  <script src="dicom-detect.js"></script>
-</body>
-</html>
+        el.innerHTML = `<div class="status-dot-sm dot-warn"></div><span>Checking server status...</span>`;
+
+        async function ping() {
+            try {
+                const res = await fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(5000) });
+                if (res.ok) {
+                    el.innerHTML = `<div class="status-dot-sm dot-ok"></div><span>Server online</span>`;
+                    if (btn) btn.disabled = false;
+                    return true;
+                }
+            } catch (e) {}
+            return false;
+        }
+
+        ping().then(online => {
+            if (online) return;
+
+            let seconds = 60;
+            if (btn) btn.disabled = false;
+            el.innerHTML = `<div class="status-dot-sm dot-warn" style="animation:blink 1s infinite"></div>
+                            <span>Server waking up... (~${seconds}s)</span>`;
+
+            const interval = setInterval(async () => {
+                seconds = Math.max(seconds - 2, 5);
+                el.innerHTML = `<div class="status-dot-sm dot-warn" style="animation:blink 1s infinite"></div>
+                                <span>Server waking up... (~${seconds}s)</span>`;
+                if (await ping()) clearInterval(interval);
+            }, 2000);
+        });
+    },
+
+    // ── waitForServer() ───────────────────────────────────────────────────────
+    // Resolves true if backend responds within ~30 s, false otherwise.
+    async waitForServer() {
+        for (let i = 0; i < 15; i++) {
+            try {
+                const res = await fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(5000) });
+                if (res.ok) return true;
+            } catch (e) {}
+            await new Promise(r => setTimeout(r, 2000));
+        }
+        return false;
+    },
+
+    // ── makeApiCall(url, options, timeoutMs?) ─────────────────────────────────
+    // fetch() wrapper with:
+    //   • configurable timeout (default 30 s)
+    //   • auto-logout on 401 (invalid/expired token)
+    //   • human-readable error messages
+    //   • always returns parsed JSON
+    async makeApiCall(url, options = {}, timeoutMs = 30000) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+        try {
+            const res = await fetch(url, { ...options, signal: controller.signal });
+            clearTimeout(timer);
+
+            // 401 → token is bad or expired → kick to login
+            if (res.status === 401) {
+                localStorage.removeItem("mlcqa_token");
+                localStorage.removeItem("mlcqa_name");
+                window.location.href = "login.html?reason=session_expired";
+                throw new Error("Session expired. Redirecting to login...");
+            }
+
+            const text = await res.text();
+            if (!text || text.trim() === "") {
+                throw new Error("Server returned an empty response. It may still be starting up — please try again.");
+            }
+
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch {
+                throw new Error(`Could not parse server response: ${text.slice(0, 200)}`);
+            }
+
+            if (!res.ok) {
+                throw new Error(data.message || data.detail || `Server error ${res.status}`);
+            }
+
+            return data;
+
+        } catch (err) {
+            clearTimeout(timer);
+            if (err.name === "AbortError") {
+                throw new Error("Request timed out. The server may be under load — please try again.");
+            }
+            throw err;
+        }
+    },
+
+    // ── pollForResult(jobId, onSuccess, onError?) ─────────────────────────────
+    // Polls GET /result/:jobId with exponential back-off until complete.
+    async pollForResult(jobId, onSuccess, onError) {
+        const maxAttempts = 60;
+        let attempts = 0;
+
+        const getDelay = (n) => n < 5 ? 2000 : n < 15 ? 3000 : 5000;
+
+        let dotCount = 0;
+        const dotAnim = setInterval(() => {
+            dotCount = (dotCount + 1) % 4;
+            const el = document.getElementById("dots");
+            if (el) el.textContent = ".".repeat(dotCount + 1);
+        }, 500);
+
+        const poll = async () => {
+            attempts++;
+            if (attempts > maxAttempts) {
+                clearInterval(dotAnim);
+                const msg = "Analysis is taking longer than expected — please try again.";
+                if (onError) onError(msg); else console.error(msg);
+                return;
+            }
+
+            try {
+                const result = await this.makeApiCall(
+                    `${BACKEND_URL}/result/${jobId}`,
+                    { headers: authHeadersOnly() }
+                );
+
+                if (result.status === "Processing") {
+                    setTimeout(poll, getDelay(attempts));
+                } else if (result.status === "Success") {
+                    clearInterval(dotAnim);
+                    onSuccess(result);
+                } else {
+                    clearInterval(dotAnim);
+                    const msg = result.message || "Analysis failed on the server.";
+                    if (onError) onError(msg); else console.error(msg);
+                }
+            } catch (err) {
+                clearInterval(dotAnim);
+                if (onError) onError(err.message || "Lost connection while waiting for results.");
+                else console.error(err);
+            }
+        };
+
+        setTimeout(poll, getDelay(0));
+    },
+
+    // ── validateDicomFile(file) ───────────────────────────────────────────────
+    // Client-side guard — throws if file is not a .dcm file.
+    validateDicomFile(file) {
+        if (!file || !file.name.toLowerCase().endsWith(".dcm")) {
+            throw new Error("Only DICOM (.dcm) files are supported. Please select a valid file.");
+        }
+        return true;
+    }
+};
+
+
+// ── Auto server-check on any page that has #serverStatus ─────────────────────
+window.addEventListener("DOMContentLoaded", () => {
+    if (document.getElementById("serverStatus")) {
+        const btnId = document.getElementById("loginBtn")   ? "loginBtn"
+                    : document.getElementById("analyzeBtn") ? "analyzeBtn"
+                    : null;
+        AnalysisHelpers.checkServer("serverStatus", btnId);
+    }
+});
+
+
+// ── Shared UI helpers ─────────────────────────────────────────────────────────
+function togglePassword(inputId, iconEl) {
+    const input = document.getElementById(inputId);
+    if (input.type === "password") {
+        input.type = "text";
+        iconEl.textContent = "👁️";
+    } else {
+        input.type = "password";
+        iconEl.textContent = "🙈";
+    }
+}
