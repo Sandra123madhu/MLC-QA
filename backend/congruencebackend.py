@@ -88,10 +88,10 @@ def _extract_congruence_chart_data(fa) -> dict:
             "edges":              edges,
             "inline_profile":     inline_profile,
             "crossline_profile":  crossline_profile,
-            "tolerance_mm":       1.0,
+            "tolerance_mm":       2.0,
         }
     except Exception as e:
-        return {"error": str(e), "edges": {}, "inline_profile": [], "crossline_profile": [], "tolerance_mm": 1.0}
+        return {"error": str(e), "edges": {}, "inline_profile": [], "crossline_profile": [], "tolerance_mm": 2.0}
 
 
 def _run_congruence(job_id: str, filepath: str, email: str, filename: str):
