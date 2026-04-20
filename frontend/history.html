@@ -165,11 +165,21 @@
 <body>
 
 <aside class="sidebar">
-  <div class="sidebar-logo">MLC<span>QA</span></div>
-  <div class="nav-label">Menu</div>
-  <a class="nav-item" href="dashboard.html"><span class="nav-icon">⬛</span> Dashboard</a>
-  <a class="nav-item" href="mlc-qa.html"><span class="nav-icon">⚡</span> MLC QA</a>
-  <a class="nav-item active" href="history.html"><span class="nav-icon">📋</span> History</a>
+  <div class="sidebar-header">
+    <a href="dashboard.html" class="sidebar-logo">
+      <div class="logo-mark"><svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg></div>
+      <div class="logo-text">MLC<span>QA</span></div>
+    </a>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">Menu</div>
+    <a class="nav-item" href="dashboard.html"><span class="nav-icon">▦</span> Dashboard</a>
+    <a class="nav-item" href="mlc-qa.html"><span class="nav-icon">⚡</span> Picket Fence</a>
+    <a class="nav-item" href="winston-lutz.html"><span class="nav-icon">◎</span> Winston-Lutz</a>
+    <a class="nav-item" href="starshot.html"><span class="nav-icon">✦</span> Starshot</a>
+    <a class="nav-item" href="congruence.html"><span class="nav-icon">⊞</span> Congruence</a>
+    <a class="nav-item active" href="history.html"><span class="nav-icon">≡</span> History</a>
+  </nav>
   <div class="sidebar-footer">
     <div class="user-chip">
       <div class="avatar" id="avatarInitial">?</div>
@@ -238,13 +248,7 @@
 
 <script>
 // token, name, BACKEND_URL, authHeaders(), logout() are all provided by script.js (loaded in <head>)
-
-// Populate sidebar user info from globals set by script.js
-const _histName = localStorage.getItem("mlcqa_name");
-if (_histName) {
-  document.getElementById("sidebarName").textContent = _histName;
-  document.getElementById("avatarInitial").textContent = _histName.charAt(0).toUpperCase();
-}
+// Sidebar name/avatar are populated globally by script.js — no local override needed.
 
 function formatDate(iso) {
   const d = new Date(iso);
