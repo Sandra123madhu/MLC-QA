@@ -20,16 +20,6 @@ if (!localStorage.getItem("mlcqa_token") && !isAuthPage) {
     window.location.href = "login.html";
 }
 
-// ── Populate sidebar name / avatar on every protected page ───────────────────
-(function populateSidebar() {
-    if (isAuthPage) return;
-    const storedName = localStorage.getItem("mlcqa_name") || "";
-    const nameEl   = document.getElementById("sidebarName");
-    const avatarEl = document.getElementById("avatarInitial");
-    if (nameEl)   nameEl.textContent   = storedName || "User";
-    if (avatarEl) avatarEl.textContent = storedName ? storedName.charAt(0).toUpperCase() : "U";
-})();
-
 // Returns headers for JSON API calls (NOT for FormData uploads)
 function authHeaders() {
     return {
