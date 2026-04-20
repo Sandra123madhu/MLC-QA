@@ -175,7 +175,7 @@ async def login(body: AuthBody):
     if not SUPABASE_URL:
         raise HTTPException(500, "Backend not configured")
     resp = httpx.get(
-        f"{SUPABASE_URL}/rest/v1/users?email=eq.{body.email}&select=email,password_hash",
+        f"{SUPABASE_URL}/rest/v1/users?email=eq.{body.email}&select=email,password_hash,name",
         headers=supabase_headers(),
         timeout=10,
     )
@@ -186,7 +186,7 @@ async def login(body: AuthBody):
     if not bcrypt.checkpw(body.password.encode(), row["password_hash"].encode()):
         raise HTTPException(401, "Invalid email or password")
     token = create_token(body.email)
-    return {"token": token}
+    return {"token": token, "name": row.get("name", "")}
 
 
 # =============================================================================
@@ -450,11 +450,12 @@ def _extract_wl_chart_data(wl) -> dict:
     return chart_data
 
 
-def _run_winston_lutz(job_id: str, filepaths: list, email: str, filenames: str):
-    tmp_dir = None
+def _run_winston_lutz(job_id: str, filepaths: list, email: str, filenames: str, tmp_dir: str = None):
+    _own_tmp = tmp_dir is None
     try:
-        import tempfile as _tf
-        tmp_dir = _tf.mkdtemp(prefix=f"wl_{job_id}_")
+        if _own_tmp:
+            import tempfile as _tf
+            tmp_dir = _tf.mkdtemp(prefix=f"wl_{job_id}_")
 
         wl      = WinstonLutz(tmp_dir)
         summary = wl.results()
@@ -497,7 +498,7 @@ def _run_winston_lutz(job_id: str, filepaths: list, email: str, filenames: str):
             "message": f"Winston-Lutz analysis failed: {e}",
         }
     finally:
-        if tmp_dir:
+        if _own_tmp and tmp_dir:
             import shutil
             try:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -540,6 +541,7 @@ async def analyze_winston_lutz(
         filepaths = saved,
         email     = u["email"],
         filenames = filenames,
+        tmp_dir   = tmp_dir,
     )
 
     return {"status": "Queued", "job_id": job_id}
@@ -682,51 +684,29 @@ def _extract_congruence_chart_data(fa) -> dict:
       field_size_vertical_mm, field_size_horizontal_mm
       top_penumbra_mm, bottom_penumbra_mm, left_penumbra_mm, right_penumbra_mm
     """
-    import numpy as np
-
-    def safe_float(v):
-        """Convert any numpy scalar, 0-d array, or plain number to a Python float."""
-        if v is None:
-            return None
-        arr = np.asarray(v)
-        if arr.ndim == 0:
-            return float(arr)          # 0-dimensional numpy array → scalar
-        if arr.size == 1:
-            return float(arr.flat[0])  # single-element array → scalar
-        # Multi-element: return the mean so we never crash
-        return float(arr.mean())
-
     try:
         rd = fa.results_data()   # returns FieldResult pydantic model
 
-        # ── Field size ────────────────────────────────────────────────────────
-        field_size = {
-            "vertical_mm":   round(safe_float(rd.field_size_vertical_mm),   2),
-            "horizontal_mm": round(safe_float(rd.field_size_horizontal_mm), 2),
+        # ── Edge offsets from CAX (signed, mm) ───────────────────────────────
+        edges = {
+            "top":    round(float(rd.cax_to_top_mm),    3),
+            "bottom": round(float(rd.cax_to_bottom_mm), 3),
+            "left":   round(float(rd.cax_to_left_mm),   3),
+            "right":  round(float(rd.cax_to_right_mm),  3),
         }
 
-        # ── Edge deviations from nominal (signed, mm) ─────────────────────────
-        # pylinac's cax_to_*_mm reports the distance from CAX to each field edge
-        # (e.g. ~50 mm for a 100x100 mm field). To get the clinically meaningful
-        # DEVIATION we subtract the nominal half-field size (field_size / 2).
-        # A positive deviation means the edge has moved away from CAX (field too big);
-        # a negative deviation means the edge has moved toward CAX (field too small).
-        nominal_half_v = safe_float(rd.field_size_vertical_mm)   / 2.0
-        nominal_half_h = safe_float(rd.field_size_horizontal_mm) / 2.0
-
-        edges = {
-            "top":    round(safe_float(rd.cax_to_top_mm)    - nominal_half_v, 3),
-            "bottom": round(safe_float(rd.cax_to_bottom_mm) - nominal_half_v, 3),
-            "left":   round(safe_float(rd.cax_to_left_mm)   - nominal_half_h, 3),
-            "right":  round(safe_float(rd.cax_to_right_mm)  - nominal_half_h, 3),
+        # ── Field size ────────────────────────────────────────────────────────
+        field_size = {
+            "vertical_mm":   round(float(rd.field_size_vertical_mm),   2),
+            "horizontal_mm": round(float(rd.field_size_horizontal_mm), 2),
         }
 
         # ── Penumbra widths (mm) ──────────────────────────────────────────────
         penumbra = {
-            "top":    round(safe_float(rd.top_penumbra_mm),    3),
-            "bottom": round(safe_float(rd.bottom_penumbra_mm), 3),
-            "left":   round(safe_float(rd.left_penumbra_mm),   3),
-            "right":  round(safe_float(rd.right_penumbra_mm),  3),
+            "top":    round(float(rd.top_penumbra_mm),    3),
+            "bottom": round(float(rd.bottom_penumbra_mm), 3),
+            "left":   round(float(rd.left_penumbra_mm),   3),
+            "right":  round(float(rd.right_penumbra_mm),  3),
         }
 
         # ── Inline / crossline profiles ───────────────────────────────────────
