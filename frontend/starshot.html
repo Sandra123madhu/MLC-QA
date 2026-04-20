@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Starshot — MLC QA</title>
   <link rel="stylesheet" href="style.css"/>
+  <script src="script.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
@@ -122,12 +123,8 @@
 </main>
 
 <script>
-// Redundant BACKEND_URL, token, name, and server status logic removed.
-// These are now handled globally in script.js.
-if (name) {
-  document.getElementById("sidebarName").textContent = name;
-  document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
-}
+// Sidebar name/avatar are populated globally by script.js (loaded in <head>).
+// BACKEND_URL, logout(), and checkFileAcceptable() also come from script.js.
 
 (async () => {
   const el = document.getElementById("serverStatus");
@@ -166,35 +163,12 @@ async function onFileSelected(input){
     btn.disabled = true;
   }
 }
-function tryAutoDetect(file){
-  const url=URL.createObjectURL(file);
-  const img=new Image();
-  img.onload=()=>{
-    const cv=document.createElement("canvas"); cv.width=img.naturalWidth; cv.height=img.naturalHeight;
-    const ctx=cv.getContext("2d"); ctx.drawImage(img,0,0);
-    try{
-      const idata=ctx.getImageData(0,0,cv.width,cv.height); const d=idata.data;
-      let sx=0,sy=0,count=0;
-      for(let y=0;y<cv.height;y++) for(let x=0;x<cv.width;x++){
-        const i=(y*cv.width+x)*4;
-        if((d[i]+d[i+1]+d[i+2])/3>180){sx+=x;sy+=y;count++;}
-      }
-      if(count>0){
-        const r=parseFloat((Math.sqrt(count/Math.PI)*0.336*0.9).toFixed(3));
-        _autoRadius=r;
-        document.getElementById("autoRadiusDisplay").textContent=r+" mm (auto)";
-        document.getElementById("autoRadiusDisplay").style.color="var(--accent)";
-      }
-    }catch(e){}
-    URL.revokeObjectURL(url);
-  };
-  img.onerror=()=>{
-    _autoRadius=parseFloat((0.4+Math.random()*0.8).toFixed(3));
-    document.getElementById("autoRadiusDisplay").textContent=_autoRadius+" mm (estimated)";
-    document.getElementById("autoRadiusDisplay").style.color="var(--accent)";
-    URL.revokeObjectURL(url);
-  };
-  img.src=url;
+function tryAutoDetect(_file){
+  // Intentionally removed: loading a .dcm as <img> always fails since DICOM is
+  // binary, and the previous fallback generated a random 0.4–1.2 mm value that
+  // was clinically meaningless.  The real wobble radius is reported by the
+  // backend after analysis completes.
+  document.getElementById("autoRadiusDisplay").textContent = "Available after analysis";
 }
 
 const zone=document.getElementById("uploadZone");
@@ -217,7 +191,7 @@ async function runAnalysis(){
   try{
     const formData=new FormData();formData.append("file",file);
     const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),60000);
-    const res=await fetch(`${BACKEND_URL}/analyze/starshot`,{method:"POST",headers:{"Authorization":`Bearer ${token}`},body:formData,signal:controller.signal});
+    const res=await fetch(`${BACKEND_URL}/analyze/starshot`,{method:"POST",headers:{"Authorization":`Bearer ${localStorage.getItem("mlcqa_token")}`},body:formData,signal:controller.signal});
     clearTimeout(timeout);
     const data=await res.json();
     if(data.status==="Error"){resultsDiv.innerHTML=`<p class="result-fail">❌ ${data.message}</p>`;btn.disabled=false;btn.textContent="Run Starshot Analysis";return;}
@@ -228,7 +202,7 @@ async function runAnalysis(){
     const poll=async()=>{
       attempts++;if(attempts>60){clearInterval(dotAnim);resultsDiv.innerHTML=`<p>⚠️ Analysis taking longer than expected.</p>`;btn.disabled=false;btn.textContent="Run Starshot Analysis";return;}
       try{
-        const r=await fetch(`${BACKEND_URL}/result/${jobId}`,{headers:{"Authorization":`Bearer ${token}`}});
+        const r=await fetch(`${BACKEND_URL}/result/${jobId}`,{headers:{"Authorization":`Bearer ${localStorage.getItem("mlcqa_token")}`}});
         if(!r.ok){
           networkFails=0;
           if(r.status===404){clearInterval(dotAnim);resultsDiv.innerHTML=`<p class="result-fail">❌ Job not found. The server may have restarted — please re-upload and try again.</p>`;btn.disabled=false;btn.textContent="Run Starshot Analysis";}
