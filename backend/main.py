@@ -175,7 +175,7 @@ async def login(body: AuthBody):
     if not SUPABASE_URL:
         raise HTTPException(500, "Backend not configured")
     resp = httpx.get(
-        f"{SUPABASE_URL}/rest/v1/users?email=eq.{body.email}&select=email,password_hash,name",
+        f"{SUPABASE_URL}/rest/v1/users?email=eq.{body.email}&select=email,password_hash",
         headers=supabase_headers(),
         timeout=10,
     )
@@ -186,7 +186,7 @@ async def login(body: AuthBody):
     if not bcrypt.checkpw(body.password.encode(), row["password_hash"].encode()):
         raise HTTPException(401, "Invalid email or password")
     token = create_token(body.email)
-    return {"token": token, "name": row.get("name", "")}
+    return {"token": token}
 
 
 # =============================================================================
@@ -450,12 +450,11 @@ def _extract_wl_chart_data(wl) -> dict:
     return chart_data
 
 
-def _run_winston_lutz(job_id: str, filepaths: list, email: str, filenames: str, tmp_dir: str = None):
-    _own_tmp = tmp_dir is None
+def _run_winston_lutz(job_id: str, filepaths: list, email: str, filenames: str):
+    tmp_dir = None
     try:
-        if _own_tmp:
-            import tempfile as _tf
-            tmp_dir = _tf.mkdtemp(prefix=f"wl_{job_id}_")
+        import tempfile as _tf
+        tmp_dir = _tf.mkdtemp(prefix=f"wl_{job_id}_")
 
         wl      = WinstonLutz(tmp_dir)
         summary = wl.results()
@@ -498,7 +497,7 @@ def _run_winston_lutz(job_id: str, filepaths: list, email: str, filenames: str, 
             "message": f"Winston-Lutz analysis failed: {e}",
         }
     finally:
-        if _own_tmp and tmp_dir:
+        if tmp_dir:
             import shutil
             try:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -541,7 +540,6 @@ async def analyze_winston_lutz(
         filepaths = saved,
         email     = u["email"],
         filenames = filenames,
-        tmp_dir   = tmp_dir,
     )
 
     return {"status": "Queued", "job_id": job_id}
