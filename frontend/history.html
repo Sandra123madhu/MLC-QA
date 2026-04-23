@@ -241,10 +241,14 @@
 
 // Populate sidebar user info from globals set by script.js
 const _histName = localStorage.getItem("mlcqa_name");
-if (_histName) {
-  document.getElementById("sidebarName").textContent = _histName;
-  document.getElementById("avatarInitial").textContent = _histName.charAt(0).toUpperCase();
-}
+const _histEmail = localStorage.getItem("mlcqa_token")
+  ? (() => { try { return JSON.parse(atob(localStorage.getItem("mlcqa_token").split(".")[1])).sub; } catch { return ""; } })()
+  : "";
+const _displayName = (_histName && _histName !== "undefined" && _histName !== "null" && _histName.trim() !== "")
+  ? _histName
+  : (_histEmail || "User");
+document.getElementById("sidebarName").textContent = _displayName;
+document.getElementById("avatarInitial").textContent = _displayName.charAt(0).toUpperCase();
 
 function formatDate(iso) {
   const d = new Date(iso);
@@ -264,7 +268,8 @@ function renderRows(data) {
         <div class="empty-state">
           <div class="empty-icon">📂</div>
           <h3>No analyses found</h3>
-          <p>Completed QA analyses will appear here automatically.</p>
+          <p>Run your first QA analysis to see results here</p>
+          <a href="mlc-qa.html" class="btn-cyan">Run Analysis</a>
         </div>
       </td></tr>`;
     return;
