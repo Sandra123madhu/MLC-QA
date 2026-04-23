@@ -10,6 +10,7 @@ import time
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import quote
 
 import httpx
 import bcrypt
@@ -145,10 +146,10 @@ def save_analysis(*, email: str, test_type: str, filename: str,
         if resp.status_code not in (200, 201):
             print(f"[save_analysis] Supabase insert failed — status {resp.status_code}: {resp.text}")
         else:
-            print(f"[save_analysis] Saved analysis for {email} ({test_type}, job={job_id})")
+            print(f"[save_analysis] Saved: {email} | {test_type} | job={job_id}")
 
     except Exception as exc:
-        print(f"[save_analysis] Exception while saving to Supabase: {exc}")
+        print(f"[save_analysis] Exception: {exc}")
 
 
 # =============================================================================
@@ -185,7 +186,7 @@ async def login(body: AuthBody):
     if not SUPABASE_URL:
         raise HTTPException(500, "Backend not configured")
     resp = httpx.get(
-        f"{SUPABASE_URL}/rest/v1/users?email=eq.{body.email}&select=email,password_hash",
+        f"{SUPABASE_URL}/rest/v1/users?email=eq.{quote(body.email)}&select=email,password_hash,name",
         headers=supabase_headers(),
         timeout=10,
     )
@@ -196,7 +197,7 @@ async def login(body: AuthBody):
     if not bcrypt.checkpw(body.password.encode(), row["password_hash"].encode()):
         raise HTTPException(401, "Invalid email or password")
     token = create_token(body.email)
-    return {"token": token}
+    return {"token": token, "name": row.get("name", "")}
 
 
 # =============================================================================
@@ -231,11 +232,13 @@ async def get_history(u=Depends(get_current_user)):
     email = u["email"]
     resp  = httpx.get(
         f"{SUPABASE_URL}/rest/v1/analyses"
-        f"?email=eq.{email}&order=created_at.desc&limit=200"
+        f"?email=eq.{quote(email)}&order=created_at.desc&limit=200"
         f"&select=id,test_type,filename,passed,summary,image_url,chart_data,created_at",
         headers=supabase_headers(),
         timeout=15,
     )
+    if resp.status_code != 200:
+        print(f"[get_history] Supabase query failed — status {resp.status_code}: {resp.text}")
     analyses = resp.json() if resp.status_code == 200 else []
     return {"analyses": analyses}
 
