@@ -175,7 +175,7 @@ async def signup(body: AuthBody):
     if resp.status_code not in (200, 201):
         raise HTTPException(400, "Could not create account")
     token = create_token(body.email)
-    return {"token": token}
+    return {"token": token, "name": body.name or body.email}
 
 
 @app.post("/auth/login")
@@ -183,7 +183,7 @@ async def login(body: AuthBody):
     if not SUPABASE_URL:
         raise HTTPException(500, "Backend not configured")
     resp = httpx.get(
-        f"{SUPABASE_URL}/rest/v1/users?email=eq.{body.email}&select=email,password_hash",
+        f"{SUPABASE_URL}/rest/v1/users?email=eq.{body.email}&select=email,password_hash,name",
         headers=supabase_headers(),
         timeout=10,
     )
@@ -194,7 +194,7 @@ async def login(body: AuthBody):
     if not bcrypt.checkpw(body.password.encode(), row["password_hash"].encode()):
         raise HTTPException(401, "Invalid email or password")
     token = create_token(body.email)
-    return {"token": token}
+    return {"token": token, "name": row.get("name") or body.email}
 
 
 # =============================================================================
@@ -204,6 +204,26 @@ async def login(body: AuthBody):
 @app.get("/")
 async def health():
     return {"status": "ok", "service": "MLC QA API"}
+
+
+@app.get("/me")
+async def get_me(u=Depends(get_current_user)):
+    """Return the current user's name and email from the users table."""
+    email = u["email"]
+    if not SUPABASE_URL:
+        return {"email": email, "name": email}
+    try:
+        resp = httpx.get(
+            f"{SUPABASE_URL}/rest/v1/users?email=eq.{email}&select=email,name",
+            headers=supabase_headers(),
+            timeout=10,
+        )
+        if resp.status_code == 200 and resp.json():
+            row = resp.json()[0]
+            return {"email": email, "name": row.get("name") or email}
+    except Exception as exc:
+        print(f"[get_me] Exception: {exc}")
+    return {"email": email, "name": email}
 
 
 # =============================================================================
