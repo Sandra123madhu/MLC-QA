@@ -54,16 +54,13 @@ security = HTTPBearer(auto_error=False)
 # Helpers
 # =============================================================================
 
-def supabase_headers(use_service_key: bool = True, prefer_insert: bool = False) -> dict:
+def supabase_headers(use_service_key: bool = True) -> dict:
     key = SUPABASE_KEY
-    headers = {
+    return {
         "apikey":        key,
         "Authorization": f"Bearer {key}",
         "Content-Type":  "application/json",
     }
-    if prefer_insert:
-        headers["Prefer"] = "return=minimal"
-    return headers
 
 
 def cleanup():
@@ -121,7 +118,7 @@ def save_analysis(*, email: str, test_type: str, filename: str,
                   chart_data: dict, job_id: str):
     """Persist a completed analysis record to Supabase (analyses table)."""
     if not SUPABASE_URL or not SUPABASE_KEY:
-        print("[save_analysis] Skipped — SUPABASE_URL or SUPABASE_KEY not set")
+        print("[save_analysis] Skipped — SUPABASE_URL or SUPABASE_KEY not set.")
         return
     try:
         payload = {
@@ -135,18 +132,23 @@ def save_analysis(*, email: str, test_type: str, filename: str,
             "job_id":            job_id,
             "created_at":        datetime.now(timezone.utc).isoformat(),
         }
+        headers = supabase_headers()
+        headers["Prefer"] = "return=minimal"  # Required by Supabase REST API for inserts
+
         resp = httpx.post(
             f"{SUPABASE_URL}/rest/v1/analyses",
             json=payload,
-            headers=supabase_headers(prefer_insert=True),
+            headers=headers,
             timeout=15,
         )
-        if resp.status_code not in (200, 201, 204):
-            print(f"[save_analysis] Supabase insert failed — status={resp.status_code} body={resp.text}")
+
+        if resp.status_code not in (200, 201):
+            print(f"[save_analysis] Supabase insert failed — status {resp.status_code}: {resp.text}")
         else:
-            print(f"[save_analysis] Saved analysis for {email} test_type={test_type} job_id={job_id}")
+            print(f"[save_analysis] Saved analysis for {email} ({test_type}, job={job_id})")
+
     except Exception as exc:
-        print(f"[save_analysis] Exception while saving analysis: {exc}")
+        print(f"[save_analysis] Exception while saving to Supabase: {exc}")
 
 
 # =============================================================================
@@ -175,7 +177,7 @@ async def signup(body: AuthBody):
     if resp.status_code not in (200, 201):
         raise HTTPException(400, "Could not create account")
     token = create_token(body.email)
-    return {"token": token, "name": body.name or body.email}
+    return {"token": token}
 
 
 @app.post("/auth/login")
@@ -183,7 +185,7 @@ async def login(body: AuthBody):
     if not SUPABASE_URL:
         raise HTTPException(500, "Backend not configured")
     resp = httpx.get(
-        f"{SUPABASE_URL}/rest/v1/users?email=eq.{body.email}&select=email,password_hash,name",
+        f"{SUPABASE_URL}/rest/v1/users?email=eq.{body.email}&select=email,password_hash",
         headers=supabase_headers(),
         timeout=10,
     )
@@ -194,7 +196,7 @@ async def login(body: AuthBody):
     if not bcrypt.checkpw(body.password.encode(), row["password_hash"].encode()):
         raise HTTPException(401, "Invalid email or password")
     token = create_token(body.email)
-    return {"token": token, "name": row.get("name") or body.email}
+    return {"token": token}
 
 
 # =============================================================================
@@ -204,26 +206,6 @@ async def login(body: AuthBody):
 @app.get("/")
 async def health():
     return {"status": "ok", "service": "MLC QA API"}
-
-
-@app.get("/me")
-async def get_me(u=Depends(get_current_user)):
-    """Return the current user's name and email from the users table."""
-    email = u["email"]
-    if not SUPABASE_URL:
-        return {"email": email, "name": email}
-    try:
-        resp = httpx.get(
-            f"{SUPABASE_URL}/rest/v1/users?email=eq.{email}&select=email,name",
-            headers=supabase_headers(),
-            timeout=10,
-        )
-        if resp.status_code == 200 and resp.json():
-            row = resp.json()[0]
-            return {"email": email, "name": row.get("name") or email}
-    except Exception as exc:
-        print(f"[get_me] Exception: {exc}")
-    return {"email": email, "name": email}
 
 
 # =============================================================================
@@ -247,22 +229,15 @@ async def get_history(u=Depends(get_current_user)):
     if not SUPABASE_URL:
         return {"analyses": []}
     email = u["email"]
-    try:
-        resp  = httpx.get(
-            f"{SUPABASE_URL}/rest/v1/analyses"
-            f"?email=eq.{email}&order=created_at.desc&limit=200"
-            f"&select=id,test_type,filename,passed,summary,image_url,chart_data,created_at",
-            headers=supabase_headers(),
-            timeout=15,
-        )
-        if resp.status_code != 200:
-            print(f"[get_history] Supabase query failed — status={resp.status_code} body={resp.text}")
-            return {"analyses": []}
-        analyses = resp.json()
-        return {"analyses": analyses}
-    except Exception as exc:
-        print(f"[get_history] Exception fetching history: {exc}")
-        return {"analyses": []}
+    resp  = httpx.get(
+        f"{SUPABASE_URL}/rest/v1/analyses"
+        f"?email=eq.{email}&order=created_at.desc&limit=200"
+        f"&select=id,test_type,filename,passed,summary,image_url,chart_data,created_at",
+        headers=supabase_headers(),
+        timeout=15,
+    )
+    analyses = resp.json() if resp.status_code == 200 else []
+    return {"analyses": analyses}
 
 
 # =============================================================================
@@ -717,51 +692,29 @@ def _extract_congruence_chart_data(fa) -> dict:
       field_size_vertical_mm, field_size_horizontal_mm
       top_penumbra_mm, bottom_penumbra_mm, left_penumbra_mm, right_penumbra_mm
     """
-    import numpy as np
-
-    def safe_float(v):
-        """Convert any numpy scalar, 0-d array, or plain number to a Python float."""
-        if v is None:
-            return None
-        arr = np.asarray(v)
-        if arr.ndim == 0:
-            return float(arr)          # 0-dimensional numpy array → scalar
-        if arr.size == 1:
-            return float(arr.flat[0])  # single-element array → scalar
-        # Multi-element: return the mean so we never crash
-        return float(arr.mean())
-
     try:
         rd = fa.results_data()   # returns FieldResult pydantic model
 
-        # ── Field size ────────────────────────────────────────────────────────
-        field_size = {
-            "vertical_mm":   round(safe_float(rd.field_size_vertical_mm),   2),
-            "horizontal_mm": round(safe_float(rd.field_size_horizontal_mm), 2),
+        # ── Edge offsets from CAX (signed, mm) ───────────────────────────────
+        edges = {
+            "top":    round(float(rd.cax_to_top_mm),    3),
+            "bottom": round(float(rd.cax_to_bottom_mm), 3),
+            "left":   round(float(rd.cax_to_left_mm),   3),
+            "right":  round(float(rd.cax_to_right_mm),  3),
         }
 
-        # ── Edge deviations from nominal (signed, mm) ─────────────────────────
-        # pylinac's cax_to_*_mm reports the distance from CAX to each field edge
-        # (e.g. ~50 mm for a 100x100 mm field). To get the clinically meaningful
-        # DEVIATION we subtract the nominal half-field size (field_size / 2).
-        # A positive deviation means the edge has moved away from CAX (field too big);
-        # a negative deviation means the edge has moved toward CAX (field too small).
-        nominal_half_v = safe_float(rd.field_size_vertical_mm)   / 2.0
-        nominal_half_h = safe_float(rd.field_size_horizontal_mm) / 2.0
-
-        edges = {
-            "top":    round(safe_float(rd.cax_to_top_mm)    - nominal_half_v, 3),
-            "bottom": round(safe_float(rd.cax_to_bottom_mm) - nominal_half_v, 3),
-            "left":   round(safe_float(rd.cax_to_left_mm)   - nominal_half_h, 3),
-            "right":  round(safe_float(rd.cax_to_right_mm)  - nominal_half_h, 3),
+        # ── Field size ────────────────────────────────────────────────────────
+        field_size = {
+            "vertical_mm":   round(float(rd.field_size_vertical_mm),   2),
+            "horizontal_mm": round(float(rd.field_size_horizontal_mm), 2),
         }
 
         # ── Penumbra widths (mm) ──────────────────────────────────────────────
         penumbra = {
-            "top":    round(safe_float(rd.top_penumbra_mm),    3),
-            "bottom": round(safe_float(rd.bottom_penumbra_mm), 3),
-            "left":   round(safe_float(rd.left_penumbra_mm),   3),
-            "right":  round(safe_float(rd.right_penumbra_mm),  3),
+            "top":    round(float(rd.top_penumbra_mm),    3),
+            "bottom": round(float(rd.bottom_penumbra_mm), 3),
+            "left":   round(float(rd.left_penumbra_mm),   3),
+            "right":  round(float(rd.right_penumbra_mm),  3),
         }
 
         # ── Inline / crossline profiles ───────────────────────────────────────
