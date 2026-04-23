@@ -119,7 +119,7 @@ async function doLogin() {
     }
 
     localStorage.setItem("mlcqa_token", data.token || data.access_token);
-    localStorage.setItem("mlcqa_name",  data.name);
+    localStorage.setItem("mlcqa_name",  data.name && data.name !== "undefined" ? data.name : "");
     window.location.href = "dashboard.html";
 
   } catch (err) {
