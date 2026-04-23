@@ -47,6 +47,26 @@ if (!isAuthPage && localStorage.getItem("mlcqa_token")) {
     setInterval(() => {
         fetch(`${BACKEND_URL}/`).catch(() => {});
     }, 14 * 60 * 1000);
+
+    // Fix "undefined" name for existing sessions — fetch from /me if name is missing
+    const storedName = localStorage.getItem("mlcqa_name");
+    if (!storedName || storedName === "undefined" || storedName === "null" || storedName.trim() === "") {
+        fetch(`${BACKEND_URL}/me`, {
+            headers: { "Authorization": `Bearer ${localStorage.getItem("mlcqa_token")}` }
+        })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+            if (data && data.name) {
+                localStorage.setItem("mlcqa_name", data.name);
+                // Update sidebar if already rendered
+                const nameEl = document.getElementById("sidebarName");
+                const avatarEl = document.getElementById("avatarInitial");
+                if (nameEl) nameEl.textContent = data.name;
+                if (avatarEl) avatarEl.textContent = data.name.charAt(0).toUpperCase();
+            }
+        })
+        .catch(() => {});
+    }
 }
 
 
