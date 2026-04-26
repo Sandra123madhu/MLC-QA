@@ -10,7 +10,6 @@ import time
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from urllib.parse import quote
 
 import httpx
 import bcrypt
@@ -119,7 +118,6 @@ def save_analysis(*, email: str, test_type: str, filename: str,
                   chart_data: dict, job_id: str):
     """Persist a completed analysis record to Supabase (analyses table)."""
     if not SUPABASE_URL or not SUPABASE_KEY:
-        print("[save_analysis] Skipped — SUPABASE_URL or SUPABASE_KEY not set.")
         return
     try:
         payload = {
@@ -133,23 +131,14 @@ def save_analysis(*, email: str, test_type: str, filename: str,
             "job_id":            job_id,
             "created_at":        datetime.now(timezone.utc).isoformat(),
         }
-        headers = supabase_headers()
-        headers["Prefer"] = "return=minimal"  # Required by Supabase REST API for inserts
-
-        resp = httpx.post(
+        httpx.post(
             f"{SUPABASE_URL}/rest/v1/analyses",
             json=payload,
-            headers=headers,
+            headers=supabase_headers(),
             timeout=15,
         )
-
-        if resp.status_code not in (200, 201):
-            print(f"[save_analysis] Supabase insert failed — status {resp.status_code}: {resp.text}")
-        else:
-            print(f"[save_analysis] Saved: {email} | {test_type} | job={job_id}")
-
-    except Exception as exc:
-        print(f"[save_analysis] Exception: {exc}")
+    except Exception:
+        pass
 
 
 # =============================================================================
@@ -186,7 +175,7 @@ async def login(body: AuthBody):
     if not SUPABASE_URL:
         raise HTTPException(500, "Backend not configured")
     resp = httpx.get(
-        f"{SUPABASE_URL}/rest/v1/users?email=eq.{quote(body.email)}&select=email,password_hash,name",
+        f"{SUPABASE_URL}/rest/v1/users?email=eq.{body.email}&select=email,password_hash",
         headers=supabase_headers(),
         timeout=10,
     )
@@ -197,7 +186,7 @@ async def login(body: AuthBody):
     if not bcrypt.checkpw(body.password.encode(), row["password_hash"].encode()):
         raise HTTPException(401, "Invalid email or password")
     token = create_token(body.email)
-    return {"token": token, "name": row.get("name", "")}
+    return {"token": token}
 
 
 # =============================================================================
@@ -232,13 +221,11 @@ async def get_history(u=Depends(get_current_user)):
     email = u["email"]
     resp  = httpx.get(
         f"{SUPABASE_URL}/rest/v1/analyses"
-        f"?email=eq.{quote(email)}&order=created_at.desc&limit=200"
+        f"?email=eq.{email}&order=created_at.desc&limit=200"
         f"&select=id,test_type,filename,passed,summary,image_url,chart_data,created_at",
         headers=supabase_headers(),
         timeout=15,
     )
-    if resp.status_code != 200:
-        print(f"[get_history] Supabase query failed — status {resp.status_code}: {resp.text}")
     analyses = resp.json() if resp.status_code == 200 else []
     return {"analyses": analyses}
 
@@ -467,7 +454,21 @@ def _run_winston_lutz(job_id: str, filepaths: list, email: str, filenames: str):
     tmp_dir = None
     try:
         import tempfile as _tf
+        import shutil as _shutil
+
+        # Validate minimum image count before calling pylinac
+        if len(filepaths) < 2:
+            raise ValueError(
+                f"Winston-Lutz analysis requires a minimum of 2 DICOM images "
+                f"(one per gantry angle). Only {len(filepaths)} file(s) were uploaded. "
+                f"Please upload images taken at multiple gantry angles (e.g. 0°, 90°, 180°, 270°)."
+            )
+
+        # Copy uploaded files into a dedicated temp directory for pylinac
         tmp_dir = _tf.mkdtemp(prefix=f"wl_{job_id}_")
+        for fp in filepaths:
+            dest = os.path.join(tmp_dir, os.path.basename(fp))
+            _shutil.copy2(fp, dest)
 
         wl      = WinstonLutz(tmp_dir)
         summary = wl.results()
