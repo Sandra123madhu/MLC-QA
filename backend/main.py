@@ -435,12 +435,17 @@ def _extract_wl_chart_data(wl) -> dict:
         chart_data["mean_offset_mm"] = round(float(getattr(rd, "mean_2d_cax_to_bb_mm", 0)), 4)
         chart_data["num_images"]     = int(getattr(rd, "num_total_images", 0))
 
+        # pylinac >= 3.6: per-image data lives in rd.image_details (WinstonLutz2DResult)
+        # gantry angle comes from wl.images[i].gantry_angle
         images_out = []
-        for img in getattr(wl, "images", []):
+        details   = getattr(rd, "image_details", []) or []
+        wl_images = getattr(wl, "images", [])
+        for i, detail in enumerate(details):
             try:
+                gantry = round(float(wl_images[i].gantry_angle), 1) if i < len(wl_images) else 0.0
                 images_out.append({
-                    "gantry_angle": round(float(getattr(img, "gantry_angle", 0)), 1),
-                    "bb_offset_mm": round(float(getattr(img, "cax2bb_distance", 0)), 4),
+                    "gantry_angle": gantry,
+                    "bb_offset_mm": round(float(getattr(detail, "cax2bb_distance", 0)), 4),
                 })
             except Exception:
                 pass
@@ -455,6 +460,9 @@ def _run_winston_lutz(job_id: str, filepaths: list, email: str, filenames: str):
     try:
         import tempfile as _tf
         import shutil as _shutil
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as _plt
 
         # Validate minimum image count before calling pylinac
         if len(filepaths) < 2:
@@ -471,23 +479,28 @@ def _run_winston_lutz(job_id: str, filepaths: list, email: str, filenames: str):
             _shutil.copy2(fp, dest)
 
         wl = WinstonLutz(tmp_dir)
-        wl.analyze(bb_size_mm=5)          # must be called before results() / passed
+        wl.analyze(bb_size_mm=5)
         summary = wl.results()
-        passed  = wl.passed
 
+        # pylinac >= 3.6 removed WinstonLutz.passed — derive from tolerance
+        WL_TOLERANCE_MM = 2.0
+        try:
+            _rd = wl.results_data()
+            passed = float(_rd.max_2d_cax_to_bb_mm) <= WL_TOLERANCE_MM
+        except Exception:
+            passed = False
+
+        # pylinac v3.43: correct save method is save_summary(), not save_summary_plot()
         plot_path = os.path.join(tmp_dir, "wl_plot.png")
         try:
-            wl.save_summary_plot(plot_path)
-        except AttributeError:
+            wl.save_summary(plot_path)
+        except Exception:
             try:
                 wl.plot_summary(show=False)
-                import matplotlib.pyplot as _plt
                 _plt.savefig(plot_path, bbox_inches="tight", dpi=120)
-                _plt.close("all")
             except Exception:
-                import matplotlib.pyplot as _plt
-                wl.plot_analyzed_image(show=False)
-                _plt.savefig(plot_path, bbox_inches="tight", dpi=120)
+                pass
+            finally:
                 _plt.close("all")
         image_url = upload_plot(plot_path, f"wl_{job_id}.png") if os.path.exists(plot_path) else ""
 
