@@ -80,7 +80,7 @@
       <input type="file" id="dicomFile" accept=".dcm" multiple onchange="onFilesSelected(this)"/>
       <div class="upload-icon">📂</div>
       <h3>Drop your DICOM files here</h3>
-      <p>or click to browse — multiple .dcm files supported</p>
+      <p>or click to browse — <strong>minimum 2 files required</strong> (one per gantry angle)</p>
       <div class="file-selected" id="fileLabel"></div>
     </div>
     <div class="tolerances">
@@ -155,16 +155,29 @@ async function onFilesSelected(input) {
   const label = document.getElementById("fileLabel");
   const btn   = document.getElementById("analyzeBtn");
   selectedFiles = Array.from(input.files).filter(f => f.name.toLowerCase().endsWith(".dcm"));
-  if (selectedFiles.length > 0) {
-    label.textContent = `Selected: ${selectedFiles.length} file${selectedFiles.length > 1 ? "s" : ""} (${selectedFiles.map(f => f.name).join(", ").slice(0, 60)}${selectedFiles.map(f=>f.name).join(", ").length > 60 ? "…" : ""})`;
-    btn.disabled = false;
-    // Check the first file — if it's the wrong type, block the whole batch
-    const ok = await checkFileAcceptable(selectedFiles[0], "winston_lutz", btn);
-    if (!ok) { selectedFiles = []; return; }
-  } else {
+
+  if (selectedFiles.length === 0) {
     label.textContent = "";
+    label.style.color = "";
     btn.disabled = true;
+    return;
   }
+
+  // Winston-Lutz requires at least 2 images (one per gantry angle)
+  if (selectedFiles.length < 2) {
+    label.textContent = `⚠ Only 1 file selected — Winston-Lutz requires at least 2 DICOM images (one per gantry angle, e.g. 0°, 90°, 180°, 270°). Please select multiple files.`;
+    label.style.color = "var(--warn, #e0a040)";
+    btn.disabled = true;
+    return;
+  }
+
+  label.style.color = "";
+  label.textContent = `Selected: ${selectedFiles.length} file${selectedFiles.length > 1 ? "s" : ""} (${selectedFiles.map(f => f.name).join(", ").slice(0, 60)}${selectedFiles.map(f=>f.name).join(", ").length > 60 ? "…" : ""})`;
+  btn.disabled = false;
+
+  // Check the first file — if it's the wrong type, block the whole batch
+  const ok = await checkFileAcceptable(selectedFiles[0], "winston_lutz", btn);
+  if (!ok) { selectedFiles = []; label.textContent = ""; label.style.color = ""; return; }
 }
 
 async function runAnalysis() {
@@ -172,6 +185,12 @@ async function runAnalysis() {
   const resultsDiv = document.getElementById("resultsBody");
 
   if (selectedFiles.length === 0) { alert("Please select DICOM files first."); return; }
+
+  // Enforce minimum 2-image requirement before hitting the server
+  if (selectedFiles.length < 2) {
+    resultsDiv.innerHTML = `<p class="result-fail">❌ Winston-Lutz analysis requires at least <strong>2 DICOM images</strong> (one per gantry angle, e.g. 0°, 90°, 180°, 270°). Only ${selectedFiles.length} file(s) selected. Please select multiple files and try again.</p>`;
+    return;
+  }
 
   // Second-pass safety check — catches drag-and-drop bypasses
   const _safetyOk = await checkFileAcceptable(selectedFiles[0], "winston_lutz", btn);
