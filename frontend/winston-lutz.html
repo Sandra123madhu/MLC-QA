@@ -337,7 +337,7 @@ async function generatePDF(r) {
   doc.setFont("helvetica", "normal"); doc.setFontSize(9);
   doc.text(r.toleranceText || (r.pass ? "Within clinical tolerance" : "Outside clinical tolerance"), M + 36, y + 9);
   y += 20;
-  if (r.imgUrl) { try { const imgData = await fetchImageAsBase64(r.imgUrl); const imgW = W - M * 2; const imgH = imgW * 0.5; doc.addImage(imgData, "PNG", M, y, imgW, imgH); y += imgH + 9; } catch { y += 4; } }
+  if (r.imgUrl && r.imgUrl.startsWith("http")) { try { const imgData = await fetchImageAsBase64(r.imgUrl); const imgW = W - M * 2; const imgH = imgW * 0.5; doc.addImage(imgData, "PNG", M, y, imgW, imgH); y += imgH + 9; } catch { y += 4; } }
   const lines = doc.splitTextToSize(r.summary, W - M * 2 - 10); const boxH = Math.min(lines.length * 5.4 + 16, 230);
   doc.setFillColor(245, 248, 252); doc.roundedRect(M, y, W - M * 2, boxH, 2, 2, "F");
   y += 7; doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(15, 40, 80); doc.text("ANALYSIS SUMMARY", M + 5, y); y += 7;
