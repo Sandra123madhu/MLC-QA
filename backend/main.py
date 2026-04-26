@@ -470,7 +470,8 @@ def _run_winston_lutz(job_id: str, filepaths: list, email: str, filenames: str):
             dest = os.path.join(tmp_dir, os.path.basename(fp))
             _shutil.copy2(fp, dest)
 
-        wl      = WinstonLutz(tmp_dir)
+        wl = WinstonLutz(tmp_dir)
+        wl.analyze(bb_size_mm=5)          # must be called before results() / passed
         summary = wl.results()
         passed  = wl.passed
 
@@ -479,10 +480,16 @@ def _run_winston_lutz(job_id: str, filepaths: list, email: str, filenames: str):
             wl.save_summary_plot(plot_path)
         except AttributeError:
             try:
-                wl.plot_summary(filename=plot_path, show=False)
+                wl.plot_summary(show=False)
+                import matplotlib.pyplot as _plt
+                _plt.savefig(plot_path, bbox_inches="tight", dpi=120)
+                _plt.close("all")
             except Exception:
-                wl.plot_analyzed_image(filename=plot_path, show=False)
-        image_url = upload_plot(plot_path, f"wl_{job_id}.png")
+                import matplotlib.pyplot as _plt
+                wl.plot_analyzed_image(show=False)
+                _plt.savefig(plot_path, bbox_inches="tight", dpi=120)
+                _plt.close("all")
+        image_url = upload_plot(plot_path, f"wl_{job_id}.png") if os.path.exists(plot_path) else ""
 
         chart_data = _extract_wl_chart_data(wl)
 
