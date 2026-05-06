@@ -1,6 +1,29 @@
 # =============================================================================
 # MLC QA Platform — FastAPI Backend
 # =============================================================================
+#
+# SUPABASE TABLE SETUP — run this SQL in your Supabase SQL editor if not done:
+#
+#   create table if not exists analyses (
+#     id          bigint generated always as identity primary key,
+#     email       text not null,
+#     test_type   text,
+#     filename    text,
+#     passed      boolean,
+#     summary     text,
+#     image_url   text,
+#     chart_data  jsonb,
+#     job_id      text,
+#     created_at  timestamptz default now()
+#   );
+#
+#   -- Disable RLS so the service-role key can read/write freely:
+#   alter table analyses disable row level security;
+#
+#   -- Auto-delete records older than 30 days (optional):
+#   -- Use Supabase cron or pg_cron for this.
+#
+# =============================================================================
 
 import os
 import io
@@ -216,6 +239,81 @@ async def get_result(job_id: str, u=Depends(get_current_user)):
     if job is None:
         raise HTTPException(404, "Job not found")
     return job
+
+
+# =============================================================================
+# Debug — diagnose Supabase connectivity (remove after confirming history works)
+# =============================================================================
+
+@app.get("/debug/supabase")
+async def debug_supabase():
+    """Returns Supabase connectivity info. Remove this endpoint once history is working."""
+    result = {
+        "supabase_url_set": bool(SUPABASE_URL),
+        "supabase_key_set": bool(SUPABASE_KEY),
+        "supabase_url_prefix": SUPABASE_URL[:40] if SUPABASE_URL else None,
+    }
+
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        result["error"] = "SUPABASE_URL or SUPABASE_KEY env var is missing"
+        return result
+
+    # Test 1: Can we reach Supabase at all?
+    try:
+        ping = httpx.get(f"{SUPABASE_URL}/rest/v1/", headers=supabase_headers(), timeout=10)
+        result["supabase_reachable"] = ping.status_code < 500
+        result["supabase_ping_status"] = ping.status_code
+    except Exception as e:
+        result["supabase_reachable"] = False
+        result["supabase_ping_error"] = str(e)
+
+    # Test 2: Does the analyses table exist and is it readable?
+    try:
+        tr = httpx.get(
+            f"{SUPABASE_URL}/rest/v1/analyses?limit=1&select=id",
+            headers=supabase_headers(),
+            timeout=10,
+        )
+        result["analyses_table_status"] = tr.status_code
+        result["analyses_table_response"] = tr.text[:300]
+    except Exception as e:
+        result["analyses_table_error"] = str(e)
+
+    # Test 3: Can we insert a test row?
+    try:
+        test_payload = {
+            "email": "debug@test.com",
+            "test_type": "DEBUG",
+            "filename": "debug.dcm",
+            "passed": True,
+            "summary": "Debug test row — safe to delete",
+            "image_url": "",
+            "chart_data": {},
+            "job_id": "debug-000",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        ir = httpx.post(
+            f"{SUPABASE_URL}/rest/v1/analyses",
+            json=test_payload,
+            headers=supabase_headers(prefer_return=True),
+            timeout=10,
+        )
+        result["insert_status"] = ir.status_code
+        result["insert_response"] = ir.text[:300]
+        # Clean up the test row
+        if ir.status_code in (200, 201):
+            httpx.delete(
+                f"{SUPABASE_URL}/rest/v1/analyses?job_id=eq.debug-000",
+                headers=supabase_headers(),
+                timeout=10,
+            )
+            result["insert_test"] = "SUCCESS — table exists and is writable"
+        else:
+            result["insert_test"] = "FAILED — see insert_response for details"
+    except Exception as e:
+        result["insert_error"] = str(e)
+
+    return result
 
 
 # =============================================================================
