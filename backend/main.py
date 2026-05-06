@@ -54,13 +54,16 @@ security = HTTPBearer(auto_error=False)
 # Helpers
 # =============================================================================
 
-def supabase_headers(use_service_key: bool = True) -> dict:
+def supabase_headers(use_service_key: bool = True, prefer_return: bool = False) -> dict:
     key = SUPABASE_KEY
-    return {
+    headers = {
         "apikey":        key,
         "Authorization": f"Bearer {key}",
         "Content-Type":  "application/json",
     }
+    if prefer_return:
+        headers["Prefer"] = "return=representation"
+    return headers
 
 
 def cleanup():
@@ -118,6 +121,7 @@ def save_analysis(*, email: str, test_type: str, filename: str,
                   chart_data: dict, job_id: str):
     """Persist a completed analysis record to Supabase (analyses table)."""
     if not SUPABASE_URL or not SUPABASE_KEY:
+        print("[save_analysis] Skipped — SUPABASE_URL or SUPABASE_KEY not set.")
         return
     try:
         payload = {
@@ -131,14 +135,18 @@ def save_analysis(*, email: str, test_type: str, filename: str,
             "job_id":            job_id,
             "created_at":        datetime.now(timezone.utc).isoformat(),
         }
-        httpx.post(
+        resp = httpx.post(
             f"{SUPABASE_URL}/rest/v1/analyses",
             json=payload,
-            headers=supabase_headers(),
+            headers=supabase_headers(prefer_return=True),
             timeout=15,
         )
-    except Exception:
-        pass
+        if resp.status_code not in (200, 201):
+            print(f"[save_analysis] ERROR {resp.status_code}: {resp.text}")
+        else:
+            print(f"[save_analysis] Saved analysis for {email} — test_type={test_type}, passed={passed}")
+    except Exception as exc:
+        print(f"[save_analysis] Exception: {exc}")
 
 
 # =============================================================================
@@ -226,7 +234,13 @@ async def get_history(u=Depends(get_current_user)):
         headers=supabase_headers(),
         timeout=15,
     )
-    analyses = resp.json() if resp.status_code == 200 else []
+    if resp.status_code != 200:
+        print(f"[get_history] ERROR {resp.status_code}: {resp.text}")
+        return {"analyses": []}
+    analyses = resp.json()
+    if not isinstance(analyses, list):
+        print(f"[get_history] Unexpected response shape: {analyses}")
+        return {"analyses": []}
     return {"analyses": analyses}
 
 
