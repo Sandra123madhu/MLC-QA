@@ -1,0 +1,143 @@
+    const serverReady = await AnalysisHelpers.waitForServer();
+    if (!serverReady) throw new Error("Server not responding. Please refresh and try again.");
+    const token = localStorage.getItem("mlcqa_token");
+    if (!token) { window.location.href = "login.html"; return; }
+    resultsDiv.innerHTML = `<p>📤 Uploading ${selectedFiles.length} file(s)...</p>`;
+    const formData = new FormData();
+    selectedFiles.forEach(f => formData.append("files", f));
+    btn.textContent = "Uploading...";
+    const data = await AnalysisHelpers.makeApiCall(`${BACKEND_URL}/analyze/winston-lutz`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}` },
+      body: formData
+    }, 60000);
+    if (data.status === "Error") throw new Error(data.message || "Server returned an error");
+    btn.textContent = "Analyzing...";
+    resultsDiv.innerHTML = `<p>🔬 Analysis running<span id="dots">.</span></p>`;
+    await AnalysisHelpers.pollForResult(data.job_id, (result) => {
+      handleSuccess(result);
+    }, (error) => {
+      console.error("Winston-Lutz analysis failed:", error);
+      resultsDiv.innerHTML = `<p class="result-fail">❌ ${error || "Analysis failed on the server."}</p>`;
+      btn.disabled = false;
+      btn.textContent = "Run Winston-Lutz Analysis";
+    });
+  } catch (err) {
+    console.error("Winston-Lutz analysis error:", err);
+    resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
+    btn.disabled = false;
+    btn.textContent = "Run Winston-Lutz Analysis";
+  }
+}
+function handleSuccess(result) {
+  const resultsDiv = document.getElementById("resultsBody");
+  const analyzeBtn = document.getElementById("analyzeBtn");
+  const pass      = result.passed;
+  const imgUrl    = result.image_url || null;
+  const summary   = result.analysis_summary || "";
+  const chartData = result.chart_data || {};
+  const tol       = 2.0;
+  window._lastResult = { pass, imgUrl, summary, filename: `${selectedFiles.length} WL images`, testType: "Winston-Lutz", toleranceText: "Isocenter tolerance: 2.0mm / action 1.0mm" };
+  resultsDiv.innerHTML = "<pre>" + summary + "</pre>";
+  // Verdict banner
+  const banner = document.getElementById("verdictBanner");
+  banner.innerHTML = '<div class="verdict-icon">' + (pass ? "✓" : "✗") + '</div><div class="verdict-text"><div class="verdict-label">' + (pass ? "PASS" : "FAIL") + '</div><div class="verdict-sub">' + (pass ? "Isocenter within clinical tolerance (2.0 mm)" : "Isocenter exceeds tolerance — action required") + '</div></div>';
+  banner.className = "verdict-banner " + (pass ? "verdict-pass" : "verdict-fail");
+  banner.style.display = "flex";
+  // Gauge
+  const maxOff = chartData.max_offset_mm || 0;
+  const maxScale = Math.max(tol * 1.6, maxOff * 1.2);
+  const fill = document.getElementById("gaugeFill");
+  fill.style.width = Math.min((maxOff / maxScale) * 100, 100) + "%";
+  fill.style.background = maxOff > tol ? "var(--fail)" : maxOff > 1.0 ? "var(--warn)" : "var(--pass)";
+  document.getElementById("gaugeMarker").style.left = ((tol / maxScale) * 100) + "%";
+  document.getElementById("gaugeVal").textContent = maxOff.toFixed(3) + " mm";
+  document.getElementById("gaugeTolLabel").textContent = "Tol: " + tol + " mm";
+  document.getElementById("gaugeMaxLabel").textContent = maxScale.toFixed(2) + " mm";
+  document.getElementById("gaugeSection").style.display = "block";
+  // Metrics
+  const meanOff = chartData.mean_offset_mm || 0;
+  const imgCount = (chartData.images || []).length;
+  const mr = document.getElementById("metricsRow");
+  mr.innerHTML = [
+    { label: "Max BB Offset", val: maxOff.toFixed(3), unit: "mm", cls: maxOff > tol ? "metric-fail" : "metric-pass" },
+    { label: "Mean Offset",   val: meanOff.toFixed(3), unit: "mm", cls: "metric-accent" },
+    { label: "Images Used",   val: String(imgCount),   cls: "metric-accent" },
+    { label: "Tolerance",     val: "2.0", unit: "mm",  cls: "metric-accent" }
+  ].map(m => '<div class="metric-card"><div class="metric-label">' + m.label + '</div><div class="metric-value ' + m.cls + '">' + m.val + (m.unit ? '<span class="metric-unit">' + m.unit + '</span>' : '') + '</div></div>').join('');
+  mr.style.display = "grid";
+  // Plot
+  if (imgUrl) {
+    document.getElementById("plotSection").innerHTML = '<div class="plot-wrap"><img src="' + imgUrl + '" alt="Winston-Lutz Plot" loading="lazy"/><div class="plot-label">Pylinac · Winston-Lutz Analysis</div></div>';
+    document.getElementById("plotSection").style.display = "block";
+  }
+  renderCharts(chartData, tol);
+  document.getElementById("chartsSection").style.display = "block";
+  document.getElementById("pdfSection").style.display = "block";
+  analyzeBtn.disabled = false;
+  analyzeBtn.textContent = "Analyze Another Set";
+}
+function renderCharts(cd, tol) {
+  const images = cd.images || [];
+  if (images.length === 0) {
+    document.getElementById("chartsSection").innerHTML += '<p style="color:var(--text-muted);font-size:0.8rem;font-family:var(--mono);padding:12px">Chart data not available — check server logs.</p>';
+    return;
+  }
+  const angles  = images.map(img => img.gantry_angle ?? 0);
+  const offsets = images.map(img => img.bb_offset_mm  ?? 0);
+  const colors  = offsets.map(v => v > tol ? "rgba(201,64,80,0.85)" : v > 1.0 ? "rgba(200,137,42,0.8)" : "rgba(26,171,117,0.75)");
+  const chartOpts = {
+    plugins: { legend: { labels: { color: "#8ba4c0", font: { family: "'IBM Plex Mono'", size: 9 } } } },
+    scales: {
+      x: { title: { display: true, text: "Gantry Angle (°)", color: "#546a85", font: { size: 9 } }, ticks: { color: "#546a85", font: { size: 8 } }, grid: { color: "rgba(36,53,82,0.8)" } },
+      y: { title: { display: true, text: "BB Offset (mm)",   color: "#546a85", font: { size: 9 } }, ticks: { color: "#546a85", font: { family: "'IBM Plex Mono'", size: 9 } }, grid: { color: "rgba(36,53,82,0.8)" }, min: 0 }
+    }
+  };
+  if (wlChart) wlChart.destroy();
+  wlChart = new Chart(document.getElementById("wlChart"), {
+    type: "bar",
+    data: {
+      labels: angles.map(a => a + "°"),
+      datasets: [
+        { label: "BB Offset (mm)", data: offsets, backgroundColor: colors, borderWidth: 0 },
+        { label: "Tolerance", data: Array(angles.length).fill(tol), type: "line", borderColor: "rgba(200,137,42,0.7)", borderDash: [4, 3], pointRadius: 0, borderWidth: 1.5, fill: false }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, ...chartOpts }
+  });
+}
+async function downloadPDF() { const r = window._lastResult; if (!r) return; await generatePDF(r); }
+async function generatePDF(r) {
+  const { jsPDF } = window.jspdf; const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" }); const W = 210, M = 16;
+  doc.setFillColor(15, 30, 55); doc.rect(0, 0, W, 26, "F"); doc.setFillColor(0, 175, 215); doc.rect(0, 0, 5, 26, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(255, 255, 255);
+  doc.text(`MLC QA — ${r.testType || "Analysis"} Report`, M + 6, 11);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(180, 210, 230);
+  const now = new Date().toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
+  doc.text(`Generated: ${now}`, M + 6, 19); doc.text(`File: ${r.filename}`, M + 6, 23.5);
+  let y = 34;
+  doc.setFillColor(...(r.pass ? [0, 168, 107] : [195, 45, 70])); doc.roundedRect(M, y, W - M * 2, 13, 2, 2, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(255, 255, 255);
+  doc.text(r.pass ? "✓  PASS" : "✗  FAIL", M + 5, y + 9);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+  doc.text(r.toleranceText || (r.pass ? "Within clinical tolerance" : "Outside clinical tolerance"), M + 36, y + 9);
+  y += 20;
+  if (r.imgUrl && r.imgUrl.startsWith("http")) { try { const imgData = await fetchImageAsBase64(r.imgUrl); const imgW = W - M * 2; const imgH = imgW * 0.5; doc.addImage(imgData, "PNG", M, y, imgW, imgH); y += imgH + 9; } catch { y += 4; } }
+  const lines = doc.splitTextToSize(r.summary, W - M * 2 - 10); const boxH = Math.min(lines.length * 5.4 + 16, 230);
+  doc.setFillColor(245, 248, 252); doc.roundedRect(M, y, W - M * 2, boxH, 2, 2, "F");
+  y += 7; doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(15, 40, 80); doc.text("ANALYSIS SUMMARY", M + 5, y); y += 7;
+  doc.setFont("courier", "normal"); doc.setFontSize(8.2); doc.setTextColor(20, 45, 80);
+  lines.forEach(line => { if (y > 272) { doc.addPage(); y = 18; } doc.text(line, M + 5, y); y += 5.4; });
+  const pages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) { doc.setPage(i); doc.setFillColor(235, 241, 248); doc.rect(0, 284, W, 13, "F"); doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(60, 85, 120); doc.text("MLC QA Platform  ·  For clinical physics use only", M, 291); doc.text(`Page ${i} of ${pages}`, W - 28, 291); }
+  doc.save(`MLCQA_WL_${Date.now()}.pdf`);
+}
+async function fetchImageAsBase64(url) {
+  const res = await fetch(url); const blob = await res.blob();
+  return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onloadend = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); });
+}
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="dicom-detect.js"></script>
+</body>
+</html>
