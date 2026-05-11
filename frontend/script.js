@@ -48,24 +48,22 @@ if (!isAuthPage && localStorage.getItem("mlcqa_token")) {
         fetch(`${BACKEND_URL}/`).catch(() => {});
     }, 14 * 60 * 1000);
 
-    // Fix "undefined" name for existing sessions — fetch from /me if name is missing
+    // Derive display name from JWT email if not stored
     const storedName = localStorage.getItem("mlcqa_name");
     if (!storedName || storedName === "undefined" || storedName === "null" || storedName.trim() === "") {
-        fetch(`${BACKEND_URL}/me`, {
-            headers: { "Authorization": `Bearer ${localStorage.getItem("mlcqa_token")}` }
-        })
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-            if (data && data.name) {
-                localStorage.setItem("mlcqa_name", data.name);
-                // Update sidebar if already rendered
+        try {
+            const token = localStorage.getItem("mlcqa_token");
+            if (token) {
+                const payload = JSON.parse(atob(token.split(".")[1]));
+                const email = payload.sub || "";
+                const name = email.split("@")[0] || "User";
+                localStorage.setItem("mlcqa_name", name);
                 const nameEl = document.getElementById("sidebarName");
                 const avatarEl = document.getElementById("avatarInitial");
-                if (nameEl) nameEl.textContent = data.name;
-                if (avatarEl) avatarEl.textContent = data.name.charAt(0).toUpperCase();
+                if (nameEl) nameEl.textContent = name;
+                if (avatarEl) avatarEl.textContent = name.charAt(0).toUpperCase();
             }
-        })
-        .catch(() => {});
+        } catch (e) {}
     }
 }
 
@@ -201,7 +199,7 @@ const AnalysisHelpers = {
 
             try {
                 const result = await this.makeApiCall(
-                    `${BACKEND_URL}/result/${jobId}`,
+                    `${BACKEND_URL}/job/${jobId}`,
                     { headers: authHeadersOnly() }
                 );
 
