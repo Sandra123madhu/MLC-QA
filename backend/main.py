@@ -82,6 +82,7 @@ def root():
     return {"status": "MLC QA API is running"}
 
 
+
 # =============================================================================
 # Helpers
 # =============================================================================
@@ -261,7 +262,10 @@ def _run_picket_fence(job_id: str, filepath: str, email: str, filename: str):
         summary   = pf.results()
         passed    = pf.passed
         plot_path = filepath.replace(".dcm", "_pf.png")
-        pf.plot_analyzed_image(filename=plot_path, show=False)
+        pf.plot_analyzed_image(show=False)
+        import matplotlib.pyplot as plt
+        plt.savefig(plot_path)
+        plt.close("all")
 
         import asyncio, nest_asyncio
         try:
@@ -323,7 +327,10 @@ def _run_winston_lutz(job_id: str, filepaths: list, email: str, filename: str):
         passed   = wl.passed
 
         plot_path = filepaths[0].replace(".dcm", "_wl.png")
-        wl.plot_summary(filename=plot_path, show=False)
+        wl.plot_summary(show=False)
+        import matplotlib.pyplot as plt
+        plt.savefig(plot_path)
+        plt.close("all")
 
         import asyncio, nest_asyncio
         try:
@@ -387,7 +394,10 @@ def _run_starshot(job_id: str, filepath: str, email: str, filename: str):
         summary  = star.results()
         passed   = star.passed
         plot_path = filepath.replace(".dcm", "_star.png")
-        star.plot_analyzed_image(filename=plot_path, show=False)
+        star.plot_analyzed_image(show=False)
+        import matplotlib.pyplot as plt
+        plt.savefig(plot_path)
+        plt.close("all")
 
         import asyncio, nest_asyncio
         try:
@@ -446,7 +456,10 @@ def _run_congruence(job_id: str, filepath: str, email: str, filename: str):
         summary   = fa.results()
         passed    = fa.passed
         plot_path = filepath.replace(".dcm", "_congruence.png")
-        fa.plot_analyzed_image(filename=plot_path, show=False)
+        fa.plot_analyzed_image(show=False)
+        import matplotlib.pyplot as plt
+        plt.savefig(plot_path)
+        plt.close("all")
 
         import asyncio, nest_asyncio
         try:
