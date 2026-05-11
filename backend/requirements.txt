@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 starlette==0.46.2
-pylinac==3.42.0
+pylinac
 pydicom
 python-multipart
 python-jose
@@ -10,3 +10,5 @@ pydantic
 httpx
 matplotlib
 bcrypt
+nest_asyncio
+requests
