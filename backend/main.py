@@ -82,6 +82,13 @@ def root():
     return {"status": "MLC QA API is running"}
 
 
+@app.get("/me")
+def me(u=Depends(get_current_user)):
+    email = u["email"]
+    name  = email.split("@")[0]
+    return {"email": email, "name": name}
+
+
 # =============================================================================
 # Helpers
 # =============================================================================
