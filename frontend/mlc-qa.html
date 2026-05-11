@@ -253,7 +253,7 @@ async function runAnalysis() {
 
     btn.textContent = "Uploading...";
     
-    const data = await AnalysisHelpers.makeApiCall(`${BACKEND_URL}/analyze`, {
+    const data = await AnalysisHelpers.makeApiCall(`${BACKEND_URL}/analyze/picket-fence`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${token}`
