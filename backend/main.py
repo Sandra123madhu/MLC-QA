@@ -82,13 +82,6 @@ def root():
     return {"status": "MLC QA API is running"}
 
 
-@app.get("/me")
-def me(u=Depends(get_current_user)):
-    email = u["email"]
-    name  = email.split("@")[0]
-    return {"email": email, "name": name}
-
-
 # =============================================================================
 # Helpers
 # =============================================================================
@@ -131,6 +124,13 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     if not credentials:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return verify_token(credentials.credentials)
+
+
+@app.get("/me")
+def me(u=Depends(get_current_user)):
+    email = u["email"]
+    name  = email.split("@")[0]
+    return {"email": email, "name": name}
 
 
 async def upload_plot(filepath: str, storage_name: str) -> str:
