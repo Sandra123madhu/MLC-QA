@@ -157,9 +157,7 @@
       <div class="charts-grid" style="grid-template-columns:1fr">
         <div class="chart-card" style="padding:20px 16px;">
           <div class="chart-card-title" style="font-size:0.9rem;font-weight:600;margin-bottom:12px;">Leaf Pair Max Error (mm)</div>
-          <!-- Outer scroll container — full card width, scrolls horizontally -->
           <div id="leafChartScroll" style="width:100%;overflow-x:auto;overflow-y:hidden;border-radius:4px;">
-            <!-- Inner div sized to exact chart pixel width — forces scroll when wider than card -->
             <div id="leafChartInner" style="min-width:100%;">
               <canvas id="leafChart"></canvas>
             </div>
@@ -183,9 +181,6 @@ if (name) {
   document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
 }
 
-// Check server status on load
-AnalysisHelpers.checkServer('serverStatus', 'analyzeBtn');
-
 async function onFileSelected(input) {
   const label = document.getElementById("fileLabel");
   const btn   = document.getElementById("analyzeBtn");
@@ -208,77 +203,43 @@ zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add(
 zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
 zone.addEventListener("drop", e => { e.preventDefault(); zone.classList.remove("dragover"); const dt = new DataTransfer(); Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f)); document.getElementById("dicomFile").files = dt.files; onFileSelected(document.getElementById("dicomFile")); });
 
-// ── Cancellation state ────────────────────────────────────────────────────────
-let _analysisAbortController = null;
-let _analysisCancelled = false;
-
-function _showCancelBtn(show) {
-  const c = document.getElementById("cancelBtn");
-  if (c) c.style.display = show ? "inline-flex" : "none";
-}
-
-function _resetAnalysisUI(message) {
-  const btn = document.getElementById("analyzeBtn");
-  const resultsDiv = document.getElementById("resultsBody");
-  btn.disabled = false;
-  btn.textContent = "Run Picket Fence Analysis";
-  _showCancelBtn(false);
-  if (message) resultsDiv.innerHTML = `<p>${message}</p>`;
-  _analysisAbortController = null;
-  _analysisCancelled = false;
-}
-
+// ── Cancel: delegates entirely to CancelManager ───────────────────────────────
 function cancelAnalysis() {
-  _analysisCancelled = true;
-  if (_analysisAbortController) _analysisAbortController.abort();
-  _resetAnalysisUI("⚠️ Analysis cancelled.");
+  CancelManager.cancel();
 }
-// ─────────────────────────────────────────────────────────────────────────────
 
 async function runAnalysis() {
-  const fileInput = document.getElementById("dicomFile");
-  const btn = document.getElementById("analyzeBtn");
+  const fileInput  = document.getElementById("dicomFile");
+  const btn        = document.getElementById("analyzeBtn");
   const resultsDiv = document.getElementById("resultsBody");
 
-  if (!fileInput.files.length) {
-    alert("Please select a file first.");
-    return;
-  }
+  if (!fileInput.files.length) { alert("Please select a file first."); return; }
 
   if (!fileInput.files[0].name.toLowerCase().endsWith(".dcm")) {
     resultsDiv.innerHTML = `<p class="result-fail">❌ Only .dcm files are supported.</p>`;
     return;
   }
 
-  // Second-pass safety check — blocks wrong/unidentifiable files even if
-  // the user somehow bypassed the onFileSelected guard
-  const _safetyFile = fileInput.files[0];
-  const _safetyOk = await checkFileAcceptable(_safetyFile, "picket_fence", btn);
+  const _safetyOk = await checkFileAcceptable(fileInput.files[0], "picket_fence", btn);
   if (!_safetyOk) return;
 
-  // Set up fresh cancellation state
-  _analysisCancelled = false;
-  _analysisAbortController = new AbortController();
+  // Set up fresh cancellation — flag stays false until user clicks Cancel
+  CancelManager.start({
+    cancelBtnId:  "cancelBtn",
+    analyzeBtnId: "analyzeBtn",
+    analyzeLabel: "Run Picket Fence Analysis"
+  });
   btn.disabled = true;
-  _showCancelBtn(true);
 
   try {
-    // Check server first
     resultsDiv.innerHTML = `<p>⏳ Checking server status...</p>`;
     const serverReady = await AnalysisHelpers.waitForServer();
-    if (_analysisCancelled) return;
-    if (!serverReady) {
-      throw new Error("Server not responding. Please refresh the page and try again.");
-    }
+    if (CancelManager.isCancelled()) return;
+    if (!serverReady) throw new Error("Server not responding. Please refresh the page and try again.");
 
-    // Validate authentication
     const token = localStorage.getItem("mlcqa_token");
-    if (!token) {
-      window.location.href = "login.html";
-      return;
-    }
+    if (!token) { window.location.href = "login.html"; return; }
 
-    // Prepare and send request
     resultsDiv.innerHTML = `<p>📤 Uploading file...</p>`;
     const formData = new FormData();
     formData.append("file", fileInput.files[0]);
@@ -292,69 +253,72 @@ async function runAnalysis() {
       method: "POST",
       headers: { "Authorization": `Bearer ${token}` },
       body: formData,
-      signal: _analysisAbortController.signal
+      signal: CancelManager.getSignal()
     }, 30000);
 
-    if (_analysisCancelled) return;
+    if (CancelManager.isCancelled()) return;
 
-    if (data.status === "Error") {
-      throw new Error(data.message || "Server returned an error");
-    }
+    if (data.status === "Error") throw new Error(data.message || "Server returned an error");
 
-    // Start polling for results
+    CancelManager.setJobId(data.job_id);
     btn.textContent = "Analyzing...";
     resultsDiv.innerHTML = `<p>🔬 Analysis running<span id="dots">.</span></p>`;
     document.getElementById("leafMapSection").style.display = "none";
 
+    // pollForResult now returns a real Promise — errors propagate here correctly
     await AnalysisHelpers.pollForResult(
       data.job_id,
       (result) => {
-        if (_analysisCancelled) return;
+        if (CancelManager.isCancelled()) return;
         handlePicketFenceSuccess(result, fileInput.files[0].name);
-        _showCancelBtn(false);
       },
-      (error) => { if (!_analysisCancelled) throw new Error(error); },
-      () => _analysisCancelled   // isCancelled callback
+      null,
+      () => CancelManager.isCancelled()
     );
 
   } catch (err) {
-    if (_analysisCancelled || err.name === "AbortError") return;
+    if (CancelManager.isCancelled() || err.name === "AbortError" ||
+        err.message === "Request timed out or was cancelled.") {
+      CancelManager.finish();
+      return;
+    }
     console.error("Picket Fence analysis error:", err);
     resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
-    _resetAnalysisUI(null);
+    CancelManager.finish();
+    btn.disabled = false;
+    btn.textContent = "Run Picket Fence Analysis";
   }
 }
 
 function handlePicketFenceSuccess(result, filename) {
+  if (CancelManager.isCancelled()) return;
+
   const resultsDiv = document.getElementById("resultsBody");
   const analyzeBtn = document.getElementById("analyzeBtn");
-  
+
   const pass = result.passed;
   const imgUrl = result.image_url || null;
   const summary = result.analysis_summary || "";
   const chartData = result.chart_data || {};
-  
-  // Store result for PDF generation
-  window._lastResult = { 
-    pass, 
-    imgUrl, 
-    summary, 
-    filename: filename, 
-    testType: "Picket Fence", 
-    toleranceText: "MLC tolerance: 1.0mm / action 0.5mm" 
+
+  window._lastResult = {
+    pass,
+    imgUrl,
+    summary,
+    filename: filename,
+    testType: "Picket Fence",
+    toleranceText: "MLC tolerance: 1.0mm / action 0.5mm"
   };
-  
-  // Raw summary
+
+  HistoryManager.record({ testType: "Picket Fence", filename, passed: pass, summary, imageUrl: imgUrl });
+
   resultsDiv.innerHTML = "<pre>" + summary + "</pre>";
-  
-  // Verdict banner
+
   const banner = document.getElementById("verdictBanner");
   banner.innerHTML = '<div class="verdict-icon">' + (pass ? "✓" : "✗") + '</div><div class="verdict-text"><div class="verdict-label">' + (pass ? "PASS" : "FAIL") + '</div><div class="verdict-sub">' + (pass ? "All MLC leaf pairs within clinical tolerance (1.0 mm)" : "One or more leaf pairs exceed tolerance — action required") + '</div></div>';
   banner.className = "verdict-banner " + (pass ? "verdict-pass" : "verdict-fail");
   banner.style.display = "flex";
-  
-  // Gauge + Metrics — read directly from chart_data (pylinac backend values).
-  // Never use regex fallback on summary text — unreliable.
+
   const tol = 1.0;
   const cd = chartData;
   const realMax    = (cd.max_error    != null && !isNaN(cd.max_error))    ? Number(cd.max_error)    : 0;
@@ -371,6 +335,7 @@ function handlePicketFenceSuccess(result, filename) {
   document.getElementById("gaugeTolLabel").textContent = "Tol: " + tol + " mm";
   document.getElementById("gaugeMaxLabel").textContent = maxScale.toFixed(2) + " mm";
   document.getElementById("gaugeSection").style.display = "block";
+
   const mr = document.getElementById("metricsRow");
   mr.innerHTML = [
     {label: "Max MLC Error", val: realMax.toFixed(3), unit: "mm", cls: realMax > tol ? "metric-fail" : "metric-pass"},
@@ -379,27 +344,21 @@ function handlePicketFenceSuccess(result, filename) {
     {label: "Tolerance", val: "1.0", unit: "mm", cls: "metric-accent"}
   ].map(m => '<div class="metric-card"><div class="metric-label">' + m.label + '</div><div class="metric-value ' + m.cls + '">' + m.val + (m.unit ? '<span class="metric-unit">' + m.unit + '</span>' : '') + '</div></div>').join('');
   mr.style.display = "grid";
-  
-  // ── Leaf Pair Map ──────────────────────────────────────────────────────────
+
   renderLeafMap(chartData, tol);
-  // ──────────────────────────────────────────────────────────────────────────
+
   if (imgUrl) {
     document.getElementById("plotSection").innerHTML = '<div class="plot-wrap"><img src="' + imgUrl + '" alt="Picket Fence Plot" loading="lazy"/><div class="plot-label">Pylinac · Picket Fence Analysis</div></div>';
     document.getElementById("plotSection").style.display = "block";
   }
-  
-  // Charts — make section visible FIRST so offsetWidth is readable, then render.
-  // Double requestAnimationFrame ensures the browser has fully laid out and
-  // painted the section before renderPFCharts reads scrollDiv.offsetWidth.
+
   document.getElementById("chartsSection").style.display = "block";
   document.getElementById("pdfSection").style.display = "block";
   requestAnimationFrame(() => requestAnimationFrame(() => renderPFCharts(chartData, tol)));
-  
+
   analyzeBtn.disabled = false;
   analyzeBtn.textContent = "Analyze Another File";
-  _showCancelBtn(false);
-  _analysisCancelled = false;
-  _analysisAbortController = null;
+  CancelManager.finish();
 }
 
 
@@ -417,9 +376,6 @@ function renderLeafMap(cd, tol) {
 
   let nPass = 0, nAction = 0, nFail = 0;
 
-  // ── Determine total MLC pairs for this machine ──────────────────────────
-  // Prefer backend-reported num_leaves, fall back to the MLC-type selector,
-  // then default to 60 (Millennium).
   let totalMLC = (cd.num_leaves != null && cd.num_leaves > 0) ? Number(cd.num_leaves) : 0;
   if (!totalMLC) {
     const sel = document.getElementById("mlcTypeSelect");
@@ -431,19 +387,16 @@ function renderLeafMap(cd, tol) {
     }
   }
 
-  // ── Build a lookup: pair number → {max_error, ...} ──────────────────────
   const measuredMap = new Map();
   leafPairs.forEach(lp => {
     const pairNum = lp.leaf_pair != null ? Number(lp.leaf_pair) : null;
     if (pairNum != null) measuredMap.set(pairNum, lp);
   });
 
-  // ── Find the maximum error for pulse-highlight ───────────────────────────
   const maxErrValue = Math.max(...leafPairs.map(lp => Number(lp.max_error) || 0));
 
-  // ── Render ALL pairs 1 … totalMLC ───────────────────────────────────────
   for (let pairNum = 1; pairNum <= totalMLC; pairNum++) {
-    const lp         = measuredMap.get(pairNum);   // undefined if outside field
+    const lp         = measuredMap.get(pairNum);
     const isMeasured = lp !== undefined;
     const err        = isMeasured ? (Number(lp.max_error) || 0) : 0;
     const label      = String(pairNum);
@@ -451,7 +404,6 @@ function renderLeafMap(cd, tol) {
     let bg, opacity, cursor;
 
     if (!isMeasured) {
-      // Outside beam field — grey, non-interactive appearance
       bg      = "rgba(80,100,130,0.45)";
       opacity = 0.40;
       cursor  = "default";
@@ -486,12 +438,10 @@ function renderLeafMap(cd, tol) {
     ].join(";");
     cell.textContent = label;
 
-    // Pulse-highlight the worst measured pair
     if (isMeasured && maxErrValue > 0 && err === maxErrValue) {
       cell.classList.add("leaf-max-error-cell");
     }
 
-    // Hover tooltip — measured pairs only
     if (isMeasured) {
       const isFail = err >= tol;
       const isAct  = !isFail && err >= actionTol;
@@ -519,7 +469,6 @@ function renderLeafMap(cd, tol) {
         tooltip.style.display = "none";
       });
     } else {
-      // Outside-field tooltip
       cell.addEventListener("mouseenter", e => {
         cell.style.opacity = "0.65";
         tooltip.innerHTML =
@@ -560,7 +509,6 @@ function renderPFCharts(cd, tol) {
   const innerDiv   = document.getElementById("leafChartInner");
   const hint       = document.getElementById("leafScrollHint");
 
-  // ── 1. Extract raw data from backend ────────────────────────────────────
   let rawErrors = (cd.leaf_max_errors && cd.leaf_max_errors.length > 0) ? cd.leaf_max_errors : [];
   let rawLabels = (cd.leaf_pairs && cd.leaf_pairs.length > 0)
     ? cd.leaf_pairs.map(lp => String(lp.leaf_pair))
@@ -570,7 +518,6 @@ function renderPFCharts(cd, tol) {
               '| first 5:', rawLabels.slice(0,5).join(','),
               '| last 5:',  rawLabels.slice(-5).join(','));
 
-  // ── 1b. Normalise to 1-based if pylinac sent 0-based or centred keys ────
   const _numericRaw = rawLabels.map(l => parseInt(l, 10)).filter(n => !isNaN(n));
   const _minLabel   = _numericRaw.length ? Math.min(..._numericRaw) : 1;
   const _labelShift = _minLabel <= 0 ? (1 - _minLabel) : 0;
@@ -587,11 +534,6 @@ function renderPFCharts(cd, tol) {
     return;
   }
 
-  // ── 2. Only plot MEASURED leaves (those inside the radiation field) ───────
-  // Pylinac's _leaves_in_view() only measures leaves whose centre falls within
-  // the exposed field — outer leaves of a Millennium MLC (e.g. pairs 1-9 and
-  // 52-60 for a 22cm field) are physically outside the beam and produce no data.
-  // Showing 60 bars with most empty is misleading; we show only what was measured.
   const leafLabels = [];
   const leafErrors = [];
   const leafColors = [];
@@ -609,13 +551,8 @@ function renderPFCharts(cd, tol) {
 
   const totalLeaves    = leafLabels.length;
   const maxMeasuredErr = leafErrors.length > 0 ? Math.max(...leafErrors) : 0;
-
-  // Use num_leaves from backend (pylinac-detected) so the outside-field count
-  // is correct for HD MLC, Agility, etc. — fall back to 60 only if not supplied.
   const totalMLC = (cd.num_leaves != null && cd.num_leaves > 0) ? cd.num_leaves : 60;
 
-  // ── 3. Inject info badge + subtitle above the chart ──────────────────────
-  // Shows measured range and explains why outer leaves are absent.
   const numericAll = leafLabels.map(l => parseInt(l, 10)).filter(n => !isNaN(n));
   const minLeaf = numericAll.length ? Math.min(...numericAll) : "?";
   const maxLeaf = numericAll.length ? Math.max(...numericAll) : "?";
@@ -625,7 +562,6 @@ function renderPFCharts(cd, tol) {
   if (!infoEl) {
     infoEl = document.createElement("div");
     infoEl.id = "leafChartInfo";
-    // Insert before the scroll container
     scrollDiv.parentNode.insertBefore(infoEl, scrollDiv);
   }
   infoEl.innerHTML =
@@ -643,7 +579,6 @@ function renderPFCharts(cd, tol) {
         : '') +
     '</div>';
 
-  // ── 4. Canvas sizing ──────────────────────────────────────────────────────
   const PX_PER_LEAF = 22;
   const Y_AXIS_W    = 70;
   const minWidth    = totalLeaves * PX_PER_LEAF + Y_AXIS_W;
@@ -653,7 +588,6 @@ function renderPFCharts(cd, tol) {
   const chartWidth  = needsScroll ? minWidth : cardWidth;
   const chartHeight = 380;
 
-  // ── 5. Destroy old chart, recreate canvas ────────────────────────────────
   if (pfChart1) { pfChart1.destroy(); pfChart1 = null; }
   innerDiv.innerHTML = "";
 
@@ -680,7 +614,6 @@ function renderPFCharts(cd, tol) {
   }
   innerDiv.appendChild(newCanvas);
 
-  // ── 6. Build chart ────────────────────────────────────────────────────────
   pfChart1 = new Chart(newCanvas, {
     type: "bar",
     data: {
@@ -812,10 +745,8 @@ async function fetchImageAsBase64(url) {
   const res=await fetch(url); const blob=await res.blob();
   return new Promise((resolve,reject) => { const reader=new FileReader(); reader.onloadend=()=>resolve(reader.result); reader.onerror=reject; reader.readAsDataURL(blob); });
 }
-function logout() { localStorage.removeItem("mlcqa_token"); localStorage.removeItem("mlcqa_name"); window.location.href="index.html"; }
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
-  <script src="dicom-detect.js"></script>
+<script src="dicom-detect.js"></script>
 </body>
 </html>
