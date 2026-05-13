@@ -1,198 +1,390 @@
-# ═══════════════════════════════════════════════════════════════════════════════
-# CONGRUENCE TEST — Radiation / Light Field Congruence (Field Analysis)
-# Add this block to main.py, alongside the existing /analyze/starshot and
-# /analyze/winston-lutz endpoints.
-# ═══════════════════════════════════════════════════════════════════════════════
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Congruence — MLC QA</title>
+  <link rel="stylesheet" href="style.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="script.js"></script>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <a href="dashboard.html" class="sidebar-logo">
+      <div class="logo-mark"><svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg></div>
+      <div class="logo-text">MLC<span>QA</span></div>
+    </a>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">Menu</div>
+    <a class="nav-item" href="dashboard.html"><span class="nav-icon">▦</span> Dashboard</a>
+    <a class="nav-item" href="mlc-qa.html"><span class="nav-icon">⚡</span> Picket Fence</a>
+    <a class="nav-item" href="winston-lutz.html"><span class="nav-icon">◎</span> Winston-Lutz</a>
+    <a class="nav-item" href="starshot.html"><span class="nav-icon">✦</span> Starshot</a>
+    <a class="nav-item active" href="congruence.html"><span class="nav-icon">⊞</span> Congruence</a>
+    <a class="nav-item" href="history.html"><span class="nav-icon">≡</span> History</a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="user-chip">
+      <div class="avatar" id="avatarInitial">?</div>
+      <div><div class="user-name" id="sidebarName">Loading...</div><div class="user-role">Medical Physicist</div></div>
+    </div>
+    <button class="logout-btn" onclick="logout()">Sign Out</button>
+  </div>
+</aside>
 
-# Add this import at the top of main.py with the other pylinac imports:
-#   from pylinac import FieldAnalysis
-#   from pylinac.core.profile import CollapsedCircleProfile   # not needed directly
-# The full import line becomes:
-#   from pylinac import PicketFence, WinstonLutz, Starshot, FieldAnalysis
+<main class="main">
+  <div class="page-header">
+    <div class="breadcrumb"><a href="dashboard.html">Dashboard</a> <span>/</span> Congruence Analysis</div>
+    <h1>Congruence Analysis</h1>
+    <p>Radiation/light field congruence test — compares field edges against nominal values</p>
+  </div>
 
+  <div class="server-status" id="serverStatus">
+    <div class="status-dot-sm dot-warn"></div><span>Checking server...</span>
+  </div>
 
-def _extract_congruence_chart_data(fa) -> dict:
-    """
-    Extract edge offsets and profiles from a pylinac FieldAnalysis result.
-    Returns a dict with keys: edges, inline_profile, crossline_profile, tolerance_mm.
-    """
-    try:
-        results = fa.results_data()
+  <div id="wrongTestModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(6,12,24,0.88);backdrop-filter:blur(6px);align-items:center;justify-content:center;">
+    <div style="background:var(--surface);border:1px solid rgba(201,64,80,0.5);border-left:4px solid var(--fail);border-radius:var(--r-lg);padding:32px 28px;max-width:480px;width:92%;box-shadow:0 8px 48px rgba(0,0,0,0.6);">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;">
+        <div style="width:46px;height:46px;border-radius:50%;background:rgba(201,64,80,0.18);border:1.5px solid rgba(201,64,80,0.45);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0;">&#9888;</div>
+        <div>
+          <div style="font-family:var(--mono);font-size:0.95rem;font-weight:600;color:var(--fail);letter-spacing:0.05em;">UNACCEPTABLE DATA — WRONG TEST FILE</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px;font-family:var(--mono);">File type mismatch &mdash; analysis blocked</div>
+        </div>
+      </div>
+      <p style="font-size:0.85rem;color:var(--text-2);line-height:1.7;margin-bottom:10px;">
+        The selected file appears to be a <strong id="wtm-detected-name" style="color:var(--accent);">&#8230;</strong> image, not a <strong id="wtm-page-name" style="color:var(--text-1);">&#8230;</strong> file.
+      </p>
+      <p style="font-size:0.85rem;color:var(--text-2);line-height:1.7;margin-bottom:22px;">
+        Analysing the wrong image type will produce <strong style="color:var(--fail);">clinically meaningless or misleading results</strong>. This action is <strong style="color:var(--fail);">blocked</strong> to protect data integrity. Please upload this file on the correct page:
+      </p>
+      <a id="wtm-correct-link" href="#" style="display:flex;align-items:center;gap:12px;padding:13px 16px;background:rgba(43,159,212,0.08);border:1px solid var(--accent-border);border-radius:var(--r);text-decoration:none;margin-bottom:20px;">
+        <span id="wtm-correct-icon" style="font-size:1.2rem;">&#128194;</span>
+        <div>
+          <div id="wtm-correct-label" style="font-size:0.85rem;font-weight:600;color:var(--accent);">Go to correct test</div>
+          <div id="wtm-correct-sub"   style="font-size:0.74rem;color:var(--text-muted);margin-top:2px;">&#8230;</div>
+        </div>
+        <span style="margin-left:auto;color:var(--text-muted);font-size:1rem;">&#8594;</span>
+      </a>
+      <div style="display:flex;gap:10px;">
+        <button onclick="dismissWrongTestModal()" style="width:100%;padding:11px 0;background:transparent;border:1px solid var(--border);border-radius:var(--r);color:var(--text-muted);font-size:0.83rem;cursor:pointer;font-family:var(--mono);">&#8592; Choose a Different File</button>
+      </div>
+      <p style="font-size:0.71rem;color:var(--text-muted);margin-top:14px;text-align:center;line-height:1.55;">Detection is based on DICOM metadata and filename heuristics. If you believe this is a false positive, please verify the file type before uploading.</p>
+    </div>
+  </div>
 
-        # --- Edge offsets (radiation field edge vs. CAX/nominal) ---
-        # pylinac reports field edges as positions in mm from CAX.
-        # We compare these to the nominal (light field) values (0 for centred field).
-        # If pylinac exposes top/bottom/left/right directly, use them.
-        edges = {}
-        try:
-            # pylinac >= 3.x stores field_size_vertical_mm, field_size_horizontal_mm
-            # and top/bottom/left/right as signed offsets from CAX.
-            # Attribute names vary slightly by version; we try multiple.
-            attrs = vars(results) if hasattr(results, '__dict__') else {}
-            
-            def _get(candidates, default=None):
-                for name in candidates:
-                    v = attrs.get(name) or getattr(results, name, None)
-                    if v is not None:
-                        return float(v)
-                return default
+  <div class="upload-card">
+    <div class="upload-zone" id="uploadZone">
+      <input type="file" id="dicomFile" accept=".dcm" onchange="onFileSelected(this)"/>
+      <div class="upload-icon">📂</div>
+      <h3>Drop your DICOM file here</h3>
+      <p>or click to browse — .dcm files only</p>
+      <div class="file-selected" id="fileLabel"></div>
+    </div>
+    <div class="tolerances">
+      <div class="tol-item"><div class="tol-label">Edge Tolerance</div><div class="tol-val">1.0 mm</div></div>
+      <div class="tol-item"><div class="tol-label">Action Tolerance</div><div class="tol-val">0.5 mm</div></div>
+      <div class="tol-item"><div class="tol-label">Input Format</div><div class="tol-val">DICOM</div></div>
+    </div>
+    <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>Run Congruence Analysis</button>
+    <button class="btn-cancel" id="cancelBtn" onclick="cancelAnalysis()" style="display:none;">✕ Cancel Analysis</button>
+  </div>
 
-            # Try pylinac ResultsData attribute names
-            top    = _get(["top_penumbra_mm", "top_field_edge_mm", "top_mm"])
-            bottom = _get(["bottom_penumbra_mm", "bottom_field_edge_mm", "bottom_mm"])
-            left   = _get(["left_penumbra_mm",  "left_field_edge_mm",  "left_mm"])
-            right  = _get(["right_penumbra_mm",  "right_field_edge_mm", "right_mm"])
+  <div class="results-card">
+    <h2>Results</h2>
+    <div id="resultsBody"><p>Upload a file and run the analysis to see results here.</p></div>
 
-            # Fallback: derive deviations from cax_to_edge distances minus nominal half-field size.
-            # cax_to_*_mm returns the raw distance from CAX to the field edge (~50 mm for a
-            # 100x100 mm field). The clinically meaningful value is the DEVIATION from nominal,
-            # i.e. cax_to_edge - (field_size / 2). This keeps values near 0 and comparable
-            # against the ±1 mm tolerance.
-            if top is None:
-                cax_top    = _get(["cax_to_top_mm"])
-                cax_bottom = _get(["cax_to_bottom_mm"])
-                cax_left   = _get(["cax_to_left_mm"])
-                cax_right  = _get(["cax_to_right_mm"])
-                fs_v = _get(["field_size_vertical_mm",   "vertical_field_size"])
-                fs_h = _get(["field_size_horizontal_mm", "horizontal_field_size"])
-                nom_v = fs_v / 2.0 if fs_v else None
-                nom_h = fs_h / 2.0 if fs_h else None
-                top    = round(cax_top    - nom_v, 3) if cax_top    is not None and nom_v is not None else None
-                bottom = round(cax_bottom - nom_v, 3) if cax_bottom is not None and nom_v is not None else None
-                left   = round(cax_left   - nom_h, 3) if cax_left   is not None and nom_h is not None else None
-                right  = round(cax_right  - nom_h, 3) if cax_right  is not None and nom_h is not None else None
+    <div id="verdictBanner" class="verdict-banner" style="display:none"></div>
 
-            edges = {
-                "top":    round(top,    3) if top    is not None else None,
-                "bottom": round(bottom, 3) if bottom is not None else None,
-                "left":   round(left,   3) if left   is not None else None,
-                "right":  round(right,  3) if right  is not None else None,
-            }
-        except Exception as e:
-            edges = {"top": None, "bottom": None, "left": None, "right": None}
+    <div id="gaugeSection" style="display:none;margin-top:20px">
+      <div class="gauge-label-row">
+        <span class="gauge-title">Max Edge Deviation vs Tolerance</span>
+        <span class="gauge-val" id="gaugeVal"></span>
+      </div>
+      <div class="gauge-track">
+        <div class="gauge-fill" id="gaugeFill"></div>
+        <div class="gauge-marker" id="gaugeMarker" title="Tolerance limit"></div>
+      </div>
+      <div class="gauge-ticks"><span>0 mm</span><span id="gaugeTolLabel"></span><span id="gaugeMaxLabel"></span></div>
+    </div>
 
-        # --- Inline / crossline profiles ---
-        inline_profile, crossline_profile = [], []
-        try:
-            # fa.image.array is the raw pixel matrix; sample a central row/col
-            import numpy as np
-            arr = fa.image.array.astype(float)
-            # Normalise 0-1
-            arr_min, arr_max = arr.min(), arr.max()
-            if arr_max > arr_min:
-                arr = (arr - arr_min) / (arr_max - arr_min)
-            cy, cx = arr.shape[0] // 2, arr.shape[1] // 2
-            inline_raw    = arr[cy, :].tolist()
-            crossline_raw = arr[:, cx].tolist()
-            # Down-sample to ~100 points for the chart
-            def downsample(lst, n=100):
-                step = max(1, len(lst) // n)
-                return [round(float(lst[i]), 4) for i in range(0, len(lst), step)][:n]
-            inline_profile    = downsample(inline_raw)
-            crossline_profile = downsample(crossline_raw)
-        except Exception:
-            pass
+    <div id="metricsRow" class="metrics-row" style="display:none;margin-top:20px"></div>
 
-        return {
-            "edges":              edges,
-            "inline_profile":     inline_profile,
-            "crossline_profile":  crossline_profile,
-            "tolerance_mm":       2.0,
-        }
-    except Exception as e:
-        return {"error": str(e), "edges": {}, "inline_profile": [], "crossline_profile": [], "tolerance_mm": 2.0}
+    <div id="plotSection" style="display:none;margin-top:20px"></div>
 
+    <div id="chartsSection" style="display:none;margin-top:28px">
+      <div class="section-head" style="margin-top:0;border-bottom:1px solid var(--border-subtle);padding-bottom:14px;margin-bottom:20px">
+        <h2 style="font-size:0.88rem;font-weight:600">Analysis Charts</h2>
+      </div>
+      <div class="charts-grid" style="grid-template-columns:1fr">
+        <div class="chart-card"><div class="chart-card-title">Field Edge Deviation (mm)</div><div style="position:relative;width:100%;height:280px;"><canvas id="congruenceChart"></canvas></div></div>
+      </div>
+    </div>
 
-def _run_congruence(job_id: str, filepath: str, email: str, filename: str):
-    """
-    Background task: run pylinac FieldAnalysis for the congruence test.
-    Updates jobs[job_id] and persists to Supabase when done.
-    """
-    try:
-        from pylinac import FieldAnalysis
+    <div id="pdfSection" style="display:none;margin-top:16px">
+      <button class="btn-outline" onclick="downloadPDF()">&#11015; Download PDF Report</button>
+    </div>
+  </div>
+</main>
 
-        fa = FieldAnalysis(filepath)
-        fa.analyze(
-            protocol=None,         # use default tolerances
-            is_FFF=False,          # standard flattened beam
-        )
+<script>
+let congruenceChart = null;
 
-        summary    = fa.results()
-        passed     = fa.passed
+// ── Cancellation state ────────────────────────────────────────────────────────
+let _analysisAbortController = null;
+let _analysisCancelled = false;
 
-        # Generate and upload plot image
-        plot_path  = filepath.replace(".dcm", "_congruence.png")
-        fa.plot_analyzed_image(filename=plot_path, show=False)
-        image_url  = upload_plot(plot_path, f"congruence_{job_id}.png")
+function _showCancelBtn(show) {
+  const c = document.getElementById("cancelBtn");
+  if (c) c.style.display = show ? "inline-flex" : "none";
+}
 
-        chart_data = _extract_congruence_chart_data(fa)
+function _resetAnalysisUI(message) {
+  const btn        = document.getElementById("analyzeBtn");
+  const resultsDiv = document.getElementById("resultsBody");
+  btn.disabled    = false;
+  btn.textContent = "Run Congruence Analysis";
+  _showCancelBtn(false);
+  if (message) resultsDiv.innerHTML = `<p>${message}</p>`;
+  _analysisAbortController = null;
+  _analysisCancelled = false;
+}
 
-        save_analysis(
-            email      = email,
-            test_type  = "Congruence",
-            filename   = filename,
-            passed     = passed,
-            summary    = summary,
-            image_url  = image_url,
-            chart_data = chart_data,
-            job_id     = job_id,
-        )
+function cancelAnalysis() {
+  _analysisCancelled = true;
+  if (_analysisAbortController) _analysisAbortController.abort();
+  _resetAnalysisUI("⚠️ Analysis cancelled.");
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
-        jobs[job_id] = {
-            "status":           "Success",
-            "passed":           passed,
-            "analysis_summary": summary,
-            "image_url":        image_url,
-            "chart_data":       chart_data,
-        }
+// Init user info
+const name = localStorage.getItem("mlcqa_name");
+if (name) {
+  document.getElementById("sidebarName").textContent = name;
+  document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
+}
 
-    except Exception as e:
-        error_msg = str(e)
-        jobs[job_id] = {
-            "status":  "Error",
-            "message": f"Congruence analysis failed: {error_msg}",
-        }
-    finally:
-        try:
-            os.remove(filepath)
-        except Exception:
-            pass
-        cleanup()
+// Drag & drop
+const zone = document.getElementById("uploadZone");
+zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("dragover"); });
+zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+zone.addEventListener("drop", e => {
+  e.preventDefault(); zone.classList.remove("dragover");
+  const dt = new DataTransfer();
+  Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f));
+  document.getElementById("dicomFile").files = dt.files;
+  onFileSelected(document.getElementById("dicomFile"));
+});
 
+function onFileSelected(input) {
+  const label = document.getElementById("fileLabel");
+  const btn   = document.getElementById("analyzeBtn");
+  if (input.files.length > 0) {
+    const file = input.files[0];
+    label.textContent = "Selected: " + file.name;
+    btn.disabled = false;
+    // Check file is the correct type for this test
+    checkFileAcceptable(file, "congruence", btn);
+  } else {
+    label.textContent = "";
+    btn.disabled = true;
+  }
+}
 
-@app.post("/analyze/congruence")
-async def analyze_congruence(
-    background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    u=Depends(get_current_user),
-):
-    """
-    Radiation–light field congruence test using pylinac FieldAnalysis.
-    Accepts a single .dcm file and returns a job_id for polling.
-    """
-    if not file.filename.lower().endswith(".dcm"):
-        raise HTTPException(400, "Only .dcm DICOM files are supported for the Congruence test.")
+async function runAnalysis() {
+  const fileInput  = document.getElementById("dicomFile");
+  const btn        = document.getElementById("analyzeBtn");
+  const resultsDiv = document.getElementById("resultsBody");
 
-    # Save upload to a temp file
-    job_id   = str(uuid.uuid4())
-    tmp_dir  = tempfile.gettempdir()
-    filepath = os.path.join(tmp_dir, f"congruence_{job_id}.dcm")
+  if (!fileInput.files.length) { alert("Please select a file first."); return; }
+  if (!fileInput.files[0].name.toLowerCase().endsWith(".dcm")) {
+    resultsDiv.innerHTML = `<p class="result-fail">❌ Only .dcm files are supported.</p>`; return;
+  }
 
-    try:
-        contents = await file.read()
-        with open(filepath, "wb") as f:
-            f.write(contents)
-    except Exception as e:
-        raise HTTPException(500, f"Failed to save uploaded file: {e}")
+  // Second-pass safety check — catches drag-and-drop bypasses
+  const _safetyOk = await checkFileAcceptable(fileInput.files[0], "congruence", btn);
+  if (!_safetyOk) { btn.disabled = false; btn.textContent = "Run Congruence Analysis"; return; }
 
-    jobs[job_id] = {"status": "Processing"}
+  // Set up fresh cancellation state
+  _analysisCancelled = false;
+  _analysisAbortController = new AbortController();
 
-    background_tasks.add_task(
-        _run_congruence,
-        job_id   = job_id,
-        filepath = filepath,
-        email    = u["email"],
-        filename = file.filename,
-    )
+  _showCancelBtn(true);
 
-    return {"status": "Queued", "job_id": job_id}
+  try {
+    resultsDiv.innerHTML = `<p>⏳ Checking server status...</p>`;
+    const serverReady = await AnalysisHelpers.waitForServer();
+    if (_analysisCancelled) return;
+    if (!serverReady) throw new Error("Server not responding. Please refresh and try again.");
+
+    const token = localStorage.getItem("mlcqa_token");
+    if (!token) { window.location.href = "login.html"; return; }
+
+    resultsDiv.innerHTML = `<p>📤 Uploading file...</p>`;
+    const formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+
+    btn.textContent = "Uploading...";
+
+    const data = await AnalysisHelpers.makeApiCall(`${BACKEND_URL}/analyze/congruence`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}` },
+      body: formData,
+      signal: _analysisAbortController.signal
+    }, 30000);
+
+    if (_analysisCancelled) return;
+    if (data.status === "Error") throw new Error(data.message || "Server returned an error");
+
+    btn.textContent = "Analyzing...";
+    resultsDiv.innerHTML = `<p>🔬 Analysis running<span id="dots">.</span></p>`;
+
+    await AnalysisHelpers.pollForResult(
+      data.job_id,
+      (result) => {
+        if (_analysisCancelled) return;
+        _showCancelBtn(false);
+        handleSuccess(result, fileInput.files[0].name);
+      },
+      (error) => { if (!_analysisCancelled) throw new Error(error); },
+      () => _analysisCancelled   // isCancelled callback
+    );
+
+  } catch (err) {
+    if (_analysisCancelled || err.name === "AbortError") return;
+    console.error("Congruence analysis error:", err);
+    resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
+    _resetAnalysisUI(null);
+  }
+}
+
+function handleSuccess(result, filename) {
+  const resultsDiv = document.getElementById("resultsBody");
+  const analyzeBtn = document.getElementById("analyzeBtn");
+  const tol = 1.0;
+
+  const pass      = result.passed;
+  const imgUrl    = result.image_url || null;
+  const summary   = result.analysis_summary || "";
+  const chartData = result.chart_data || {};
+  const edges     = chartData.edges || {};
+
+  window._lastResult = { pass, imgUrl, summary, filename, testType: "Congruence", toleranceText: "Edge tolerance: 1.0mm / action 0.5mm" };
+
+  resultsDiv.innerHTML = "<pre>" + summary + "</pre>";
+
+  // Verdict
+  const banner = document.getElementById("verdictBanner");
+  banner.innerHTML = '<div class="verdict-icon">' + (pass ? "✓" : "✗") + '</div><div class="verdict-text"><div class="verdict-label">' + (pass ? "PASS" : "FAIL") + '</div><div class="verdict-sub">' + (pass ? "Field congruence within clinical tolerance (1.0 mm)" : "Field edges exceed tolerance — action required") + '</div></div>';
+  banner.className = "verdict-banner " + (pass ? "verdict-pass" : "verdict-fail");
+  banner.style.display = "flex";
+
+  // Gauge — max absolute edge deviation (values are now true deviations, near 0 mm)
+  const edgeVals = [edges.top, edges.bottom, edges.left, edges.right].filter(v => v != null).map(Math.abs);
+  const maxEdge = edgeVals.length ? Math.max(...edgeVals) : 0;
+  const maxScale = Math.max(tol * 2, maxEdge * 1.5, 2.0);  // sensible scale for small deviations
+  const fill = document.getElementById("gaugeFill");
+  fill.style.width = Math.min((maxEdge / maxScale) * 100, 100) + "%";
+  fill.style.background = maxEdge > tol ? "var(--fail)" : maxEdge > 0.5 ? "var(--warn)" : "var(--pass)";
+  document.getElementById("gaugeMarker").style.left = ((tol / maxScale) * 100) + "%";
+  document.getElementById("gaugeVal").textContent = maxEdge.toFixed(3) + " mm";
+  document.getElementById("gaugeTolLabel").textContent = "Tol: " + tol + " mm";
+  document.getElementById("gaugeMaxLabel").textContent = maxScale.toFixed(2) + " mm";
+  document.getElementById("gaugeSection").style.display = "block";
+
+  // Metrics — show true deviations (should be near 0 for a well-configured field)
+  const mr = document.getElementById("metricsRow");
+  mr.innerHTML = [
+    { label: "Top Deviation",    val: edges.top    != null ? edges.top.toFixed(3)    : "N/A", unit: "mm", cls: edges.top    != null && Math.abs(edges.top)    > tol ? "metric-fail" : Math.abs(edges.top)    > 0.5 ? "metric-warn" : "metric-pass" },
+    { label: "Bottom Deviation", val: edges.bottom != null ? edges.bottom.toFixed(3) : "N/A", unit: "mm", cls: edges.bottom != null && Math.abs(edges.bottom) > tol ? "metric-fail" : Math.abs(edges.bottom) > 0.5 ? "metric-warn" : "metric-pass" },
+    { label: "Left Deviation",   val: edges.left   != null ? edges.left.toFixed(3)   : "N/A", unit: "mm", cls: edges.left   != null && Math.abs(edges.left)   > tol ? "metric-fail" : Math.abs(edges.left)   > 0.5 ? "metric-warn" : "metric-pass" },
+    { label: "Right Deviation",  val: edges.right  != null ? edges.right.toFixed(3)  : "N/A", unit: "mm", cls: edges.right  != null && Math.abs(edges.right)  > tol ? "metric-fail" : Math.abs(edges.right)  > 0.5 ? "metric-warn" : "metric-pass" }
+  ].map(m => '<div class="metric-card"><div class="metric-label">' + m.label + '</div><div class="metric-value ' + m.cls + '">' + m.val + (m.unit ? '<span class="metric-unit">' + m.unit + '</span>' : '') + '</div></div>').join('');
+  mr.style.display = "grid";
+
+  // Plot
+  if (imgUrl) {
+    document.getElementById("plotSection").innerHTML = '<div class="plot-wrap"><img src="' + imgUrl + '" alt="Congruence Plot" loading="lazy"/><div class="plot-label">Pylinac · Congruence Analysis</div></div>';
+    document.getElementById("plotSection").style.display = "block";
+  }
+
+  renderCharts(chartData, tol);
+  document.getElementById("chartsSection").style.display = "block";
+  document.getElementById("pdfSection").style.display = "block";
+
+  analyzeBtn.disabled = false;
+  analyzeBtn.textContent = "Analyze Another File";
+  _showCancelBtn(false);
+  _analysisCancelled = false;
+  _analysisAbortController = null;
+}
+
+function renderCharts(cd, tol) {
+  const edges = cd.edges || {};
+  const vals  = [edges.top ?? null, edges.bottom ?? null, edges.left ?? null, edges.right ?? null];
+  if (vals.every(v => v === null)) {
+    document.getElementById("chartsSection").innerHTML += '<p style="color:var(--text-muted);font-size:0.8rem;font-family:var(--mono);padding:12px">Chart data not available — check server logs.</p>';
+    return;
+  }
+  const labels = ["Top", "Bottom", "Left", "Right"];
+  const data   = vals.map(v => v ?? 0);
+  const colors = data.map(v => Math.abs(v) > tol ? "rgba(201,64,80,0.85)" : Math.abs(v) > 0.5 ? "rgba(200,137,42,0.8)" : "rgba(26,171,117,0.75)");
+  const chartOpts = {
+    plugins: { legend: { labels: { color: "#8ba4c0", font: { family: "'IBM Plex Mono'", size: 9 } } } },
+    scales: {
+      x: { ticks: { color: "#546a85", font: { size: 9 } }, grid: { color: "rgba(36,53,82,0.8)" } },
+      y: { title: { display: true, text: "Edge Deviation from Nominal (mm)", color: "#546a85", font: { size: 9 } }, ticks: { color: "#546a85", font: { family: "'IBM Plex Mono'", size: 9 } }, grid: { color: "rgba(36,53,82,0.8)" } }
+    }
+  };
+  if (congruenceChart) congruenceChart.destroy();
+  congruenceChart = new Chart(document.getElementById("congruenceChart"), {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        { label: "Edge Deviation", data, backgroundColor: colors, borderWidth: 0 },
+        { label: "Tolerance (+1mm)", data: [tol, tol, tol, tol], type: "line", borderColor: "rgba(200,137,42,0.7)", borderDash: [4, 3], pointRadius: 0, borderWidth: 1.5, fill: false },
+        { label: "Tolerance (-1mm)", data: [-tol, -tol, -tol, -tol], type: "line", borderColor: "rgba(200,137,42,0.7)", borderDash: [4, 3], pointRadius: 0, borderWidth: 1.5, fill: false }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false, ...chartOpts }
+  });
+}
+
+async function downloadPDF() { const r = window._lastResult; if (!r) return; await generatePDF(r); }
+async function generatePDF(r) {
+  const { jsPDF } = window.jspdf; const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" }); const W = 210, M = 16;
+  doc.setFillColor(15, 30, 55); doc.rect(0, 0, W, 26, "F"); doc.setFillColor(0, 175, 215); doc.rect(0, 0, 5, 26, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(255, 255, 255);
+  doc.text(`MLC QA — ${r.testType || "Analysis"} Report`, M + 6, 11);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(180, 210, 230);
+  const now = new Date().toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
+  doc.text(`Generated: ${now}`, M + 6, 19); doc.text(`File: ${r.filename}`, M + 6, 23.5);
+  let y = 34;
+  doc.setFillColor(...(r.pass ? [0, 168, 107] : [195, 45, 70])); doc.roundedRect(M, y, W - M * 2, 13, 2, 2, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(255, 255, 255);
+  doc.text(r.pass ? "✓  PASS" : "✗  FAIL", M + 5, y + 9);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+  doc.text(r.toleranceText || (r.pass ? "Within clinical tolerance" : "Outside clinical tolerance"), M + 36, y + 9);
+  y += 20;
+  if (r.imgUrl) { try { const imgData = await fetchImageAsBase64(r.imgUrl); const imgW = W - M * 2; const imgH = imgW * 0.5; doc.addImage(imgData, "PNG", M, y, imgW, imgH); y += imgH + 9; } catch { y += 4; } }
+  const lines = doc.splitTextToSize(r.summary, W - M * 2 - 10); const boxH = Math.min(lines.length * 5.4 + 16, 230);
+  doc.setFillColor(245, 248, 252); doc.roundedRect(M, y, W - M * 2, boxH, 2, 2, "F");
+  y += 7; doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(15, 40, 80); doc.text("ANALYSIS SUMMARY", M + 5, y); y += 7;
+  doc.setFont("courier", "normal"); doc.setFontSize(8.2); doc.setTextColor(20, 45, 80);
+  lines.forEach(line => { if (y > 272) { doc.addPage(); y = 18; } doc.text(line, M + 5, y); y += 5.4; });
+  const pages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) { doc.setPage(i); doc.setFillColor(235, 241, 248); doc.rect(0, 284, W, 13, "F"); doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(60, 85, 120); doc.text("MLC QA Platform  ·  For clinical physics use only", M, 291); doc.text(`Page ${i} of ${pages}`, W - 28, 291); }
+  doc.save(`MLCQA_CONGRUENCE_${r.filename.replace(/\.[^.]+$/, "")}_${Date.now()}.pdf`);
+}
+async function fetchImageAsBase64(url) {
+  const res = await fetch(url); const blob = await res.blob();
+  return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onloadend = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); });
+}
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="dicom-detect.js"></script>
+</body>
+</html>
