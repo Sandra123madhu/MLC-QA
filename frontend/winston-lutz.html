@@ -89,6 +89,7 @@
       <div class="tol-item"><div class="tol-label">Input Format</div><div class="tol-val">DICOM</div></div>
     </div>
     <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>Run Winston-Lutz Analysis</button>
+    <button class="btn-cancel" id="cancelBtn" onclick="cancelAnalysis()" style="display:none;">✕ Cancel Analysis</button>
   </div>
 
   <div class="results-card">
@@ -132,14 +133,12 @@
 let wlChart = null;
 let selectedFiles = [];
 
-// Init user info
 const name = localStorage.getItem("mlcqa_name");
 if (name) {
   document.getElementById("sidebarName").textContent = name;
   document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
 }
 
-// Drag & drop
 const zone = document.getElementById("uploadZone");
 zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("dragover"); });
 zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
@@ -163,7 +162,6 @@ async function onFilesSelected(input) {
     return;
   }
 
-  // Winston-Lutz requires at least 2 images (one per gantry angle)
   if (selectedFiles.length < 2) {
     label.textContent = `⚠ Only 1 file selected — Winston-Lutz requires at least 2 DICOM images (one per gantry angle, e.g. 0°, 90°, 180°, 270°). Please select multiple files.`;
     label.style.color = "var(--warn, #e0a040)";
@@ -175,9 +173,12 @@ async function onFilesSelected(input) {
   label.textContent = `Selected: ${selectedFiles.length} file${selectedFiles.length > 1 ? "s" : ""} (${selectedFiles.map(f => f.name).join(", ").slice(0, 60)}${selectedFiles.map(f=>f.name).join(", ").length > 60 ? "…" : ""})`;
   btn.disabled = false;
 
-  // Check the first file — if it's the wrong type, block the whole batch
   const ok = await checkFileAcceptable(selectedFiles[0], "winston_lutz", btn);
   if (!ok) { selectedFiles = []; label.textContent = ""; label.style.color = ""; return; }
+}
+
+function cancelAnalysis() {
+  CancelManager.cancel();
 }
 
 async function runAnalysis() {
@@ -186,19 +187,25 @@ async function runAnalysis() {
 
   if (selectedFiles.length === 0) { alert("Please select DICOM files first."); return; }
 
-  // Enforce minimum 2-image requirement before hitting the server
   if (selectedFiles.length < 2) {
     resultsDiv.innerHTML = `<p class="result-fail">❌ Winston-Lutz analysis requires at least <strong>2 DICOM images</strong> (one per gantry angle, e.g. 0°, 90°, 180°, 270°). Only ${selectedFiles.length} file(s) selected. Please select multiple files and try again.</p>`;
     return;
   }
 
-  // Second-pass safety check — catches drag-and-drop bypasses
   const _safetyOk = await checkFileAcceptable(selectedFiles[0], "winston_lutz", btn);
   if (!_safetyOk) { btn.disabled = false; btn.textContent = "Run Winston-Lutz Analysis"; return; }
+
+  CancelManager.start({
+    cancelBtnId:  "cancelBtn",
+    analyzeBtnId: "analyzeBtn",
+    analyzeLabel: "Run Winston-Lutz Analysis"
+  });
+  btn.disabled = true;
 
   try {
     resultsDiv.innerHTML = `<p>⏳ Checking server status...</p>`;
     const serverReady = await AnalysisHelpers.waitForServer();
+    if (CancelManager.isCancelled()) return;
     if (!serverReady) throw new Error("Server not responding. Please refresh and try again.");
 
     const token = localStorage.getItem("mlcqa_token");
@@ -213,27 +220,45 @@ async function runAnalysis() {
     const data = await AnalysisHelpers.makeApiCall(`${BACKEND_URL}/analyze/winston-lutz`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${token}` },
-      body: formData
+      body: formData,
+      signal: CancelManager.getSignal()
     }, 60000);
 
+    if (CancelManager.isCancelled()) return;
     if (data.status === "Error") throw new Error(data.message || "Server returned an error");
 
+    CancelManager.setJobId(data.job_id);
     btn.textContent = "Analyzing...";
     resultsDiv.innerHTML = `<p>🔬 Analysis running<span id="dots">.</span></p>`;
 
-    await AnalysisHelpers.pollForResult(data.job_id, (result) => {
-      handleSuccess(result);
-    }, (error) => { throw new Error(error); });
+    await AnalysisHelpers.pollForResult(
+      data.job_id,
+      (result) => {
+        if (CancelManager.isCancelled()) return;
+        handleSuccess(result);
+        CancelManager.finish();
+      },
+      null,
+      () => CancelManager.isCancelled()
+    );
 
   } catch (err) {
+    if (CancelManager.isCancelled() || err.name === "AbortError" ||
+        err.message === "Request timed out or was cancelled.") {
+      CancelManager.finish();
+      return;
+    }
     console.error("Winston-Lutz analysis error:", err);
     resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
+    CancelManager.finish();
     btn.disabled = false;
     btn.textContent = "Run Winston-Lutz Analysis";
   }
 }
 
 function handleSuccess(result) {
+  if (CancelManager.isCancelled()) return;
+
   const resultsDiv = document.getElementById("resultsBody");
   const analyzeBtn = document.getElementById("analyzeBtn");
 
@@ -244,16 +269,15 @@ function handleSuccess(result) {
   const tol       = 2.0;
 
   window._lastResult = { pass, imgUrl, summary, filename: `${selectedFiles.length} WL images`, testType: "Winston-Lutz", toleranceText: "Isocenter tolerance: 2.0mm / action 1.0mm" };
+  HistoryManager.record({ testType: "Winston-Lutz", filename: `${selectedFiles.length} WL images`, passed: pass, summary, imageUrl: imgUrl });
 
   resultsDiv.innerHTML = "<pre>" + summary + "</pre>";
 
-  // Verdict banner
   const banner = document.getElementById("verdictBanner");
   banner.innerHTML = '<div class="verdict-icon">' + (pass ? "✓" : "✗") + '</div><div class="verdict-text"><div class="verdict-label">' + (pass ? "PASS" : "FAIL") + '</div><div class="verdict-sub">' + (pass ? "Isocenter within clinical tolerance (2.0 mm)" : "Isocenter exceeds tolerance — action required") + '</div></div>';
   banner.className = "verdict-banner " + (pass ? "verdict-pass" : "verdict-fail");
   banner.style.display = "flex";
 
-  // Gauge
   const maxOff = chartData.max_offset_mm || 0;
   const maxScale = Math.max(tol * 1.6, maxOff * 1.2);
   const fill = document.getElementById("gaugeFill");
@@ -265,7 +289,6 @@ function handleSuccess(result) {
   document.getElementById("gaugeMaxLabel").textContent = maxScale.toFixed(2) + " mm";
   document.getElementById("gaugeSection").style.display = "block";
 
-  // Metrics
   const meanOff = chartData.mean_offset_mm || 0;
   const imgCount = (chartData.images || []).length;
   const mr = document.getElementById("metricsRow");
@@ -277,7 +300,6 @@ function handleSuccess(result) {
   ].map(m => '<div class="metric-card"><div class="metric-label">' + m.label + '</div><div class="metric-value ' + m.cls + '">' + m.val + (m.unit ? '<span class="metric-unit">' + m.unit + '</span>' : '') + '</div></div>').join('');
   mr.style.display = "grid";
 
-  // Plot
   if (imgUrl) {
     document.getElementById("plotSection").innerHTML = '<div class="plot-wrap"><img src="' + imgUrl + '" alt="Winston-Lutz Plot" loading="lazy"/><div class="plot-label">Pylinac · Winston-Lutz Analysis</div></div>';
     document.getElementById("plotSection").style.display = "block";
