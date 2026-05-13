@@ -89,6 +89,7 @@
       <div class="tol-item"><div class="tol-label">Input Format</div><div class="tol-val">DICOM</div></div>
     </div>
     <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>Run Congruence Analysis</button>
+    <button class="btn-cancel" id="cancelBtn" onclick="cancelAnalysis()" style="display:none;">✕ Cancel Analysis</button>
   </div>
 
   <div class="results-card">
@@ -131,14 +132,12 @@
 <script>
 let congruenceChart = null;
 
-// Init user info
 const name = localStorage.getItem("mlcqa_name");
 if (name) {
   document.getElementById("sidebarName").textContent = name;
   document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
 }
 
-// Drag & drop
 const zone = document.getElementById("uploadZone");
 zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("dragover"); });
 zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
@@ -157,12 +156,15 @@ function onFileSelected(input) {
     const file = input.files[0];
     label.textContent = "Selected: " + file.name;
     btn.disabled = false;
-    // Check file is the correct type for this test
     checkFileAcceptable(file, "congruence", btn);
   } else {
     label.textContent = "";
     btn.disabled = true;
   }
+}
+
+function cancelAnalysis() {
+  CancelManager.cancel();
 }
 
 async function runAnalysis() {
@@ -175,13 +177,20 @@ async function runAnalysis() {
     resultsDiv.innerHTML = `<p class="result-fail">❌ Only .dcm files are supported.</p>`; return;
   }
 
-  // Second-pass safety check — catches drag-and-drop bypasses
   const _safetyOk = await checkFileAcceptable(fileInput.files[0], "congruence", btn);
   if (!_safetyOk) { btn.disabled = false; btn.textContent = "Run Congruence Analysis"; return; }
+
+  CancelManager.start({
+    cancelBtnId:  "cancelBtn",
+    analyzeBtnId: "analyzeBtn",
+    analyzeLabel: "Run Congruence Analysis"
+  });
+  btn.disabled = true;
 
   try {
     resultsDiv.innerHTML = `<p>⏳ Checking server status...</p>`;
     const serverReady = await AnalysisHelpers.waitForServer();
+    if (CancelManager.isCancelled()) return;
     if (!serverReady) throw new Error("Server not responding. Please refresh and try again.");
 
     const token = localStorage.getItem("mlcqa_token");
@@ -196,27 +205,45 @@ async function runAnalysis() {
     const data = await AnalysisHelpers.makeApiCall(`${BACKEND_URL}/analyze/congruence`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${token}` },
-      body: formData
+      body: formData,
+      signal: CancelManager.getSignal()
     }, 30000);
 
+    if (CancelManager.isCancelled()) return;
     if (data.status === "Error") throw new Error(data.message || "Server returned an error");
 
+    CancelManager.setJobId(data.job_id);
     btn.textContent = "Analyzing...";
     resultsDiv.innerHTML = `<p>🔬 Analysis running<span id="dots">.</span></p>`;
 
-    await AnalysisHelpers.pollForResult(data.job_id, (result) => {
-      handleSuccess(result, fileInput.files[0].name);
-    }, (error) => { throw new Error(error); });
+    await AnalysisHelpers.pollForResult(
+      data.job_id,
+      (result) => {
+        if (CancelManager.isCancelled()) return;
+        handleSuccess(result, fileInput.files[0].name);
+        CancelManager.finish();
+      },
+      null,
+      () => CancelManager.isCancelled()
+    );
 
   } catch (err) {
+    if (CancelManager.isCancelled() || err.name === "AbortError" ||
+        err.message === "Request timed out or was cancelled.") {
+      CancelManager.finish();
+      return;
+    }
     console.error("Congruence analysis error:", err);
     resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
+    CancelManager.finish();
     btn.disabled = false;
     btn.textContent = "Run Congruence Analysis";
   }
 }
 
 function handleSuccess(result, filename) {
+  if (CancelManager.isCancelled()) return;
+
   const resultsDiv = document.getElementById("resultsBody");
   const analyzeBtn = document.getElementById("analyzeBtn");
   const tol = 1.0;
@@ -228,19 +255,18 @@ function handleSuccess(result, filename) {
   const edges     = chartData.edges || {};
 
   window._lastResult = { pass, imgUrl, summary, filename, testType: "Congruence", toleranceText: "Edge tolerance: 1.0mm / action 0.5mm" };
+  HistoryManager.record({ testType: "Congruence", filename, passed: pass, summary, imageUrl: imgUrl });
 
   resultsDiv.innerHTML = "<pre>" + summary + "</pre>";
 
-  // Verdict
   const banner = document.getElementById("verdictBanner");
   banner.innerHTML = '<div class="verdict-icon">' + (pass ? "✓" : "✗") + '</div><div class="verdict-text"><div class="verdict-label">' + (pass ? "PASS" : "FAIL") + '</div><div class="verdict-sub">' + (pass ? "Field congruence within clinical tolerance (1.0 mm)" : "Field edges exceed tolerance — action required") + '</div></div>';
   banner.className = "verdict-banner " + (pass ? "verdict-pass" : "verdict-fail");
   banner.style.display = "flex";
 
-  // Gauge — max absolute edge deviation (values are now true deviations, near 0 mm)
   const edgeVals = [edges.top, edges.bottom, edges.left, edges.right].filter(v => v != null).map(Math.abs);
   const maxEdge = edgeVals.length ? Math.max(...edgeVals) : 0;
-  const maxScale = Math.max(tol * 2, maxEdge * 1.5, 2.0);  // sensible scale for small deviations
+  const maxScale = Math.max(tol * 2, maxEdge * 1.5, 2.0);
   const fill = document.getElementById("gaugeFill");
   fill.style.width = Math.min((maxEdge / maxScale) * 100, 100) + "%";
   fill.style.background = maxEdge > tol ? "var(--fail)" : maxEdge > 0.5 ? "var(--warn)" : "var(--pass)";
@@ -250,17 +276,15 @@ function handleSuccess(result, filename) {
   document.getElementById("gaugeMaxLabel").textContent = maxScale.toFixed(2) + " mm";
   document.getElementById("gaugeSection").style.display = "block";
 
-  // Metrics — show true deviations (should be near 0 for a well-configured field)
   const mr = document.getElementById("metricsRow");
   mr.innerHTML = [
-    { label: "Top Deviation",    val: edges.top    != null ? edges.top.toFixed(3)    : "N/A", unit: "mm", cls: edges.top    != null && Math.abs(edges.top)    > tol ? "metric-fail" : Math.abs(edges.top)    > 0.5 ? "metric-warn" : "metric-pass" },
-    { label: "Bottom Deviation", val: edges.bottom != null ? edges.bottom.toFixed(3) : "N/A", unit: "mm", cls: edges.bottom != null && Math.abs(edges.bottom) > tol ? "metric-fail" : Math.abs(edges.bottom) > 0.5 ? "metric-warn" : "metric-pass" },
-    { label: "Left Deviation",   val: edges.left   != null ? edges.left.toFixed(3)   : "N/A", unit: "mm", cls: edges.left   != null && Math.abs(edges.left)   > tol ? "metric-fail" : Math.abs(edges.left)   > 0.5 ? "metric-warn" : "metric-pass" },
-    { label: "Right Deviation",  val: edges.right  != null ? edges.right.toFixed(3)  : "N/A", unit: "mm", cls: edges.right  != null && Math.abs(edges.right)  > tol ? "metric-fail" : Math.abs(edges.right)  > 0.5 ? "metric-warn" : "metric-pass" }
+    { label: "Top Deviation",    val: edges.top    != null ? edges.top.toFixed(3)    : "N/A", unit: "mm", cls: edges.top    != null && Math.abs(edges.top)    > tol ? "metric-fail" : Math.abs(edges.top||0)    > 0.5 ? "metric-warn" : "metric-pass" },
+    { label: "Bottom Deviation", val: edges.bottom != null ? edges.bottom.toFixed(3) : "N/A", unit: "mm", cls: edges.bottom != null && Math.abs(edges.bottom) > tol ? "metric-fail" : Math.abs(edges.bottom||0) > 0.5 ? "metric-warn" : "metric-pass" },
+    { label: "Left Deviation",   val: edges.left   != null ? edges.left.toFixed(3)   : "N/A", unit: "mm", cls: edges.left   != null && Math.abs(edges.left)   > tol ? "metric-fail" : Math.abs(edges.left||0)   > 0.5 ? "metric-warn" : "metric-pass" },
+    { label: "Right Deviation",  val: edges.right  != null ? edges.right.toFixed(3)  : "N/A", unit: "mm", cls: edges.right  != null && Math.abs(edges.right)  > tol ? "metric-fail" : Math.abs(edges.right||0)  > 0.5 ? "metric-warn" : "metric-pass" }
   ].map(m => '<div class="metric-card"><div class="metric-label">' + m.label + '</div><div class="metric-value ' + m.cls + '">' + m.val + (m.unit ? '<span class="metric-unit">' + m.unit + '</span>' : '') + '</div></div>').join('');
   mr.style.display = "grid";
 
-  // Plot
   if (imgUrl) {
     document.getElementById("plotSection").innerHTML = '<div class="plot-wrap"><img src="' + imgUrl + '" alt="Congruence Plot" loading="lazy"/><div class="plot-label">Pylinac · Congruence Analysis</div></div>';
     document.getElementById("plotSection").style.display = "block";
