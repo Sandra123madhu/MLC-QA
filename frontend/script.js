@@ -175,9 +175,10 @@ const AnalysisHelpers = {
         }
     },
 
-    // ── pollForResult(jobId, onSuccess, onError?) ─────────────────────────────
+    // ── pollForResult(jobId, onSuccess, onError?, isCancelled?) ──────────────
     // Polls GET /result/:jobId with exponential back-off until complete.
-    async pollForResult(jobId, onSuccess, onError) {
+    // isCancelled: optional function that returns true to abort polling early.
+    async pollForResult(jobId, onSuccess, onError, isCancelled) {
         const maxAttempts = 60;
         let attempts = 0;
 
@@ -191,6 +192,12 @@ const AnalysisHelpers = {
         }, 500);
 
         const poll = async () => {
+            // Stop if cancelled
+            if (isCancelled && isCancelled()) {
+                clearInterval(dotAnim);
+                return;
+            }
+
             attempts++;
             if (attempts > maxAttempts) {
                 clearInterval(dotAnim);
@@ -205,6 +212,12 @@ const AnalysisHelpers = {
                     { headers: authHeadersOnly() }
                 );
 
+                // Check cancellation again after the async call returns
+                if (isCancelled && isCancelled()) {
+                    clearInterval(dotAnim);
+                    return;
+                }
+
                 if (result.status === "Processing") {
                     setTimeout(poll, getDelay(attempts));
                 } else if (result.status === "Success") {
@@ -217,6 +230,7 @@ const AnalysisHelpers = {
                 }
             } catch (err) {
                 clearInterval(dotAnim);
+                if (isCancelled && isCancelled()) return; // swallow error on cancel
                 if (onError) onError(err.message || "Lost connection while waiting for results.");
                 else console.error(err);
             }
