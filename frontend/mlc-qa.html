@@ -99,6 +99,7 @@
       </select>
     </div>
     <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>Run Picket Fence Analysis</button>
+    <button class="btn-cancel" id="cancelBtn" onclick="cancelAnalysis()" style="display:none;">✕ Cancel Analysis</button>
   </div>
 
   <div class="results-card">
@@ -207,16 +208,43 @@ zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add(
 zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
 zone.addEventListener("drop", e => { e.preventDefault(); zone.classList.remove("dragover"); const dt = new DataTransfer(); Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f)); document.getElementById("dicomFile").files = dt.files; onFileSelected(document.getElementById("dicomFile")); });
 
+// ── Cancellation state ────────────────────────────────────────────────────────
+let _analysisAbortController = null;
+let _analysisCancelled = false;
+
+function _showCancelBtn(show) {
+  const c = document.getElementById("cancelBtn");
+  if (c) c.style.display = show ? "inline-flex" : "none";
+}
+
+function _resetAnalysisUI(message) {
+  const btn = document.getElementById("analyzeBtn");
+  const resultsDiv = document.getElementById("resultsBody");
+  btn.disabled = false;
+  btn.textContent = "Run Picket Fence Analysis";
+  _showCancelBtn(false);
+  if (message) resultsDiv.innerHTML = `<p>${message}</p>`;
+  _analysisAbortController = null;
+  _analysisCancelled = false;
+}
+
+function cancelAnalysis() {
+  _analysisCancelled = true;
+  if (_analysisAbortController) _analysisAbortController.abort();
+  _resetAnalysisUI("⚠️ Analysis cancelled.");
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function runAnalysis() {
   const fileInput = document.getElementById("dicomFile");
   const btn = document.getElementById("analyzeBtn");
   const resultsDiv = document.getElementById("resultsBody");
-  
+
   if (!fileInput.files.length) {
     alert("Please select a file first.");
     return;
   }
-  
+
   if (!fileInput.files[0].name.toLowerCase().endsWith(".dcm")) {
     resultsDiv.innerHTML = `<p class="result-fail">❌ Only .dcm files are supported.</p>`;
     return;
@@ -228,10 +256,17 @@ async function runAnalysis() {
   const _safetyOk = await checkFileAcceptable(_safetyFile, "picket_fence", btn);
   if (!_safetyOk) return;
 
+  // Set up fresh cancellation state
+  _analysisCancelled = false;
+  _analysisAbortController = new AbortController();
+  btn.disabled = true;
+  _showCancelBtn(true);
+
   try {
     // Check server first
     resultsDiv.innerHTML = `<p>⏳ Checking server status...</p>`;
     const serverReady = await AnalysisHelpers.waitForServer();
+    if (_analysisCancelled) return;
     if (!serverReady) {
       throw new Error("Server not responding. Please refresh the page and try again.");
     }
@@ -252,14 +287,15 @@ async function runAnalysis() {
     formData.append("mlc_type", document.getElementById("mlcTypeSelect").value);
 
     btn.textContent = "Uploading...";
-    
+
     const data = await AnalysisHelpers.makeApiCall(`${BACKEND_URL}/analyze`, {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`
-      },
-      body: formData
+      headers: { "Authorization": `Bearer ${token}` },
+      body: formData,
+      signal: _analysisAbortController.signal
     }, 30000);
+
+    if (_analysisCancelled) return;
 
     if (data.status === "Error") {
       throw new Error(data.message || "Server returned an error");
@@ -269,18 +305,23 @@ async function runAnalysis() {
     btn.textContent = "Analyzing...";
     resultsDiv.innerHTML = `<p>🔬 Analysis running<span id="dots">.</span></p>`;
     document.getElementById("leafMapSection").style.display = "none";
-    
-    await AnalysisHelpers.pollForResult(data.job_id, (result) => {
-      handlePicketFenceSuccess(result, fileInput.files[0].name);
-    }, (error) => {
-      throw new Error(error);
-    });
+
+    await AnalysisHelpers.pollForResult(
+      data.job_id,
+      (result) => {
+        if (_analysisCancelled) return;
+        handlePicketFenceSuccess(result, fileInput.files[0].name);
+        _showCancelBtn(false);
+      },
+      (error) => { if (!_analysisCancelled) throw new Error(error); },
+      () => _analysisCancelled   // isCancelled callback
+    );
 
   } catch (err) {
+    if (_analysisCancelled || err.name === "AbortError") return;
     console.error("Picket Fence analysis error:", err);
     resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
-    btn.disabled = false;
-    btn.textContent = "Run Picket Fence Analysis";
+    _resetAnalysisUI(null);
   }
 }
 
@@ -356,6 +397,9 @@ function handlePicketFenceSuccess(result, filename) {
   
   analyzeBtn.disabled = false;
   analyzeBtn.textContent = "Analyze Another File";
+  _showCancelBtn(false);
+  _analysisCancelled = false;
+  _analysisAbortController = null;
 }
 
 
