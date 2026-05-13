@@ -167,9 +167,12 @@
 <aside class="sidebar">
   <div class="sidebar-logo">MLC<span>QA</span></div>
   <div class="nav-label">Menu</div>
-  <a class="nav-item" href="dashboard.html"><span class="nav-icon">⬛</span> Dashboard</a>
-  <a class="nav-item" href="mlc-qa.html"><span class="nav-icon">⚡</span> MLC QA</a>
-  <a class="nav-item active" href="history.html"><span class="nav-icon">📋</span> History</a>
+  <a class="nav-item" href="dashboard.html"><span class="nav-icon">▦</span> Dashboard</a>
+  <a class="nav-item" href="mlc-qa.html"><span class="nav-icon">⚡</span> Picket Fence</a>
+  <a class="nav-item" href="winston-lutz.html"><span class="nav-icon">◎</span> Winston-Lutz</a>
+  <a class="nav-item" href="starshot.html"><span class="nav-icon">✦</span> Starshot</a>
+  <a class="nav-item" href="congruence.html"><span class="nav-icon">⊞</span> Congruence</a>
+  <a class="nav-item active" href="history.html"><span class="nav-icon">≡</span> History</a>
   <div class="sidebar-footer">
     <div class="user-chip">
       <div class="avatar" id="avatarInitial">?</div>
@@ -195,7 +198,11 @@
       <button class="filter-btn" onclick="filterResults('pass', this)">Pass</button>
       <button class="filter-btn" onclick="filterResults('fail', this)">Fail</button>
     </div>
-    <span class="record-count" id="recordCount"></span>
+    <div style="display:flex;align-items:center;gap:14px;">
+      <span class="record-count" id="recordCount"></span>
+      <span id="dataSourceBadge" style="display:none;font-family:'DM Mono',monospace;font-size:0.72rem;padding:3px 9px;border-radius:4px;"></span>
+      <button id="clearHistoryBtn" onclick="clearLocalHistory()" style="display:none;background:transparent;border:1px solid rgba(255,77,109,0.4);color:rgba(255,77,109,0.7);padding:6px 14px;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.78rem;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--danger)';this.style.color='var(--danger)'" onmouseout="this.style.borderColor='rgba(255,77,109,0.4)';this.style.color='rgba(255,77,109,0.7)'">Clear local history</button>
+    </div>
   </div>
 
   <div class="table-wrap">
@@ -237,16 +244,12 @@
 </main>
 
 <script>
-// token, name, BACKEND_URL, authHeaders(), logout() are all provided by script.js (loaded in <head>)
+// BACKEND_URL, logout() provided by script.js (loaded in <head>)
+// HistoryManager also provided by script.js
 
-// Populate sidebar user info from globals set by script.js
 const _histName = localStorage.getItem("mlcqa_name");
-const _histEmail = localStorage.getItem("mlcqa_token")
-  ? (() => { try { return JSON.parse(atob(localStorage.getItem("mlcqa_token").split(".")[1])).sub; } catch { return ""; } })()
-  : "";
 const _displayName = (_histName && _histName !== "undefined" && _histName !== "null" && _histName.trim() !== "")
-  ? _histName
-  : (_histEmail || "User");
+  ? _histName : "User";
 document.getElementById("sidebarName").textContent = _displayName;
 document.getElementById("avatarInitial").textContent = _displayName.charAt(0).toUpperCase();
 
@@ -259,6 +262,49 @@ function formatDate(iso) {
 let allAnalyses = [];
 let openRow = null;
 
+// Normalize entries from either source into a single shape:
+// { passed, testType, filename, summary, imageUrl, timestamp, source }
+function normalizeServer(a) {
+  return {
+    passed:    a.passed,
+    testType:  a.test_type  || "Unknown",
+    filename:  a.filename   || "—",
+    summary:   a.summary    || a.analysis_summary || "",
+    imageUrl:  a.image_url  || null,
+    timestamp: a.created_at || new Date().toISOString(),
+    source:    "server"
+  };
+}
+function normalizeLocal(a) {
+  return {
+    passed:    a.passed,
+    testType:  a.testType   || "Unknown",
+    filename:  a.filename   || "—",
+    summary:   a.summary    || "",
+    imageUrl:  a.imageUrl   || null,
+    timestamp: a.timestamp  || new Date().toISOString(),
+    source:    "local"
+  };
+}
+
+function setSourceBadge(source) {
+  const badge = document.getElementById("dataSourceBadge");
+  const clearBtn = document.getElementById("clearHistoryBtn");
+  if (source === "server") {
+    badge.textContent = "● server";
+    badge.style.cssText = "display:inline-block;background:rgba(0,229,160,0.08);color:var(--success);border:1px solid rgba(0,229,160,0.2);font-family:'DM Mono',monospace;font-size:0.72rem;padding:3px 9px;border-radius:4px;";
+    clearBtn.style.display = "none";
+  } else if (source === "local") {
+    badge.textContent = "● local";
+    badge.style.cssText = "display:inline-block;background:rgba(0,212,255,0.07);color:var(--cyan);border:1px solid rgba(0,212,255,0.18);font-family:'DM Mono',monospace;font-size:0.72rem;padding:3px 9px;border-radius:4px;";
+    clearBtn.style.display = "inline-block";
+  } else if (source === "merged") {
+    badge.textContent = "● server + local";
+    badge.style.cssText = "display:inline-block;background:rgba(0,212,255,0.07);color:var(--cyan);border:1px solid rgba(0,212,255,0.18);font-family:'DM Mono',monospace;font-size:0.72rem;padding:3px 9px;border-radius:4px;";
+    clearBtn.style.display = "inline-block";
+  }
+}
+
 function renderRows(data) {
   const tbody = document.getElementById("historyBody");
 
@@ -268,7 +314,8 @@ function renderRows(data) {
         <div class="empty-state">
           <div class="empty-icon">📂</div>
           <h3>No analyses found</h3>
-          <p>Your completed QA analyses will appear here</p>
+          <p>Complete a QA analysis to see it logged here automatically</p>
+          <a class="btn-cyan" href="mlc-qa.html">Run Picket Fence</a>
         </div>
       </td></tr>`;
     return;
@@ -278,13 +325,16 @@ function renderRows(data) {
   data.forEach((a, i) => {
     const mainRow = document.createElement("tr");
     mainRow.id = `row-${i}`;
+    const sourceDot = a.source === "local"
+      ? `<span title="Saved locally" style="color:var(--cyan);font-size:0.65rem;margin-left:5px;opacity:0.6;">●</span>`
+      : "";
     mainRow.innerHTML = `
       <td><span class="badge ${a.passed ? 'badge-pass' : 'badge-fail'}">${a.passed ? 'Pass' : 'Fail'}</span></td>
-      <td><span class="test-chip">${a.test_type}</span></td>
-      <td class="filename">${a.filename || '—'}</td>
-      <td class="date-cell">${formatDate(a.created_at)}</td>
+      <td><span class="test-chip">${a.testType}</span></td>
+      <td class="filename">${a.filename}${sourceDot}</td>
+      <td class="date-cell">${formatDate(a.timestamp)}</td>
       <td style="color:var(--muted);font-size:1rem;" id="arrow-${i}">▸</td>`;
-    mainRow.addEventListener("click", () => toggleSummary(i, a.summary));
+    mainRow.addEventListener("click", () => toggleSummary(i));
     tbody.appendChild(mainRow);
 
     const summaryRow = document.createElement("tr");
@@ -293,8 +343,8 @@ function renderRows(data) {
     summaryRow.innerHTML = `
       <td colspan="5">
         <div class="summary-box">
-          ${a.image_url ? `<img class="plot-thumb" src="${a.image_url}" alt="Analysis plot" loading="lazy"/>` : ''}
-          <pre>${a.summary || 'No summary available.'}</pre>
+          ${a.imageUrl ? `<img class="plot-thumb" src="${a.imageUrl}" alt="Analysis plot" loading="lazy" onerror="this.style.display='none'"/>` : ""}
+          <pre>${a.summary || "No summary available."}</pre>
           <button class="btn-dl" onclick="downloadHistoryPDF(${i})">⬇ Download PDF</button>
         </div>
       </td>`;
@@ -302,15 +352,15 @@ function renderRows(data) {
   });
 }
 
-function toggleSummary(i, summary) {
+function toggleSummary(i) {
   const sRow   = document.getElementById(`summary-${i}`);
   const arrow  = document.getElementById(`arrow-${i}`);
   const isOpen = sRow.classList.contains("open");
 
-  // close previously open row
   if (openRow !== null && openRow !== i) {
     document.getElementById(`summary-${openRow}`).classList.remove("open");
-    document.getElementById(`arrow-${openRow}`).textContent = "▸";
+    const prevArrow = document.getElementById(`arrow-${openRow}`);
+    if (prevArrow) prevArrow.textContent = "▸";
   }
 
   sRow.classList.toggle("open", !isOpen);
@@ -332,28 +382,67 @@ function filterResults(type, btn) {
   renderRows(filtered);
 }
 
-// ── Fetch history ──
+function clearLocalHistory() {
+  if (!confirm("Clear all locally-stored analysis history? This cannot be undone.")) return;
+  HistoryManager.clear();
+  loadHistory();
+}
+
+// ── Merge helper: deduplicate by timestamp (within 5s) ────────────────────────
+function mergeAndSort(serverEntries, localEntries) {
+  const all = [...serverEntries];
+  localEntries.forEach(local => {
+    const localTs = new Date(local.timestamp).getTime();
+    const isDupe = serverEntries.some(s => {
+      const sTs = new Date(s.timestamp).getTime();
+      return Math.abs(localTs - sTs) < 5000 && s.testType === local.testType && s.filename === local.filename;
+    });
+    if (!isDupe) all.push(local);
+  });
+  return all.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+}
+
+// ── Load history: try server, merge with / fall back to localStorage ───────────
 async function loadHistory() {
+  const localEntries = HistoryManager.getAll().map(normalizeLocal);
+
   try {
     const res = await fetch(`${BACKEND_URL}/history`, {
-      headers: { "Authorization": `Bearer ${localStorage.getItem("mlcqa_token")}` }
+      headers: { "Authorization": `Bearer ${localStorage.getItem("mlcqa_token")}` },
+      signal: AbortSignal.timeout(8000)
     });
+
     if (res.status === 401) { logout(); return; }
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
     const data = await res.json();
-    allAnalyses = data.analyses || [];
-    document.getElementById("recordCount").textContent =
-      `${allAnalyses.length} record${allAnalyses.length !== 1 ? "s" : ""}`;
-    renderRows(allAnalyses);
+    const serverEntries = (data.analyses || []).map(normalizeServer);
+
+    if (serverEntries.length > 0 && localEntries.length === 0) {
+      allAnalyses = serverEntries;
+      setSourceBadge("server");
+    } else if (serverEntries.length > 0 && localEntries.length > 0) {
+      allAnalyses = mergeAndSort(serverEntries, localEntries);
+      setSourceBadge("merged");
+    } else if (localEntries.length > 0) {
+      allAnalyses = localEntries;
+      setSourceBadge("local");
+    } else {
+      allAnalyses = [];
+    }
+
   } catch {
-    document.getElementById("historyBody").innerHTML = `
-      <tr><td colspan="5">
-        <div class="empty-state">
-          <div class="empty-icon">⚠️</div>
-          <h3>Could not load history</h3>
-          <p>Server may be waking up. Please refresh in a moment.</p>
-        </div>
-      </td></tr>`;
+    // Server unavailable — use localStorage only
+    allAnalyses = localEntries;
+    if (localEntries.length > 0) {
+      setSourceBadge("local");
+    }
   }
+
+  document.getElementById("recordCount").textContent =
+    `${allAnalyses.length} record${allAnalyses.length !== 1 ? "s" : ""}`;
+  renderRows(allAnalyses);
 }
 
 loadHistory();
@@ -375,12 +464,12 @@ async function downloadHistoryPDF(i) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
   doc.setTextColor(255, 255, 255);
-  doc.text("MLC QA — " + a.test_type + " Report", M + 4, 12);
+  doc.text("MLC QA — " + (a.testType || a.test_type || "Analysis") + " Report", M + 4, 12);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(180, 210, 230);
-  const dt = new Date(a.created_at).toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
+  const dt = new Date(a.timestamp || a.created_at).toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
   doc.text("Date: " + dt, M + 4, 19);
   doc.text("File: " + (a.filename || "—"), M + 4, 24);
 
@@ -397,9 +486,10 @@ async function downloadHistoryPDF(i) {
   y += 18;
 
   // Analysis image
-  if (a.image_url) {
+  const _imgUrl = a.imageUrl || a.image_url || null;
+  if (_imgUrl) {
     try {
-      const res  = await fetch(a.image_url);
+      const res  = await fetch(_imgUrl);
       const blob = await res.blob();
       const b64  = await new Promise((resolve, reject) => {
         const r = new FileReader();
@@ -417,7 +507,7 @@ async function downloadHistoryPDF(i) {
       doc.setFont("helvetica", "italic");
       doc.setFontSize(7.5);
       doc.setTextColor(80, 105, 135);
-      doc.text("Figure: Pylinac " + (a.test_type || "") + " — Analyzed Image", M, y);
+      doc.text("Figure: Pylinac " + (a.testType || a.test_type || "") + " — Analyzed Image", M, y);
       y += 9;
     } catch { y += 4; }
   }
