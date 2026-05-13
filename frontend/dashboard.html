@@ -5,6 +5,144 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Dashboard — MLC QA</title>
   <link rel="stylesheet" href="style.css"/>
+  <script src="script.js"></script>
+  <style>
+    /* ── Per-test breakdown table ─────────────────────────────────────────── */
+    .breakdown-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 14px;
+      margin-bottom: 40px;
+    }
+    .breakdown-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: border-color var(--t);
+    }
+    .breakdown-card:hover { border-color: var(--accent-border); }
+    .breakdown-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .breakdown-icon {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: var(--accent-dim);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1rem; flex-shrink: 0;
+    }
+    .breakdown-name {
+      font-size: 0.82rem; font-weight: 600;
+      color: var(--text-1); font-family: var(--mono);
+      letter-spacing: 0.03em;
+    }
+    .breakdown-stats {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .breakdown-stat { text-align: center; }
+    .breakdown-stat-val {
+      font-family: var(--mono);
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text-1);
+    }
+    .breakdown-stat-val.pass { color: var(--pass); }
+    .breakdown-stat-val.fail { color: var(--fail); }
+    .breakdown-stat-lbl {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+    }
+    .breakdown-bar-track {
+      height: 4px;
+      border-radius: 2px;
+      background: var(--border);
+      overflow: hidden;
+    }
+    .breakdown-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.6s ease;
+    }
+    .breakdown-last {
+      font-size: 0.71rem;
+      color: var(--text-muted);
+      font-family: var(--mono);
+    }
+
+    /* ── Sparkline ────────────────────────────────────────────────────────── */
+    .sparkline-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 22px 24px;
+      margin-bottom: 40px;
+    }
+    .sparkline-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .sparkline-title {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text-1);
+    }
+    .sparkline-legend {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
+    .sparkline-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      color: var(--text-muted);
+    }
+    .sparkline-legend-dot {
+      width: 8px; height: 8px;
+      border-radius: 2px;
+    }
+    .sparkline-wrap {
+      width: 100%;
+      overflow-x: auto;
+    }
+    .sparkline-axis-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 6px;
+      padding: 0 2px;
+    }
+    .sparkline-axis-label {
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      color: var(--text-muted);
+      text-align: center;
+      flex: 1;
+    }
+    .sparkline-no-data {
+      text-align: center;
+      color: var(--text-muted);
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      padding: 32px 0;
+    }
+  </style>
 </head>
 <body>
 <aside class="sidebar">
@@ -38,7 +176,7 @@
 <main class="main">
   <div class="topbar">
     <div>
-      <div class="greeting-label">Good day</div>
+      <div class="greeting-label" id="greetingLabel">Good day</div>
       <div class="greeting-name">Welcome back, <span id="userName">...</span></div>
     </div>
     <div class="status-pill">
@@ -47,18 +185,12 @@
     </div>
   </div>
 
-  <div class="section-head">
-    <h2>Overview</h2>
-  </div>
-  <div class="overview-text">
-    <p>MLC QA is a cloud-based platform that empowers medical physicists to perform automated multi-leaf collimator quality assurance — from Picket Fence and spoke tests to a full suite of MLC analyses. Simply upload a DICOM image to receive instant, accurate pass/fail results with secure storage of your complete analysis history.</p>
-  </div>
-
+  <!-- ── Top stats ──────────────────────────────────────────────────────── -->
   <div class="section-head">
     <h2>Performance Stats</h2>
-    <p>Live metrics from your analysis history</p>
+    <p>Derived from your analysis history</p>
   </div>
-  <div class="metrics-row" style="margin-bottom: 40px;">
+  <div class="metrics-row" style="margin-bottom:40px;">
     <div class="metric-card">
       <div class="metric-label">Total Tests Run</div>
       <div class="metric-value metric-accent" id="stats-total">—</div>
@@ -73,10 +205,37 @@
     </div>
     <div class="metric-card">
       <div class="metric-label">Last Activity</div>
-      <div class="metric-value" id="stats-last" style="font-size: 0.85rem; padding-top: 4px;">—</div>
+      <div class="metric-value" id="stats-last" style="font-size:0.85rem;padding-top:4px;">—</div>
     </div>
   </div>
 
+  <!-- ── 14-day activity sparkline ─────────────────────────────────────── -->
+  <div class="sparkline-card" id="sparklineCard" style="display:none;">
+    <div class="sparkline-header">
+      <span class="sparkline-title">Activity — last 14 days</span>
+      <div class="sparkline-legend">
+        <span class="sparkline-legend-item">
+          <span class="sparkline-legend-dot" style="background:var(--pass)"></span>Pass
+        </span>
+        <span class="sparkline-legend-item">
+          <span class="sparkline-legend-dot" style="background:var(--fail)"></span>Fail
+        </span>
+      </div>
+    </div>
+    <div class="sparkline-wrap">
+      <svg id="sparklineSVG" width="100%" height="80" style="display:block;"></svg>
+    </div>
+    <div class="sparkline-axis-labels" id="sparklineLabels"></div>
+  </div>
+
+  <!-- ── Per-test breakdown ─────────────────────────────────────────────── -->
+  <div class="section-head" id="breakdownHead" style="display:none;">
+    <h2>Per-Test Breakdown</h2>
+    <p>Pass rate by analysis type</p>
+  </div>
+  <div class="breakdown-grid" id="breakdownGrid"></div>
+
+  <!-- ── Analysis modules ──────────────────────────────────────────────── -->
   <div class="section-head">
     <h2>Analysis Modules</h2>
     <p>Select a test to run your QA analysis</p>
@@ -121,39 +280,240 @@
   </div>
 </main>
 
-<script src="script.js"></script>
 <script>
-const tokenVal = localStorage.getItem("mlcqa_token");
-const nameVal  = localStorage.getItem("mlcqa_name");
+// script.js loaded in <head> — provides BACKEND_URL, HistoryManager, authHeaders(), logout()
 
-if (nameVal) {
-  document.getElementById("userName").textContent = nameVal;
+// ── Greeting ──────────────────────────────────────────────────────────────────
+(function () {
+  const h = new Date().getHours();
+  const label = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+  document.getElementById("greetingLabel").textContent = label;
+})();
+
+// ── User info ─────────────────────────────────────────────────────────────────
+const nameVal = localStorage.getItem("mlcqa_name");
+if (nameVal && nameVal !== "undefined" && nameVal !== "null") {
+  document.getElementById("userName").textContent    = nameVal;
   document.getElementById("sidebarName").textContent = nameVal;
   document.getElementById("avatarInitial").textContent = nameVal.charAt(0).toUpperCase();
 }
 
+
+// ── Test-type config ──────────────────────────────────────────────────────────
+const TEST_TYPES = [
+  { key: "Picket Fence", icon: "⚡", href: "mlc-qa.html"       },
+  { key: "Winston-Lutz", icon: "◎", href: "winston-lutz.html"  },
+  { key: "Starshot",     icon: "✦", href: "starshot.html"       },
+  { key: "Congruence",   icon: "⊞", href: "congruence.html"     },
+];
+
+
+// ── Sparkline ─────────────────────────────────────────────────────────────────
+function buildSparkline(entries) {
+  const DAYS = 14;
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+
+  // Build bucket for each of the last DAYS days
+  const buckets = Array.from({ length: DAYS }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - (DAYS - 1 - i));
+    return { date: d, pass: 0, fail: 0, label: "" };
+  });
+
+  // Label every other day
+  buckets.forEach((b, i) => {
+    b.label = (i === 0 || i === DAYS - 1 || i % 3 === 0)
+      ? b.date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
+      : "";
+  });
+
+  entries.forEach(e => {
+    const ts = new Date(e.timestamp || e.created_at);
+    const bucketIdx = buckets.findIndex(b => {
+      const start = new Date(b.date);
+      start.setHours(0, 0, 0, 0);
+      return ts >= start && ts <= b.date;
+    });
+    if (bucketIdx !== -1) {
+      if (e.passed || e.pass) buckets[bucketIdx].pass++;
+      else                    buckets[bucketIdx].fail++;
+    }
+  });
+
+  const totalMax = Math.max(...buckets.map(b => b.pass + b.fail), 1);
+  const H = 72, W_SLOT = 100 / DAYS;
+  const svg = document.getElementById("sparklineSVG");
+  const labelsEl = document.getElementById("sparklineLabels");
+
+  // Build SVG bars (stacked pass + fail)
+  const rects = buckets.map((b, i) => {
+    const total    = b.pass + b.fail;
+    const passH    = total > 0 ? Math.round((b.pass / totalMax) * H) : 0;
+    const failH    = total > 0 ? Math.round((b.fail / totalMax) * H) : 0;
+    const barW     = W_SLOT - 1; // 1% gap
+    const xPct     = i * W_SLOT + 0.5;
+
+    const passY    = H - passH;
+    const failY    = passY - failH;
+    const emptyH   = total === 0 ? 3 : 0;
+
+    return `
+      ${total === 0 ? `<rect x="${xPct}%" y="${H - emptyH}" width="${barW}%" height="${emptyH}" rx="1" fill="rgba(255,255,255,0.06)"/>` : ""}
+      ${passH > 0 ? `<rect x="${xPct}%" y="${passY}" width="${barW}%" height="${passH}" rx="1" fill="rgba(26,171,117,0.75)">
+        <title>${b.date.toLocaleDateString("en-GB",{day:"2-digit",month:"short"})}: ${b.pass} pass, ${b.fail} fail</title>
+      </rect>` : ""}
+      ${failH > 0 ? `<rect x="${xPct}%" y="${failY}" width="${barW}%" height="${failH}" rx="1" fill="rgba(201,64,80,0.75)">
+        <title>${b.date.toLocaleDateString("en-GB",{day:"2-digit",month:"short"})}: ${b.pass} pass, ${b.fail} fail</title>
+      </rect>` : ""}
+    `;
+  }).join("");
+
+  svg.innerHTML = rects;
+
+  // Axis labels
+  labelsEl.innerHTML = buckets.map(b =>
+    `<span class="sparkline-axis-label">${b.label}</span>`
+  ).join("");
+
+  document.getElementById("sparklineCard").style.display = "block";
+}
+
+
+// ── Per-test breakdown cards ──────────────────────────────────────────────────
+function buildBreakdown(entries) {
+  const grid     = document.getElementById("breakdownGrid");
+  const headEl   = document.getElementById("breakdownHead");
+
+  const hasAny = TEST_TYPES.some(t => entries.some(e =>
+    (e.testType || e.test_type || "").toLowerCase() === t.key.toLowerCase()
+  ));
+  if (!hasAny) { grid.style.display = "none"; headEl.style.display = "none"; return; }
+
+  headEl.style.display = "block";
+  grid.innerHTML = "";
+
+  TEST_TYPES.forEach(t => {
+    const typeEntries = entries.filter(e =>
+      (e.testType || e.test_type || "").toLowerCase() === t.key.toLowerCase()
+    );
+    if (typeEntries.length === 0) return;
+
+    const total    = typeEntries.length;
+    const passed   = typeEntries.filter(e => e.passed || e.pass).length;
+    const failed   = total - passed;
+    const passRate = total > 0 ? Math.round((passed / total) * 100) : 0;
+    const fillColor = passRate >= 90 ? "var(--pass)" : passRate >= 70 ? "var(--warn)" : "var(--fail)";
+
+    // Last run date
+    const sorted = [...typeEntries].sort((a, b) =>
+      new Date(b.timestamp || b.created_at) - new Date(a.timestamp || a.created_at)
+    );
+    const lastTs   = sorted[0]?.timestamp || sorted[0]?.created_at;
+    const lastDate = lastTs
+      ? new Date(lastTs).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+      : "—";
+
+    const card = document.createElement("a");
+    card.href = t.href;
+    card.className = "breakdown-card";
+    card.style.textDecoration = "none";
+    card.innerHTML = `
+      <div class="breakdown-header">
+        <div class="breakdown-icon">${t.icon}</div>
+        <div class="breakdown-name">${t.key}</div>
+      </div>
+      <div class="breakdown-stats">
+        <div class="breakdown-stat">
+          <div class="breakdown-stat-val">${total}</div>
+          <div class="breakdown-stat-lbl">Total</div>
+        </div>
+        <div class="breakdown-stat">
+          <div class="breakdown-stat-val pass">${passed}</div>
+          <div class="breakdown-stat-lbl">Pass</div>
+        </div>
+        <div class="breakdown-stat">
+          <div class="breakdown-stat-val ${failed > 0 ? "fail" : ""}">${failed}</div>
+          <div class="breakdown-stat-lbl">Fail</div>
+        </div>
+        <div class="breakdown-stat">
+          <div class="breakdown-stat-val" style="color:${fillColor}">${passRate}%</div>
+          <div class="breakdown-stat-lbl">Rate</div>
+        </div>
+      </div>
+      <div class="breakdown-bar-track">
+        <div class="breakdown-bar-fill" style="width:${passRate}%;background:${fillColor};"></div>
+      </div>
+      <div class="breakdown-last">Last run: ${lastDate}</div>`;
+    grid.appendChild(card);
+  });
+}
+
+
+// ── Normalise an entry from either source ─────────────────────────────────────
+function normalize(a) {
+  return {
+    passed:    !!(a.passed ?? a.pass),
+    testType:  a.testType  || a.test_type  || "Unknown",
+    filename:  a.filename  || "—",
+    timestamp: a.timestamp || a.created_at || new Date().toISOString()
+  };
+}
+
+
+// ── Main stats loader ─────────────────────────────────────────────────────────
 async function loadStats() {
+  // Always read localStorage first — it's instant
+  const localRaw   = HistoryManager.getAll();
+  const localNorm  = localRaw.map(normalize);
+
+  let allEntries = localNorm;
+
+  // Try backend — merge if available
   try {
-    const res = await fetch(`${BACKEND_URL}/history`, { headers: authHeaders() });
-    if (!res.ok) return;
-    const data = await res.json();
-    if (!data.analyses || data.analyses.length === 0) return;
+    const res = await fetch(`${BACKEND_URL}/history`, {
+      headers: authHeaders(),
+      signal: AbortSignal.timeout(6000)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const serverNorm = (data.analyses || []).map(normalize);
 
-    const total = data.analyses.length;
-    const passed = data.analyses.filter(a => a.passed).length;
-    const failed = total - passed;
-    const passRate = ((passed / total) * 100).toFixed(1);
+      // Merge: include server entries not already in local (by timestamp + testType)
+      const extras = serverNorm.filter(s => !localNorm.some(l =>
+        Math.abs(new Date(l.timestamp) - new Date(s.timestamp)) < 5000 &&
+        l.testType === s.testType
+      ));
+      allEntries = [...localNorm, ...extras].sort(
+        (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
+      );
+    }
+  } catch (_) {}
 
-    const last = data.analyses[0];
-    const lastDate = new Date(last.created_at).toLocaleDateString("en-GB", { day:'2-digit', month:'short' });
-
-    document.getElementById("stats-total").textContent = total;
-    document.getElementById("stats-pass").textContent  = `${passRate}%`;
-    document.getElementById("stats-fail").textContent  = failed;
-    document.getElementById("stats-last").textContent  = `${lastDate} (${last.test_type})`;
-  } catch (err) {
-    console.error("Stats error:", err);
+  if (allEntries.length === 0) {
+    // Show dashes — nothing to display yet
+    return;
   }
+
+  // ── Top summary stats ─────────────────────────────────────────────────────
+  const total    = allEntries.length;
+  const passed   = allEntries.filter(e => e.passed).length;
+  const failed   = total - passed;
+  const passRate = ((passed / total) * 100).toFixed(1);
+
+  const last     = allEntries[0];
+  const lastDate = new Date(last.timestamp).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+
+  document.getElementById("stats-total").textContent = total;
+  document.getElementById("stats-pass").textContent  = `${passRate}%`;
+  document.getElementById("stats-fail").textContent  = failed;
+  document.getElementById("stats-last").textContent  = `${lastDate} · ${last.testType}`;
+
+  // ── Sparkline ─────────────────────────────────────────────────────────────
+  buildSparkline(allEntries);
+
+  // ── Per-test breakdown ────────────────────────────────────────────────────
+  buildBreakdown(allEntries);
 }
 
 document.addEventListener("DOMContentLoaded", loadStats);
