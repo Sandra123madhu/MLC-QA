@@ -1,35 +1,35 @@
 /* ═══════════════════════════════════════════════════════════════
    MLC QA — Clinical Design System
    Aesthetic: Precision instrument / Medical-grade software
-   Fonts: Inter (body) + Roboto Mono (data)
-   Palette: Deep navy / steel / ice white / clinical teal
+   Fonts: IBM Plex Sans (body) + IBM Plex Mono (data)
+   Palette: Clean white / soft grey / clinical blue
 ═══════════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Roboto+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg:            #0b1120;
-  --bg-subtle:     #0f1729;
-  --surface:       #131e32;
-  --surface-2:     #192742;
-  --surface-3:     #1e3050;
-  --border:        #243552;
-  --border-subtle: #1a2a42;
-  --text:          #dce8f5;
-  --text-2:        #8ba4c0;
-  --text-muted:    #546a85;
-  --accent:        #2b9fd4;
-  --accent-dim:    rgba(43,159,212,0.1);
-  --accent-border: rgba(43,159,212,0.28);
-  --pass:          #1aab75;
-  --pass-dim:      rgba(26,171,117,0.1);
-  --fail:          #c94050;
-  --fail-dim:      rgba(201,64,80,0.1);
-  --warn:          #c8892a;
-  --font:          'Inter', system-ui, sans-serif;
-  --mono:          'Roboto Mono', 'Courier New', monospace;
+  --bg:            #ffffff;
+  --bg-subtle:     #f6f7fb;
+  --surface:       #ffffff;
+  --surface-2:     #f0f2f8;
+  --surface-3:     #e8eaf0;
+  --border:        #e8eaf0;
+  --border-subtle: #f0f2f8;
+  --text:          #0f1117;
+  --text-2:        #4a5068;
+  --text-muted:    #9098b0;
+  --accent:        #2563eb;
+  --accent-dim:    rgba(37,99,235,0.07);
+  --accent-border: rgba(37,99,235,0.25);
+  --pass:          #16a34a;
+  --pass-dim:      rgba(22,163,74,0.08);
+  --fail:          #dc2626;
+  --fail-dim:      rgba(220,38,38,0.08);
+  --warn:          #d97706;
+  --font:          'IBM Plex Sans', system-ui, sans-serif;
+  --mono:          'IBM Plex Mono', 'Courier New', monospace;
   --sidebar-w:     248px;
   --r:             6px;
   --r-lg:          10px;
@@ -39,17 +39,13 @@
 
 html { font-size: 15px; }
 body {
-  background: var(--bg); color: var(--text);
+  background: var(--bg-subtle); color: var(--text);
   font-family: var(--font); font-weight: 400;
   line-height: 1.6; min-height: 100vh;
   -webkit-font-smoothing: antialiased;
 }
 body::before {
-  content:''; position:fixed; inset:0;
-  background-image:
-    linear-gradient(rgba(43,159,212,0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(43,159,212,0.018) 1px, transparent 1px);
-  background-size: 48px 48px; pointer-events:none; z-index:0;
+  content: none;
 }
 
 h1,h2,h3,h4 { font-family:var(--font); font-weight:600; line-height:1.25; color:var(--text); letter-spacing:-0.01em; }
@@ -106,12 +102,12 @@ a:hover { opacity:0.8; }
 .status-dot { width:6px; height:6px; border-radius:50%; background:var(--pass); box-shadow:0 0 6px var(--pass); animation:blink 2.5s infinite; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 @keyframes leafMaxPulse {
-  0%,100% { box-shadow: 0 0 0px 0px rgba(255,255,255,0.0), inset 0 0 0px rgba(255,255,255,0.0); opacity: 1; }
-  50%      { box-shadow: 0 0 10px 3px rgba(255,255,255,0.55), inset 0 0 6px rgba(255,255,255,0.25); opacity: 0.65; }
+  0%,100% { box-shadow: 0 0 0px 0px rgba(37,99,235,0.0), inset 0 0 0px rgba(37,99,235,0.0); opacity: 1; }
+  50%      { box-shadow: 0 0 10px 3px rgba(37,99,235,0.45), inset 0 0 6px rgba(37,99,235,0.2); opacity: 0.75; }
 }
 .leaf-max-error-cell {
   animation: leafMaxPulse 1.8s ease-in-out infinite !important;
-  outline: 2px solid rgba(255,255,255,0.6) !important;
+  outline: 2px solid rgba(37,99,235,0.5) !important;
   outline-offset: 1px;
   z-index: 5;
   position: relative;
@@ -166,7 +162,7 @@ a:hover { opacity:0.8; }
 
 /* ── Buttons ── */
 .btn-primary { width:100%; background:var(--accent); color:#fff; border:none; padding:12px 20px; border-radius:var(--r); font-family:var(--font); font-weight:500; font-size:0.88rem; cursor:pointer; margin-top:20px; transition:all var(--t); }
-.btn-primary:hover:not(:disabled) { background:#3aaee0; box-shadow:0 4px 14px rgba(43,159,212,0.35); transform:translateY(-1px); }
+.btn-primary:hover:not(:disabled) { background:#1d4ed8; box-shadow:0 4px 14px rgba(37,99,235,0.25); transform:translateY(-1px); }
 .btn-primary:disabled { opacity:0.4; cursor:not-allowed; transform:none; }
 .btn-cancel { width:100%; display:inline-flex; align-items:center; justify-content:center; gap:8px; background:transparent; border:1px solid rgba(201,64,80,0.55); color:var(--fail); padding:10px 20px; border-radius:var(--r); font-family:var(--font); font-weight:500; font-size:0.85rem; cursor:pointer; margin-top:10px; transition:all var(--t); }
 .btn-cancel:hover { background:rgba(201,64,80,0.12); border-color:var(--fail); box-shadow:0 2px 10px rgba(201,64,80,0.2); }
@@ -214,7 +210,7 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-dim)
 .msg.success { background:var(--pass-dim); border:1px solid rgba(26,171,117,0.3); color:var(--pass); display:block; }
 .msg.warn { background:rgba(255,170,0,0.1); border:1px solid rgba(255,170,0,0.3); color:#ffaa00; display:block; }
 .btn-auth { width:100%; background:var(--accent); color:#fff; border:none; padding:11px; border-radius:var(--r); font-family:var(--font); font-weight:500; font-size:0.88rem; cursor:pointer; margin-top:10px; transition:all var(--t); }
-.btn-auth:hover:not(:disabled) { background:#3aaee0; box-shadow:0 4px 14px rgba(43,159,212,0.3); transform:translateY(-1px); }
+.btn-auth:hover:not(:disabled) { background:#1d4ed8; box-shadow:0 4px 14px rgba(37,99,235,0.25); transform:translateY(-1px); }
 .btn-auth:disabled { opacity:0.4; cursor:not-allowed; }
 .auth-divider { text-align:center; color:var(--text-muted); font-size:0.75rem; margin:20px 0; font-family:var(--mono); }
 .auth-link { text-align:center; font-size:0.83rem; color:var(--text-muted); }
