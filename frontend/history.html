@@ -298,16 +298,29 @@
 </main>
 
 <script>
-// BACKEND_URL, logout(), HistoryManager provided by script.js (loaded in <head>)
+// ── User name display ─────────────────────────────────────────────────────────
+function applyName(name) {
+  if (name && name !== "undefined" && name !== "null" && name.trim() !== "") {
+    document.getElementById("sidebarName").textContent = name;
+    document.getElementById("avatarInitial").textContent = name.charAt(0).toUpperCase();
+  }
+}
 
-// ── User name display (matches dashboard.html pattern) ────────────────────────
-const nameVal = localStorage.getItem("mlcqa_name");
-if (nameVal && nameVal !== "undefined" && nameVal !== "null" && nameVal.trim() !== "") {
-  document.getElementById("sidebarName").textContent = nameVal;
-  document.getElementById("avatarInitial").textContent = nameVal.charAt(0).toUpperCase();
-} else {
-  document.getElementById("sidebarName").textContent = "User";
-  document.getElementById("avatarInitial").textContent = "U";
+// 1. Try localStorage immediately (fast path — works after first login)
+const storedName = localStorage.getItem("mlcqa_name");
+applyName(storedName);
+
+// 2. If not in localStorage yet, listen for script.js to fetch it from /me
+if (!storedName || storedName === "undefined" || storedName === "null" || storedName.trim() === "") {
+  document.addEventListener("mlcqa:name-resolved", (e) => applyName(e.detail.name));
+
+  // 3. Fallback: fetch /me directly in case script.js already ran before this listener was added
+  fetch(`${BACKEND_URL}/me`, {
+    headers: { "Authorization": `Bearer ${localStorage.getItem("mlcqa_token")}` }
+  })
+  .then(r => r.ok ? r.json() : null)
+  .then(data => { if (data && data.name) { localStorage.setItem("mlcqa_name", data.name); applyName(data.name); } })
+  .catch(() => {});
 }
 
 function formatDate(iso) {
