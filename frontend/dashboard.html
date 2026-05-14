@@ -4,147 +4,182 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Dashboard — MLC QA</title>
-  <link rel="stylesheet" href="style.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
   <script src="script.js"></script>
   <style>
-    /* ── Per-test breakdown table ─────────────────────────────────────────── */
-    .breakdown-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 14px;
-      margin-bottom: 40px;
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --ink:    #0f1117;
+      --ink2:   #4a5068;
+      --ink3:   #9098b0;
+      --border: #e8eaf0;
+      --bg:     #ffffff;
+      --bg2:    #f6f7fb;
+      --bg3:    #eef0f7;
+      --blue:   #2563eb;
+      --blue2:  #1d4ed8;
+      --pass:   #16a34a;
+      --pass-dim: rgba(22,163,74,0.08);
+      --fail:   #dc2626;
+      --fail-dim: rgba(220,38,38,0.08);
+      --warn:   #d97706;
+      --sidebar-w: 240px;
+      --r: 6px; --r-lg: 10px; --r-xl: 12px;
+      --t: 0.13s ease;
     }
-    .breakdown-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--r-lg);
-      padding: 18px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      transition: border-color var(--t);
+    html { font-size: 15px; }
+    body {
+      background: var(--bg2); color: var(--ink);
+      font-family: 'IBM Plex Sans', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
     }
-    .breakdown-card:hover { border-color: var(--accent-border); }
-    .breakdown-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
+    h1,h2,h3,h4 { font-family: 'IBM Plex Sans', sans-serif; font-weight: 600; line-height: 1.25; color: var(--ink); letter-spacing: -0.02em; }
+    h1 { font-size: 1.5rem; } h2 { font-size: 1rem; } h3 { font-size: 0.88rem; }
+    p { color: var(--ink2); line-height: 1.65; }
+    a { color: var(--blue); text-decoration: none; transition: opacity var(--t); }
+    a:hover { opacity: 0.8; }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; width: var(--sidebar-w);
+      background: var(--bg); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; z-index: 100;
     }
-    .breakdown-icon {
-      width: 32px; height: 32px; border-radius: 8px;
-      background: var(--accent-dim);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1rem; flex-shrink: 0;
+    .sidebar-header { padding: 20px 20px 16px; border-bottom: 1px solid var(--border); }
+    .sidebar-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+    .logo-mark {
+      width: 28px; height: 28px; background: var(--blue); border-radius: 7px;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     }
-    .breakdown-name {
-      font-size: 0.82rem; font-weight: 600;
-      color: var(--text-1); font-family: var(--mono);
-      letter-spacing: 0.03em;
+    .logo-mark svg { width: 15px; height: 15px; fill: #fff; }
+    .logo-text { font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 0.95rem; letter-spacing: 0.05em; color: var(--ink); }
+    .logo-text span { color: var(--blue); }
+
+    .sidebar-nav { padding: 14px 0 8px; flex: 1; overflow-y: auto; }
+    .nav-label { font-size: 0.62rem; font-weight: 600; color: var(--ink3); letter-spacing: 0.12em; text-transform: uppercase; padding: 0 18px; margin-bottom: 4px; font-family: 'IBM Plex Mono', monospace; }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 18px; color: var(--ink2);
+      font-size: 0.83rem; font-weight: 400;
+      text-decoration: none; transition: all var(--t);
+      border: none; background: none; width: 100%; text-align: left; cursor: pointer;
+      position: relative;
     }
-    .breakdown-stats {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
+    .nav-item:hover { color: var(--ink); background: var(--bg2); }
+    .nav-item.active { color: var(--blue); background: rgba(37,99,235,0.07); font-weight: 500; }
+    .nav-item.active::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--blue); border-radius: 0 2px 2px 0; }
+    .nav-icon { width: 17px; text-align: center; font-size: 0.85rem; opacity: 0.6; }
+    .nav-item.active .nav-icon { opacity: 1; }
+
+    .sidebar-footer { padding: 14px 18px; border-top: 1px solid var(--border); }
+    .user-chip { display: flex; align-items: center; gap: 10px; padding: 8px 0; margin-bottom: 9px; }
+    .avatar {
+      width: 30px; height: 30px; border-radius: 50%; background: rgba(37,99,235,0.1);
+      border: 1px solid rgba(37,99,235,0.2); display: flex; align-items: center; justify-content: center;
+      font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; color: var(--blue);
+      flex-shrink: 0; font-weight: 500;
     }
+    .user-name { font-size: 0.82rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+    .user-role { font-size: 0.68rem; color: var(--ink3); margin-top: 1px; }
+    .logout-btn {
+      width: 100%; background: transparent; border: 1px solid var(--border);
+      color: var(--ink2); padding: 7px; border-radius: var(--r);
+      font-family: 'IBM Plex Sans', sans-serif; font-size: 0.78rem; cursor: pointer;
+      transition: all var(--t);
+    }
+    .logout-btn:hover { border-color: rgba(220,38,38,0.4); color: var(--fail); background: var(--fail-dim); }
+
+    /* ── Main ── */
+    .main { margin-left: var(--sidebar-w); padding: 40px 48px; }
+
+    /* ── Topbar ── */
+    .topbar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; }
+    .greeting-label { font-size: 0.68rem; font-weight: 600; color: var(--ink3); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 5px; font-family: 'IBM Plex Mono', monospace; }
+    .greeting-name { font-size: 1.4rem; font-weight: 600; letter-spacing: -0.025em; }
+    .greeting-name span { color: var(--blue); }
+    .status-pill {
+      display: flex; align-items: center; gap: 7px;
+      background: var(--bg); border: 1px solid var(--border);
+      padding: 7px 14px; border-radius: 100px;
+      font-size: 0.75rem; color: var(--ink2); font-family: 'IBM Plex Mono', monospace;
+    }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--pass); box-shadow: 0 0 5px var(--pass); animation: blink 2.5s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* ── Section heading ── */
+    .section-head { margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+    .section-head h2 { font-size: 0.85rem; font-weight: 600; letter-spacing: 0.01em; }
+    .section-head p { font-size: 0.78rem; color: var(--ink3); margin-top: 3px; }
+
+    /* ── Metric cards ── */
+    .metrics-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 36px; }
+    .metric-card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 16px 18px; transition: border-color var(--t); }
+    .metric-card:hover { border-color: #c8cce0; }
+    .metric-label { font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem; font-weight: 500; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+    .metric-value { font-family: 'IBM Plex Mono', monospace; font-size: 1.2rem; font-weight: 500; color: var(--ink); }
+    .metric-pass { color: var(--pass); }
+    .metric-fail { color: var(--fail); }
+    .metric-accent { color: var(--blue); }
+
+    /* ── Sparkline ── */
+    .sparkline-card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-xl); padding: 22px 24px; margin-bottom: 36px; }
+    .sparkline-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+    .sparkline-title { font-size: 0.85rem; font-weight: 600; color: var(--ink); }
+    .sparkline-legend { display: flex; gap: 14px; align-items: center; }
+    .sparkline-legend-item { display: flex; align-items: center; gap: 5px; font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; color: var(--ink3); }
+    .sparkline-legend-dot { width: 8px; height: 8px; border-radius: 2px; }
+    .sparkline-wrap { width: 100%; overflow-x: auto; }
+    .sparkline-axis-labels { display: flex; justify-content: space-between; margin-top: 6px; padding: 0 2px; }
+    .sparkline-axis-label { font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem; color: var(--ink3); text-align: center; flex: 1; }
+
+    /* ── Per-test breakdown ── */
+    .breakdown-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; margin-bottom: 36px; }
+    .breakdown-card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; transition: border-color var(--t); text-decoration: none; color: inherit; }
+    .breakdown-card:hover { border-color: rgba(37,99,235,0.3); opacity: 1; }
+    .breakdown-header { display: flex; align-items: center; gap: 10px; }
+    .breakdown-icon { width: 30px; height: 30px; border-radius: 7px; background: rgba(37,99,235,0.08); display: flex; align-items: center; justify-content: center; font-size: 0.95rem; flex-shrink: 0; }
+    .breakdown-name { font-size: 0.78rem; font-weight: 600; color: var(--ink); font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.02em; }
+    .breakdown-stats { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .breakdown-stat { text-align: center; }
-    .breakdown-stat-val {
-      font-family: var(--mono);
-      font-size: 1.05rem;
-      font-weight: 600;
-      color: var(--text-1);
-    }
+    .breakdown-stat-val { font-family: 'IBM Plex Mono', monospace; font-size: 1rem; font-weight: 500; color: var(--ink); }
     .breakdown-stat-val.pass { color: var(--pass); }
     .breakdown-stat-val.fail { color: var(--fail); }
-    .breakdown-stat-lbl {
-      font-size: 0.65rem;
-      color: var(--text-muted);
-      margin-top: 2px;
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-    }
-    .breakdown-bar-track {
-      height: 4px;
-      border-radius: 2px;
-      background: var(--border);
-      overflow: hidden;
-    }
-    .breakdown-bar-fill {
-      height: 100%;
-      border-radius: 2px;
-      transition: width 0.6s ease;
-    }
-    .breakdown-last {
-      font-size: 0.71rem;
-      color: var(--text-muted);
-      font-family: var(--mono);
-    }
+    .breakdown-stat-lbl { font-size: 0.6rem; color: var(--ink3); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.07em; }
+    .breakdown-bar-track { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+    .breakdown-bar-fill { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
+    .breakdown-last { font-size: 0.68rem; color: var(--ink3); font-family: 'IBM Plex Mono', monospace; }
 
-    /* ── Sparkline ────────────────────────────────────────────────────────── */
-    .sparkline-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--r-lg);
-      padding: 22px 24px;
-      margin-bottom: 40px;
+    /* ── Analysis cards ── */
+    .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; margin-bottom: 40px; }
+    .analysis-card {
+      background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-xl);
+      padding: 22px; text-decoration: none; color: inherit;
+      transition: border-color var(--t), transform var(--t), box-shadow var(--t);
+      display: block; cursor: pointer; position: relative; overflow: hidden;
     }
-    .sparkline-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 18px;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-    .sparkline-title {
-      font-size: 0.88rem;
-      font-weight: 600;
-      color: var(--text-1);
-    }
-    .sparkline-legend {
-      display: flex;
-      gap: 14px;
-      align-items: center;
-    }
-    .sparkline-legend-item {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      font-family: var(--mono);
-      font-size: 0.7rem;
-      color: var(--text-muted);
-    }
-    .sparkline-legend-dot {
-      width: 8px; height: 8px;
-      border-radius: 2px;
-    }
-    .sparkline-wrap {
-      width: 100%;
-      overflow-x: auto;
-    }
-    .sparkline-axis-labels {
-      display: flex;
-      justify-content: space-between;
-      margin-top: 6px;
-      padding: 0 2px;
-    }
-    .sparkline-axis-label {
-      font-family: var(--mono);
-      font-size: 0.62rem;
-      color: var(--text-muted);
-      text-align: center;
-      flex: 1;
-    }
-    .sparkline-no-data {
-      text-align: center;
-      color: var(--text-muted);
-      font-family: var(--mono);
-      font-size: 0.8rem;
-      padding: 32px 0;
+    .analysis-card:hover { border-color: rgba(37,99,235,0.3); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.07); opacity: 1; }
+    .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+    .card-icon { width: 36px; height: 36px; border-radius: var(--r-lg); background: var(--bg2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 1rem; }
+    .card-badge { font-size: 0.64rem; font-weight: 600; padding: 3px 8px; border-radius: 100px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.05em; }
+    .badge-live { background: rgba(22,163,74,0.08); color: var(--pass); border: 1px solid rgba(22,163,74,0.2); }
+    .card-title { font-size: 0.86rem; font-weight: 600; margin-bottom: 5px; color: var(--ink); }
+    .card-desc { font-size: 0.78rem; color: var(--ink2); line-height: 1.55; }
+    .card-arrow { margin-top: 16px; font-size: 0.76rem; color: var(--blue); font-family: 'IBM Plex Mono', monospace; }
+
+    @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+    .fade-up { animation: fadeUp 0.25s ease both; }
+
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .main { margin-left: 0; padding: 20px 16px; }
+      .metrics-row { grid-template-columns: 1fr 1fr; }
     }
   </style>
 </head>
 <body>
+
 <aside class="sidebar">
   <div class="sidebar-header">
     <a href="dashboard.html" class="sidebar-logo">
@@ -165,7 +200,7 @@
     <div class="user-chip">
       <div class="avatar" id="avatarInitial">?</div>
       <div>
-        <div class="user-name" id="sidebarName">Loading...</div>
+        <div class="user-name" id="sidebarName">Loading…</div>
         <div class="user-role">Medical Physicist</div>
       </div>
     </div>
@@ -177,7 +212,7 @@
   <div class="topbar">
     <div>
       <div class="greeting-label" id="greetingLabel">Good day</div>
-      <div class="greeting-name">Welcome back, <span id="userName">...</span></div>
+      <div class="greeting-name">Welcome back, <span id="userName">…</span></div>
     </div>
     <div class="status-pill">
       <div class="status-dot"></div>
@@ -185,12 +220,11 @@
     </div>
   </div>
 
-  <!-- ── Top stats ──────────────────────────────────────────────────────── -->
   <div class="section-head">
     <h2>Performance Stats</h2>
     <p>Derived from your analysis history</p>
   </div>
-  <div class="metrics-row" style="margin-bottom:40px;">
+  <div class="metrics-row">
     <div class="metric-card">
       <div class="metric-label">Total Tests Run</div>
       <div class="metric-value metric-accent" id="stats-total">—</div>
@@ -205,11 +239,10 @@
     </div>
     <div class="metric-card">
       <div class="metric-label">Last Activity</div>
-      <div class="metric-value" id="stats-last" style="font-size:0.85rem;padding-top:4px;">—</div>
+      <div class="metric-value" id="stats-last" style="font-size:0.82rem;padding-top:4px;">—</div>
     </div>
   </div>
 
-  <!-- ── 14-day activity sparkline ─────────────────────────────────────── -->
   <div class="sparkline-card" id="sparklineCard" style="display:none;">
     <div class="sparkline-header">
       <span class="sparkline-title">Activity — last 14 days</span>
@@ -228,14 +261,12 @@
     <div class="sparkline-axis-labels" id="sparklineLabels"></div>
   </div>
 
-  <!-- ── Per-test breakdown ─────────────────────────────────────────────── -->
   <div class="section-head" id="breakdownHead" style="display:none;">
     <h2>Per-Test Breakdown</h2>
     <p>Pass rate by analysis type</p>
   </div>
   <div class="breakdown-grid" id="breakdownGrid"></div>
 
-  <!-- ── Analysis modules ──────────────────────────────────────────────── -->
   <div class="section-head">
     <h2>Analysis Modules</h2>
     <p>Select a test to run your QA analysis</p>
@@ -281,16 +312,11 @@
 </main>
 
 <script>
-// script.js loaded in <head> — provides BACKEND_URL, HistoryManager, authHeaders(), logout()
-
-// ── Greeting ──────────────────────────────────────────────────────────────────
 (function () {
   const h = new Date().getHours();
-  const label = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
-  document.getElementById("greetingLabel").textContent = label;
+  document.getElementById("greetingLabel").textContent = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
 })();
 
-// ── User info ─────────────────────────────────────────────────────────────────
 const nameVal = localStorage.getItem("mlcqa_name");
 if (nameVal && nameVal !== "undefined" && nameVal !== "null") {
   document.getElementById("userName").textContent    = nameVal;
@@ -298,8 +324,6 @@ if (nameVal && nameVal !== "undefined" && nameVal !== "null") {
   document.getElementById("avatarInitial").textContent = nameVal.charAt(0).toUpperCase();
 }
 
-
-// ── Test-type config ──────────────────────────────────────────────────────────
 const TEST_TYPES = [
   { key: "Picket Fence", icon: "⚡", href: "mlc-qa.html"       },
   { key: "Winston-Lutz", icon: "◎", href: "winston-lutz.html"  },
@@ -307,212 +331,108 @@ const TEST_TYPES = [
   { key: "Congruence",   icon: "⊞", href: "congruence.html"     },
 ];
 
-
-// ── Sparkline ─────────────────────────────────────────────────────────────────
 function buildSparkline(entries) {
   const DAYS = 14;
-  const today = new Date();
-  today.setHours(23, 59, 59, 999);
-
-  // Build bucket for each of the last DAYS days
+  const today = new Date(); today.setHours(23,59,59,999);
   const buckets = Array.from({ length: DAYS }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(d.getDate() - (DAYS - 1 - i));
+    const d = new Date(today); d.setDate(d.getDate() - (DAYS - 1 - i));
     return { date: d, pass: 0, fail: 0, label: "" };
   });
-
-  // Label every other day
   buckets.forEach((b, i) => {
     b.label = (i === 0 || i === DAYS - 1 || i % 3 === 0)
-      ? b.date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
-      : "";
+      ? b.date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "";
   });
-
   entries.forEach(e => {
     const ts = new Date(e.timestamp || e.created_at);
-    const bucketIdx = buckets.findIndex(b => {
-      const start = new Date(b.date);
-      start.setHours(0, 0, 0, 0);
-      return ts >= start && ts <= b.date;
-    });
-    if (bucketIdx !== -1) {
-      if (e.passed || e.pass) buckets[bucketIdx].pass++;
-      else                    buckets[bucketIdx].fail++;
-    }
+    const bucketIdx = buckets.findIndex(b => { const start = new Date(b.date); start.setHours(0,0,0,0); return ts >= start && ts <= b.date; });
+    if (bucketIdx !== -1) { if (e.passed || e.pass) buckets[bucketIdx].pass++; else buckets[bucketIdx].fail++; }
   });
-
   const totalMax = Math.max(...buckets.map(b => b.pass + b.fail), 1);
   const H = 72, W_SLOT = 100 / DAYS;
   const svg = document.getElementById("sparklineSVG");
   const labelsEl = document.getElementById("sparklineLabels");
-
-  // Build SVG bars (stacked pass + fail)
   const rects = buckets.map((b, i) => {
-    const total    = b.pass + b.fail;
-    const passH    = total > 0 ? Math.round((b.pass / totalMax) * H) : 0;
-    const failH    = total > 0 ? Math.round((b.fail / totalMax) * H) : 0;
-    const barW     = W_SLOT - 1; // 1% gap
-    const xPct     = i * W_SLOT + 0.5;
-
-    const passY    = H - passH;
-    const failY    = passY - failH;
-    const emptyH   = total === 0 ? 3 : 0;
-
+    const total = b.pass + b.fail;
+    const passH = total > 0 ? Math.round((b.pass / totalMax) * H) : 0;
+    const failH = total > 0 ? Math.round((b.fail / totalMax) * H) : 0;
+    const barW = W_SLOT - 1; const xPct = i * W_SLOT + 0.5;
+    const passY = H - passH; const failY = passY - failH;
+    const emptyH = total === 0 ? 3 : 0;
     return `
-      ${total === 0 ? `<rect x="${xPct}%" y="${H - emptyH}" width="${barW}%" height="${emptyH}" rx="1" fill="rgba(255,255,255,0.06)"/>` : ""}
-      ${passH > 0 ? `<rect x="${xPct}%" y="${passY}" width="${barW}%" height="${passH}" rx="1" fill="rgba(26,171,117,0.75)">
-        <title>${b.date.toLocaleDateString("en-GB",{day:"2-digit",month:"short"})}: ${b.pass} pass, ${b.fail} fail</title>
-      </rect>` : ""}
-      ${failH > 0 ? `<rect x="${xPct}%" y="${failY}" width="${barW}%" height="${failH}" rx="1" fill="rgba(201,64,80,0.75)">
-        <title>${b.date.toLocaleDateString("en-GB",{day:"2-digit",month:"short"})}: ${b.pass} pass, ${b.fail} fail</title>
-      </rect>` : ""}
-    `;
+      ${total === 0 ? `<rect x="${xPct}%" y="${H - emptyH}" width="${barW}%" height="${emptyH}" rx="1" fill="rgba(37,99,235,0.08)"/>` : ""}
+      ${passH > 0 ? `<rect x="${xPct}%" y="${passY}" width="${barW}%" height="${passH}" rx="1" fill="rgba(22,163,74,0.65)"><title>${b.date.toLocaleDateString("en-GB",{day:"2-digit",month:"short"})}: ${b.pass} pass, ${b.fail} fail</title></rect>` : ""}
+      ${failH > 0 ? `<rect x="${xPct}%" y="${failY}" width="${barW}%" height="${failH}" rx="1" fill="rgba(220,38,38,0.65)"><title>${b.date.toLocaleDateString("en-GB",{day:"2-digit",month:"short"})}: ${b.pass} pass, ${b.fail} fail</title></rect>` : ""}`;
   }).join("");
-
   svg.innerHTML = rects;
-
-  // Axis labels
-  labelsEl.innerHTML = buckets.map(b =>
-    `<span class="sparkline-axis-label">${b.label}</span>`
-  ).join("");
-
+  labelsEl.innerHTML = buckets.map(b => `<span class="sparkline-axis-label">${b.label}</span>`).join("");
   document.getElementById("sparklineCard").style.display = "block";
 }
 
-
-// ── Per-test breakdown cards ──────────────────────────────────────────────────
 function buildBreakdown(entries) {
-  const grid     = document.getElementById("breakdownGrid");
-  const headEl   = document.getElementById("breakdownHead");
-
-  const hasAny = TEST_TYPES.some(t => entries.some(e =>
-    (e.testType || e.test_type || "").toLowerCase() === t.key.toLowerCase()
-  ));
+  const grid = document.getElementById("breakdownGrid");
+  const headEl = document.getElementById("breakdownHead");
+  const hasAny = TEST_TYPES.some(t => entries.some(e => (e.testType || e.test_type || "").toLowerCase() === t.key.toLowerCase()));
   if (!hasAny) { grid.style.display = "none"; headEl.style.display = "none"; return; }
-
-  headEl.style.display = "block";
-  grid.innerHTML = "";
-
+  headEl.style.display = "block"; grid.innerHTML = "";
   TEST_TYPES.forEach(t => {
-    const typeEntries = entries.filter(e =>
-      (e.testType || e.test_type || "").toLowerCase() === t.key.toLowerCase()
-    );
+    const typeEntries = entries.filter(e => (e.testType || e.test_type || "").toLowerCase() === t.key.toLowerCase());
     if (typeEntries.length === 0) return;
-
-    const total    = typeEntries.length;
-    const passed   = typeEntries.filter(e => e.passed || e.pass).length;
-    const failed   = total - passed;
+    const total = typeEntries.length;
+    const passed = typeEntries.filter(e => e.passed || e.pass).length;
+    const failed = total - passed;
     const passRate = total > 0 ? Math.round((passed / total) * 100) : 0;
     const fillColor = passRate >= 90 ? "var(--pass)" : passRate >= 70 ? "var(--warn)" : "var(--fail)";
-
-    // Last run date
-    const sorted = [...typeEntries].sort((a, b) =>
-      new Date(b.timestamp || b.created_at) - new Date(a.timestamp || a.created_at)
-    );
-    const lastTs   = sorted[0]?.timestamp || sorted[0]?.created_at;
-    const lastDate = lastTs
-      ? new Date(lastTs).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-      : "—";
-
+    const sorted = [...typeEntries].sort((a, b) => new Date(b.timestamp || b.created_at) - new Date(a.timestamp || a.created_at));
+    const lastTs = sorted[0]?.timestamp || sorted[0]?.created_at;
+    const lastDate = lastTs ? new Date(lastTs).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—";
     const card = document.createElement("a");
-    card.href = t.href;
-    card.className = "breakdown-card";
-    card.style.textDecoration = "none";
+    card.href = t.href; card.className = "breakdown-card";
     card.innerHTML = `
       <div class="breakdown-header">
         <div class="breakdown-icon">${t.icon}</div>
         <div class="breakdown-name">${t.key}</div>
       </div>
       <div class="breakdown-stats">
-        <div class="breakdown-stat">
-          <div class="breakdown-stat-val">${total}</div>
-          <div class="breakdown-stat-lbl">Total</div>
-        </div>
-        <div class="breakdown-stat">
-          <div class="breakdown-stat-val pass">${passed}</div>
-          <div class="breakdown-stat-lbl">Pass</div>
-        </div>
-        <div class="breakdown-stat">
-          <div class="breakdown-stat-val ${failed > 0 ? "fail" : ""}">${failed}</div>
-          <div class="breakdown-stat-lbl">Fail</div>
-        </div>
-        <div class="breakdown-stat">
-          <div class="breakdown-stat-val" style="color:${fillColor}">${passRate}%</div>
-          <div class="breakdown-stat-lbl">Rate</div>
-        </div>
+        <div class="breakdown-stat"><div class="breakdown-stat-val">${total}</div><div class="breakdown-stat-lbl">Total</div></div>
+        <div class="breakdown-stat"><div class="breakdown-stat-val pass">${passed}</div><div class="breakdown-stat-lbl">Pass</div></div>
+        <div class="breakdown-stat"><div class="breakdown-stat-val ${failed > 0 ? "fail" : ""}">${failed}</div><div class="breakdown-stat-lbl">Fail</div></div>
+        <div class="breakdown-stat"><div class="breakdown-stat-val" style="color:${fillColor}">${passRate}%</div><div class="breakdown-stat-lbl">Rate</div></div>
       </div>
-      <div class="breakdown-bar-track">
-        <div class="breakdown-bar-fill" style="width:${passRate}%;background:${fillColor};"></div>
-      </div>
+      <div class="breakdown-bar-track"><div class="breakdown-bar-fill" style="width:${passRate}%;background:${fillColor};"></div></div>
       <div class="breakdown-last">Last run: ${lastDate}</div>`;
     grid.appendChild(card);
   });
 }
 
-
-// ── Normalise an entry from either source ─────────────────────────────────────
 function normalize(a) {
-  return {
-    passed:    !!(a.passed ?? a.pass),
-    testType:  a.testType  || a.test_type  || "Unknown",
-    filename:  a.filename  || "—",
-    timestamp: a.timestamp || a.created_at || new Date().toISOString()
-  };
+  return { passed: !!(a.passed ?? a.pass), testType: a.testType || a.test_type || "Unknown", filename: a.filename || "—", timestamp: a.timestamp || a.created_at || new Date().toISOString() };
 }
 
-
-// ── Main stats loader ─────────────────────────────────────────────────────────
 async function loadStats() {
-  // Always read localStorage first — it's instant
-  const localRaw   = HistoryManager.getAll();
-  const localNorm  = localRaw.map(normalize);
-
+  const localRaw = HistoryManager.getAll();
+  const localNorm = localRaw.map(normalize);
   let allEntries = localNorm;
-
-  // Try backend — merge if available
   try {
-    const res = await fetch(`${BACKEND_URL}/history`, {
-      headers: authHeaders(),
-      signal: AbortSignal.timeout(6000)
-    });
+    const res = await fetch(`${BACKEND_URL}/history`, { headers: authHeaders(), signal: AbortSignal.timeout(6000) });
     if (res.ok) {
       const data = await res.json();
       const serverNorm = (data.analyses || []).map(normalize);
-
-      // Merge: include server entries not already in local (by timestamp + testType)
-      const extras = serverNorm.filter(s => !localNorm.some(l =>
-        Math.abs(new Date(l.timestamp) - new Date(s.timestamp)) < 5000 &&
-        l.testType === s.testType
-      ));
-      allEntries = [...localNorm, ...extras].sort(
-        (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
-      );
+      const extras = serverNorm.filter(s => !localNorm.some(l => Math.abs(new Date(l.timestamp) - new Date(s.timestamp)) < 5000 && l.testType === s.testType));
+      allEntries = [...localNorm, ...extras].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     }
   } catch (_) {}
-
-  if (allEntries.length === 0) {
-    // Show dashes — nothing to display yet
-    return;
-  }
-
-  // ── Top summary stats ─────────────────────────────────────────────────────
-  const total    = allEntries.length;
-  const passed   = allEntries.filter(e => e.passed).length;
-  const failed   = total - passed;
+  if (allEntries.length === 0) return;
+  const total = allEntries.length;
+  const passed = allEntries.filter(e => e.passed).length;
+  const failed = total - passed;
   const passRate = ((passed / total) * 100).toFixed(1);
-
-  const last     = allEntries[0];
+  const last = allEntries[0];
   const lastDate = new Date(last.timestamp).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
-
   document.getElementById("stats-total").textContent = total;
   document.getElementById("stats-pass").textContent  = `${passRate}%`;
   document.getElementById("stats-fail").textContent  = failed;
   document.getElementById("stats-last").textContent  = `${lastDate} · ${last.testType}`;
-
-  // ── Sparkline ─────────────────────────────────────────────────────────────
   buildSparkline(allEntries);
-
-  // ── Per-test breakdown ────────────────────────────────────────────────────
   buildBreakdown(allEntries);
 }
 
