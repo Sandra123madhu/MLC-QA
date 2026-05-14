@@ -5,155 +5,202 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Analysis History — MLC QA</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400&display=swap" rel="stylesheet"/>
-  <!-- FIX: script.js was missing — BACKEND_URL, token, name, authHeaders(), logout() all come from here -->
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <!-- BACKEND_URL, token, authHeaders(), logout() all come from here -->
   <script src="script.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg: #040d1a; --surface: #071428; --surface2: #0a1f38;
-      --border: #0e2a4a; --cyan: #00d4ff; --text: #e8f4f8; --muted: #7a9bb5;
-      --success: #00e5a0; --danger: #ff4d6d;
+      --ink:    #0f1117;
+      --ink2:   #4a5068;
+      --ink3:   #9098b0;
+      --border: #e8eaf0;
+      --bg:     #ffffff;
+      --bg2:    #f6f7fb;
+      --bg3:    #eef0f7;
+      --blue:   #2563eb;
+      --blue2:  #1d4ed8;
+      --pass:   #16a34a;
+      --pass-dim: rgba(22,163,74,0.08);
+      --fail:   #dc2626;
+      --fail-dim: rgba(220,38,38,0.08);
+      --sidebar-w: 220px;
+      --r: 6px; --r-lg: 10px; --r-xl: 12px;
+      --t: 0.13s ease;
     }
-    body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; }
-    body::before {
-      content: ''; position: fixed; inset: 0;
-      background-image: linear-gradient(rgba(0,212,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(0,212,255,0.025) 1px, transparent 1px);
-      background-size: 60px 60px; pointer-events: none; z-index: 0;
+    body {
+      background: var(--bg2); color: var(--ink);
+      font-family: 'IBM Plex Sans', sans-serif;
+      min-height: 100vh;
     }
+    h1,h2,h3,h4 { font-family: 'IBM Plex Sans', sans-serif; font-weight: 600; line-height: 1.25; color: var(--ink); letter-spacing: -0.02em; }
+    a { color: var(--blue); text-decoration: none; transition: opacity var(--t); }
+    a:hover { opacity: 0.8; }
 
     /* ── Sidebar ── */
     .sidebar {
-      position: fixed; top: 0; left: 0; bottom: 0; width: 240px;
-      background: var(--surface); border-right: 1px solid var(--border);
-      display: flex; flex-direction: column; z-index: 10; padding: 28px 0;
+      position: fixed; top: 0; left: 0; bottom: 0; width: var(--sidebar-w);
+      background: var(--bg); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; z-index: 100;
     }
-    .sidebar-logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.2rem; padding: 0 28px 28px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
-    .sidebar-logo span { color: var(--cyan); }
-    .nav-label { font-size: 0.7rem; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; padding: 0 28px; margin-bottom: 8px; }
-    .nav-item { display: flex; align-items: center; gap: 12px; padding: 11px 28px; color: var(--muted); font-size: 0.9rem; text-decoration: none; transition: all 0.15s; border: none; background: none; width: 100%; text-align: left; cursor: pointer; }
-    .nav-item:hover { color: var(--text); background: var(--surface2); }
-    .nav-item.active { color: var(--cyan); background: rgba(0,212,255,0.06); border-right: 2px solid var(--cyan); }
-    .nav-icon { font-size: 1rem; width: 20px; text-align: center; }
-    .sidebar-footer { margin-top: auto; padding: 24px 28px 0; border-top: 1px solid var(--border); }
-    .user-chip { display: flex; align-items: center; gap: 12px; padding: 12px 0; margin-bottom: 12px; }
-    .avatar { width: 34px; height: 34px; border-radius: 50%; background: rgba(0,212,255,0.15); border: 1px solid rgba(0,212,255,0.3); display: flex; align-items: center; justify-content: center; font-family: 'Syne', sans-serif; font-size: 0.85rem; color: var(--cyan); flex-shrink: 0; }
-    .user-name { font-size: 0.88rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .user-role { font-size: 0.75rem; color: var(--muted); }
-    .logout-btn { width: 100%; background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 9px; border-radius: 7px; font-family: 'DM Sans', sans-serif; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; }
-    .logout-btn:hover { border-color: var(--danger); color: var(--danger); }
+    .sidebar-header { padding: 20px 20px 16px; border-bottom: 1px solid var(--border); }
+    .sidebar-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+    .logo-mark {
+      width: 28px; height: 28px; background: var(--blue); border-radius: 7px;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .logo-mark svg { width: 15px; height: 15px; fill: #fff; }
+    .logo-text { font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 0.95rem; letter-spacing: 0.05em; color: var(--ink); }
+    .logo-text span { color: var(--blue); }
+
+    .sidebar-nav { padding: 14px 0 8px; flex: 1; overflow-y: auto; }
+    .nav-label { font-size: 0.62rem; font-weight: 600; color: var(--ink3); letter-spacing: 0.12em; text-transform: uppercase; padding: 0 18px; margin-bottom: 4px; font-family: 'IBM Plex Mono', monospace; }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 18px; color: var(--ink2);
+      font-size: 0.83rem; font-weight: 400;
+      text-decoration: none; transition: all var(--t);
+      border: none; background: none; width: 100%; text-align: left; cursor: pointer;
+      position: relative;
+    }
+    .nav-item:hover { color: var(--ink); background: var(--bg2); opacity: 1; }
+    .nav-item.active { color: var(--blue); background: rgba(37,99,235,0.07); font-weight: 500; }
+    .nav-item.active::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--blue); border-radius: 0 2px 2px 0; }
+    .nav-icon { width: 17px; text-align: center; font-size: 0.85rem; opacity: 0.6; }
+    .nav-item.active .nav-icon { opacity: 1; }
+
+    .sidebar-footer { padding: 14px 18px; border-top: 1px solid var(--border); }
+    .user-chip { display: flex; align-items: center; gap: 10px; padding: 8px 0; margin-bottom: 9px; }
+    .avatar {
+      width: 30px; height: 30px; border-radius: 50%; background: rgba(37,99,235,0.1);
+      border: 1px solid rgba(37,99,235,0.2); display: flex; align-items: center; justify-content: center;
+      font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; color: var(--blue);
+      flex-shrink: 0; font-weight: 500;
+    }
+    .user-name { font-size: 0.82rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+    .user-role { font-size: 0.68rem; color: var(--ink3); margin-top: 1px; }
+    .logout-btn {
+      width: 100%; background: transparent; border: 1px solid var(--border);
+      color: var(--ink2); padding: 7px; border-radius: var(--r);
+      font-family: 'IBM Plex Sans', sans-serif; font-size: 0.78rem; cursor: pointer;
+      transition: all var(--t);
+    }
+    .logout-btn:hover { border-color: rgba(220,38,38,0.4); color: var(--fail); background: var(--fail-dim); }
 
     /* ── Main ── */
-    .main { margin-left: 240px; padding: 40px 48px; position: relative; z-index: 1; }
+    .main { margin-left: var(--sidebar-w); padding: 40px 48px; }
 
-    .page-header { margin-bottom: 36px; }
-    .breadcrumb { font-size: 0.82rem; color: var(--muted); margin-bottom: 12px; }
-    .breadcrumb a { color: var(--muted); text-decoration: none; transition: color 0.2s; }
-    .breadcrumb a:hover { color: var(--cyan); }
-    .page-header h1 { font-family: 'Syne', sans-serif; font-size: 1.7rem; font-weight: 700; margin-bottom: 6px; }
-    .page-header p { color: var(--muted); font-size: 0.9rem; }
+    .page-header { margin-bottom: 28px; }
+    .breadcrumb { font-size: 0.75rem; color: var(--ink3); margin-bottom: 10px; font-family: 'IBM Plex Mono', monospace; }
+    .breadcrumb a { color: var(--ink3); text-decoration: none; transition: color var(--t); }
+    .breadcrumb a:hover { color: var(--blue); opacity: 1; }
+    .breadcrumb span { margin: 0 5px; }
+    .page-header h1 { font-size: 1.55rem; font-weight: 600; margin-bottom: 4px; }
+    .page-header p { color: var(--ink2); font-size: 0.85rem; }
 
     /* ── Filter bar ── */
     .filter-bar {
       display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 24px; gap: 16px; flex-wrap: wrap;
+      margin-bottom: 18px; gap: 16px; flex-wrap: wrap;
     }
-    .filter-left { display: flex; gap: 8px; }
+    .filter-left { display: flex; gap: 6px; }
     .filter-btn {
-      background: var(--surface); border: 1px solid var(--border);
-      color: var(--muted); padding: 8px 18px; border-radius: 6px;
-      font-family: 'DM Sans', sans-serif; font-size: 0.82rem;
-      cursor: pointer; transition: all 0.2s;
+      background: var(--bg); border: 1px solid var(--border);
+      color: var(--ink2); padding: 7px 16px; border-radius: var(--r);
+      font-family: 'IBM Plex Sans', sans-serif; font-size: 0.8rem;
+      cursor: pointer; transition: all var(--t);
     }
-    .filter-btn:hover, .filter-btn.active { border-color: var(--cyan); color: var(--cyan); background: rgba(0,212,255,0.05); }
-    .record-count { font-family: 'DM Mono', monospace; font-size: 0.75rem; color: var(--muted); }
+    .filter-btn:hover { border-color: var(--blue); color: var(--blue); }
+    .filter-btn.active { border-color: var(--blue); color: var(--blue); background: rgba(37,99,235,0.07); font-weight: 500; }
+    .record-count { font-family: 'IBM Plex Mono', monospace; font-size: 0.73rem; color: var(--ink3); }
 
     /* ── Table ── */
     .table-wrap {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 12px; overflow: hidden;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: var(--r-xl); overflow: hidden;
     }
     table { width: 100%; border-collapse: collapse; }
-    thead tr { border-bottom: 1px solid var(--border); }
+    thead tr { border-bottom: 1px solid var(--border); background: var(--bg2); }
     thead th {
-      padding: 14px 20px; text-align: left;
-      font-family: 'DM Mono', monospace; font-size: 0.7rem;
-      letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
-      font-weight: 400;
+      padding: 11px 18px; text-align: left;
+      font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem;
+      letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink3);
+      font-weight: 500;
     }
     tbody tr {
       border-bottom: 1px solid var(--border);
-      transition: background 0.15s; cursor: pointer;
+      transition: background var(--t); cursor: pointer;
     }
     tbody tr:last-child { border-bottom: none; }
-    tbody tr:hover { background: var(--surface2); }
-    tbody td { padding: 16px 20px; font-size: 0.88rem; vertical-align: middle; }
+    tbody tr:hover { background: var(--bg2); }
+    tbody td { padding: 14px 18px; font-size: 0.85rem; vertical-align: middle; color: var(--ink); }
 
     .badge {
       display: inline-flex; align-items: center; gap: 5px;
-      padding: 4px 10px; border-radius: 100px;
-      font-size: 0.75rem; font-weight: 500; letter-spacing: 0.03em;
+      padding: 3px 9px; border-radius: 100px;
+      font-size: 0.72rem; font-weight: 500; font-family: 'IBM Plex Mono', monospace;
     }
-    .badge-pass { background: rgba(0,229,160,0.1); color: var(--success); border: 1px solid rgba(0,229,160,0.25); }
-    .badge-fail { background: rgba(255,77,109,0.1); color: var(--danger); border: 1px solid rgba(255,77,109,0.25); }
     .badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+    .badge-pass { background: var(--pass-dim); color: var(--pass); border: 1px solid rgba(22,163,74,0.2); }
+    .badge-fail { background: var(--fail-dim); color: var(--fail); border: 1px solid rgba(220,38,38,0.2); }
 
     .test-chip {
-      background: rgba(0,212,255,0.07); border: 1px solid rgba(0,212,255,0.15);
-      color: var(--cyan); padding: 3px 10px; border-radius: 4px;
-      font-size: 0.75rem; font-family: 'DM Mono', monospace;
+      background: rgba(37,99,235,0.07); border: 1px solid rgba(37,99,235,0.15);
+      color: var(--blue); padding: 3px 9px; border-radius: var(--r);
+      font-size: 0.72rem; font-family: 'IBM Plex Mono', monospace;
     }
-    .filename { color: var(--muted); font-family: 'DM Mono', monospace; font-size: 0.78rem; }
-    .date-cell { color: var(--muted); font-size: 0.82rem; }
+    .filename { color: var(--ink2); font-family: 'IBM Plex Mono', monospace; font-size: 0.76rem; }
+    .date-cell { color: var(--ink3); font-size: 0.8rem; font-family: 'IBM Plex Mono', monospace; }
 
     /* ── Expanded summary row ── */
     .summary-row { display: none; }
     .summary-row.open { display: table-row; }
     .summary-row td {
-      padding: 0 20px 20px;
-      background: var(--bg);
+      padding: 0 18px 18px;
+      background: var(--bg2);
     }
     .summary-box {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 8px; padding: 20px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: var(--r-lg); padding: 20px;
     }
     .summary-box pre {
-      white-space: pre-wrap; font-family: 'DM Mono', monospace;
-      font-size: 0.82rem; color: var(--muted); line-height: 1.7;
+      white-space: pre-wrap; font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.8rem; color: var(--ink2); line-height: 1.7;
     }
     .plot-thumb {
-      width: 100%; border-radius: 8px; margin-bottom: 16px;
+      width: 100%; border-radius: var(--r-lg); margin-bottom: 16px;
       border: 1px solid var(--border); display: block;
     }
     .btn-dl {
       display: inline-flex; align-items: center; gap: 6px;
-      background: transparent; border: 1px solid var(--cyan);
-      color: var(--cyan); padding: 8px 18px; border-radius: 6px;
-      font-family: 'DM Sans', sans-serif; font-size: 0.82rem;
-      cursor: pointer; margin-top: 14px; transition: all 0.2s;
+      background: transparent; border: 1px solid var(--blue);
+      color: var(--blue); padding: 7px 16px; border-radius: var(--r);
+      font-family: 'IBM Plex Sans', sans-serif; font-size: 0.8rem;
+      cursor: pointer; margin-top: 14px; transition: all var(--t);
     }
-    .btn-dl:hover { background: rgba(0,212,255,0.08); }
+    .btn-dl:hover { background: rgba(37,99,235,0.07); }
 
     /* ── Empty state ── */
     .empty-state {
-      text-align: center; padding: 80px 24px;
+      text-align: center; padding: 72px 24px;
     }
-    .empty-icon { font-size: 3rem; margin-bottom: 16px; opacity: 0.4; }
-    .empty-state h3 { font-family: 'Syne', sans-serif; font-size: 1.1rem; margin-bottom: 8px; color: var(--muted); }
-    .empty-state p { font-size: 0.88rem; color: var(--muted); margin-bottom: 24px; }
-    .btn-cyan {
-      background: var(--cyan); color: #040d1a; border: none;
-      padding: 11px 28px; border-radius: 7px;
-      font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 0.9rem;
-      cursor: pointer; text-decoration: none; display: inline-block; transition: all 0.2s;
+    .empty-icon { font-size: 2.5rem; margin-bottom: 14px; opacity: 0.35; }
+    .empty-state h3 { font-size: 1rem; margin-bottom: 6px; color: var(--ink2); }
+    .empty-state p { font-size: 0.84rem; color: var(--ink3); margin-bottom: 22px; }
+    .btn-primary {
+      background: var(--blue); color: #fff; border: none;
+      padding: 10px 24px; border-radius: var(--r);
+      font-family: 'IBM Plex Sans', sans-serif; font-weight: 500; font-size: 0.85rem;
+      cursor: pointer; text-decoration: none; display: inline-block;
+      transition: background var(--t), box-shadow var(--t);
     }
-    .btn-cyan:hover { background: #33ddff; box-shadow: 0 4px 20px rgba(0,212,255,0.3); }
+    .btn-primary:hover { background: var(--blue2); box-shadow: 0 4px 14px rgba(37,99,235,0.3); opacity: 1; }
 
     /* ── Loading skeleton ── */
-    .skeleton-row td { padding: 18px 20px; }
+    .skeleton-row td { padding: 16px 18px; }
     .skel {
-      height: 12px; border-radius: 4px;
-      background: linear-gradient(90deg, var(--border) 25%, var(--surface2) 50%, var(--border) 75%);
+      height: 11px; border-radius: 4px;
+      background: linear-gradient(90deg, var(--border) 25%, var(--bg3) 50%, var(--border) 75%);
       background-size: 200% 100%;
       animation: shimmer 1.4s infinite;
     }
@@ -165,19 +212,26 @@
 <body>
 
 <aside class="sidebar">
-  <div class="sidebar-logo">MLC<span>QA</span></div>
-  <div class="nav-label">Menu</div>
-  <a class="nav-item" href="dashboard.html"><span class="nav-icon">▦</span> Dashboard</a>
-  <a class="nav-item" href="mlc-qa.html"><span class="nav-icon">⚡</span> Picket Fence</a>
-  <a class="nav-item" href="winston-lutz.html"><span class="nav-icon">◎</span> Winston-Lutz</a>
-  <a class="nav-item" href="starshot.html"><span class="nav-icon">✦</span> Starshot</a>
-  <a class="nav-item" href="congruence.html"><span class="nav-icon">⊞</span> Congruence</a>
-  <a class="nav-item active" href="history.html"><span class="nav-icon">≡</span> History</a>
+  <div class="sidebar-header">
+    <a href="dashboard.html" class="sidebar-logo">
+      <div class="logo-mark"><svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg></div>
+      <div class="logo-text">MLC<span>QA</span></div>
+    </a>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">Menu</div>
+    <a class="nav-item" href="dashboard.html"><span class="nav-icon">▦</span> Dashboard</a>
+    <a class="nav-item" href="mlc-qa.html"><span class="nav-icon">⚡</span> Picket Fence</a>
+    <a class="nav-item" href="winston-lutz.html"><span class="nav-icon">◎</span> Winston-Lutz</a>
+    <a class="nav-item" href="starshot.html"><span class="nav-icon">✦</span> Starshot</a>
+    <a class="nav-item" href="congruence.html"><span class="nav-icon">⊞</span> Congruence</a>
+    <a class="nav-item active" href="history.html"><span class="nav-icon">≡</span> History</a>
+  </nav>
   <div class="sidebar-footer">
     <div class="user-chip">
       <div class="avatar" id="avatarInitial">?</div>
       <div>
-        <div class="user-name" id="sidebarName">Loading...</div>
+        <div class="user-name" id="sidebarName">Loading…</div>
         <div class="user-role">Medical Physicist</div>
       </div>
     </div>
@@ -187,7 +241,7 @@
 
 <main class="main">
   <div class="page-header">
-    <div class="breadcrumb"><a href="dashboard.html">Dashboard</a> / Analysis History</div>
+    <div class="breadcrumb"><a href="dashboard.html">Dashboard</a><span>/</span> Analysis History</div>
     <h1>Analysis History</h1>
     <p>Your last 30 days of QA analyses — auto-cleared after 30 days</p>
   </div>
@@ -198,10 +252,10 @@
       <button class="filter-btn" onclick="filterResults('pass', this)">Pass</button>
       <button class="filter-btn" onclick="filterResults('fail', this)">Fail</button>
     </div>
-    <div style="display:flex;align-items:center;gap:14px;">
+    <div style="display:flex;align-items:center;gap:12px;">
       <span class="record-count" id="recordCount"></span>
-      <span id="dataSourceBadge" style="display:none;font-family:'DM Mono',monospace;font-size:0.72rem;padding:3px 9px;border-radius:4px;"></span>
-      <button id="clearHistoryBtn" onclick="clearLocalHistory()" style="display:none;background:transparent;border:1px solid rgba(255,77,109,0.4);color:rgba(255,77,109,0.7);padding:6px 14px;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:0.78rem;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--danger)';this.style.color='var(--danger)'" onmouseout="this.style.borderColor='rgba(255,77,109,0.4)';this.style.color='rgba(255,77,109,0.7)'">Clear local history</button>
+      <span id="dataSourceBadge" style="display:none;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;padding:3px 8px;border-radius:4px;"></span>
+      <button id="clearHistoryBtn" onclick="clearLocalHistory()" style="display:none;background:transparent;border:1px solid rgba(220,38,38,0.35);color:rgba(220,38,38,0.7);padding:5px 12px;border-radius:var(--r);font-family:'IBM Plex Sans',sans-serif;font-size:0.76rem;cursor:pointer;transition:all var(--t);" onmouseover="this.style.borderColor='var(--fail)';this.style.color='var(--fail)'" onmouseout="this.style.borderColor='rgba(220,38,38,0.35)';this.style.color='rgba(220,38,38,0.7)'">Clear local history</button>
     </div>
   </div>
 
@@ -212,31 +266,31 @@
           <th>Result</th>
           <th>Test Type</th>
           <th>File</th>
-          <th>Date & Time</th>
+          <th>Date &amp; Time</th>
           <th></th>
         </tr>
       </thead>
       <tbody id="historyBody">
         <tr class="skeleton-row">
-          <td><div class="skel" style="width:60px"></div></td>
-          <td><div class="skel" style="width:100px"></div></td>
-          <td><div class="skel" style="width:160px"></div></td>
-          <td><div class="skel" style="width:120px"></div></td>
-          <td><div class="skel" style="width:40px"></div></td>
+          <td><div class="skel" style="width:56px"></div></td>
+          <td><div class="skel" style="width:96px"></div></td>
+          <td><div class="skel" style="width:150px"></div></td>
+          <td><div class="skel" style="width:110px"></div></td>
+          <td><div class="skel" style="width:36px"></div></td>
         </tr>
         <tr class="skeleton-row">
-          <td><div class="skel" style="width:60px"></div></td>
-          <td><div class="skel" style="width:100px"></div></td>
-          <td><div class="skel" style="width:140px"></div></td>
-          <td><div class="skel" style="width:120px"></div></td>
-          <td><div class="skel" style="width:40px"></div></td>
+          <td><div class="skel" style="width:56px"></div></td>
+          <td><div class="skel" style="width:96px"></div></td>
+          <td><div class="skel" style="width:130px"></div></td>
+          <td><div class="skel" style="width:110px"></div></td>
+          <td><div class="skel" style="width:36px"></div></td>
         </tr>
         <tr class="skeleton-row">
-          <td><div class="skel" style="width:60px"></div></td>
-          <td><div class="skel" style="width:100px"></div></td>
-          <td><div class="skel" style="width:180px"></div></td>
-          <td><div class="skel" style="width:120px"></div></td>
-          <td><div class="skel" style="width:40px"></div></td>
+          <td><div class="skel" style="width:56px"></div></td>
+          <td><div class="skel" style="width:96px"></div></td>
+          <td><div class="skel" style="width:170px"></div></td>
+          <td><div class="skel" style="width:110px"></div></td>
+          <td><div class="skel" style="width:36px"></div></td>
         </tr>
       </tbody>
     </table>
@@ -244,14 +298,17 @@
 </main>
 
 <script>
-// BACKEND_URL, logout() provided by script.js (loaded in <head>)
-// HistoryManager also provided by script.js
+// BACKEND_URL, logout(), HistoryManager provided by script.js (loaded in <head>)
 
-const _histName = localStorage.getItem("mlcqa_name");
-const _displayName = (_histName && _histName !== "undefined" && _histName !== "null" && _histName.trim() !== "")
-  ? _histName : "User";
-document.getElementById("sidebarName").textContent = _displayName;
-document.getElementById("avatarInitial").textContent = _displayName.charAt(0).toUpperCase();
+// ── User name display (matches dashboard.html pattern) ────────────────────────
+const nameVal = localStorage.getItem("mlcqa_name");
+if (nameVal && nameVal !== "undefined" && nameVal !== "null" && nameVal.trim() !== "") {
+  document.getElementById("sidebarName").textContent = nameVal;
+  document.getElementById("avatarInitial").textContent = nameVal.charAt(0).toUpperCase();
+} else {
+  document.getElementById("sidebarName").textContent = "User";
+  document.getElementById("avatarInitial").textContent = "U";
+}
 
 function formatDate(iso) {
   const d = new Date(iso);
@@ -262,8 +319,6 @@ function formatDate(iso) {
 let allAnalyses = [];
 let openRow = null;
 
-// Normalize entries from either source into a single shape:
-// { passed, testType, filename, summary, imageUrl, timestamp, source }
 function normalizeServer(a) {
   return {
     passed:    a.passed,
@@ -292,15 +347,15 @@ function setSourceBadge(source) {
   const clearBtn = document.getElementById("clearHistoryBtn");
   if (source === "server") {
     badge.textContent = "● server";
-    badge.style.cssText = "display:inline-block;background:rgba(0,229,160,0.08);color:var(--success);border:1px solid rgba(0,229,160,0.2);font-family:'DM Mono',monospace;font-size:0.72rem;padding:3px 9px;border-radius:4px;";
+    badge.style.cssText = "display:inline-block;background:var(--pass-dim);color:var(--pass);border:1px solid rgba(22,163,74,0.2);font-family:'IBM Plex Mono',monospace;font-size:0.7rem;padding:3px 8px;border-radius:4px;";
     clearBtn.style.display = "none";
   } else if (source === "local") {
     badge.textContent = "● local";
-    badge.style.cssText = "display:inline-block;background:rgba(0,212,255,0.07);color:var(--cyan);border:1px solid rgba(0,212,255,0.18);font-family:'DM Mono',monospace;font-size:0.72rem;padding:3px 9px;border-radius:4px;";
+    badge.style.cssText = "display:inline-block;background:rgba(37,99,235,0.07);color:var(--blue);border:1px solid rgba(37,99,235,0.18);font-family:'IBM Plex Mono',monospace;font-size:0.7rem;padding:3px 8px;border-radius:4px;";
     clearBtn.style.display = "inline-block";
   } else if (source === "merged") {
     badge.textContent = "● server + local";
-    badge.style.cssText = "display:inline-block;background:rgba(0,212,255,0.07);color:var(--cyan);border:1px solid rgba(0,212,255,0.18);font-family:'DM Mono',monospace;font-size:0.72rem;padding:3px 9px;border-radius:4px;";
+    badge.style.cssText = "display:inline-block;background:rgba(37,99,235,0.07);color:var(--blue);border:1px solid rgba(37,99,235,0.18);font-family:'IBM Plex Mono',monospace;font-size:0.7rem;padding:3px 8px;border-radius:4px;";
     clearBtn.style.display = "inline-block";
   }
 }
@@ -315,7 +370,7 @@ function renderRows(data) {
           <div class="empty-icon">📂</div>
           <h3>No analyses found</h3>
           <p>Complete a QA analysis to see it logged here automatically</p>
-          <a class="btn-cyan" href="mlc-qa.html">Run Picket Fence</a>
+          <a class="btn-primary" href="mlc-qa.html">Run Picket Fence</a>
         </div>
       </td></tr>`;
     return;
@@ -326,14 +381,14 @@ function renderRows(data) {
     const mainRow = document.createElement("tr");
     mainRow.id = `row-${i}`;
     const sourceDot = a.source === "local"
-      ? `<span title="Saved locally" style="color:var(--cyan);font-size:0.65rem;margin-left:5px;opacity:0.6;">●</span>`
+      ? `<span title="Saved locally" style="color:var(--blue);font-size:0.6rem;margin-left:4px;opacity:0.5;">●</span>`
       : "";
     mainRow.innerHTML = `
       <td><span class="badge ${a.passed ? 'badge-pass' : 'badge-fail'}">${a.passed ? 'Pass' : 'Fail'}</span></td>
       <td><span class="test-chip">${a.testType}</span></td>
       <td class="filename">${a.filename}${sourceDot}</td>
       <td class="date-cell">${formatDate(a.timestamp)}</td>
-      <td style="color:var(--muted);font-size:1rem;" id="arrow-${i}">▸</td>`;
+      <td style="color:var(--ink3);font-size:0.9rem;" id="arrow-${i}">▸</td>`;
     mainRow.addEventListener("click", () => toggleSummary(i));
     tbody.appendChild(mainRow);
 
@@ -353,8 +408,8 @@ function renderRows(data) {
 }
 
 function toggleSummary(i) {
-  const sRow   = document.getElementById(`summary-${i}`);
-  const arrow  = document.getElementById(`arrow-${i}`);
+  const sRow  = document.getElementById(`summary-${i}`);
+  const arrow = document.getElementById(`arrow-${i}`);
   const isOpen = sRow.classList.contains("open");
 
   if (openRow !== null && openRow !== i) {
@@ -388,7 +443,6 @@ function clearLocalHistory() {
   loadHistory();
 }
 
-// ── Merge helper: deduplicate by timestamp (within 5s) ────────────────────────
 function mergeAndSort(serverEntries, localEntries) {
   const all = [...serverEntries];
   localEntries.forEach(local => {
@@ -402,7 +456,6 @@ function mergeAndSort(serverEntries, localEntries) {
   return all.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 }
 
-// ── Load history: try server, merge with / fall back to localStorage ───────────
 async function loadHistory() {
   const localEntries = HistoryManager.getAll().map(normalizeLocal);
 
@@ -413,7 +466,6 @@ async function loadHistory() {
     });
 
     if (res.status === 401) { logout(); return; }
-
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const data = await res.json();
@@ -433,11 +485,8 @@ async function loadHistory() {
     }
 
   } catch {
-    // Server unavailable — use localStorage only
     allAnalyses = localEntries;
-    if (localEntries.length > 0) {
-      setSourceBadge("local");
-    }
+    if (localEntries.length > 0) setSourceBadge("local");
   }
 
   document.getElementById("recordCount").textContent =
@@ -447,7 +496,7 @@ async function loadHistory() {
 
 loadHistory();
 
-// ── PDF Download from history ────────────────────────────────────────────────
+// ── PDF Download ──────────────────────────────────────────────────────────────
 async function downloadHistoryPDF(i) {
   const a = allAnalyses[i];
   if (!a) return;
@@ -456,16 +505,14 @@ async function downloadHistoryPDF(i) {
   const W = 210;
   const M = 14;
 
-  // Header bar — dark background with accent stripe
   doc.setFillColor(15, 30, 55);
   doc.rect(0, 0, W, 26, "F");
-  doc.setFillColor(0, 175, 215);
+  doc.setFillColor(37, 99, 235);
   doc.rect(0, 0, 5, 26, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
   doc.setTextColor(255, 255, 255);
   doc.text("MLC QA — " + (a.testType || a.test_type || "Analysis") + " Report", M + 4, 12);
-
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(180, 210, 230);
@@ -475,8 +522,7 @@ async function downloadHistoryPDF(i) {
 
   let y = 36;
 
-  // Pass/Fail badge
-  const badgeColor = a.passed ? [0, 168, 107] : [195, 45, 70];
+  const badgeColor = a.passed ? [22, 163, 74] : [220, 38, 38];
   doc.setFillColor(...badgeColor);
   doc.roundedRect(M, y, W - M * 2, 13, 2, 2, "F");
   doc.setFont("helvetica", "bold");
@@ -485,7 +531,6 @@ async function downloadHistoryPDF(i) {
   doc.text(a.passed ? "✓  PASS" : "✗  FAIL", M + 5, y + 8);
   y += 18;
 
-  // Analysis image
   const _imgUrl = a.imageUrl || a.image_url || null;
   if (_imgUrl) {
     try {
@@ -512,7 +557,6 @@ async function downloadHistoryPDF(i) {
     } catch { y += 4; }
   }
 
-  // Summary box — light background with dark text
   const summaryLines = doc.splitTextToSize(a.summary || "", W - M * 2 - 10);
   const boxH = summaryLines.length * 5.4 + 16;
   doc.setFillColor(245, 248, 252);
@@ -543,7 +587,6 @@ async function downloadHistoryPDF(i) {
     y += 5.4;
   });
 
-  // Footer on every page
   const pages = doc.internal.getNumberOfPages();
   for (let p = 1; p <= pages; p++) {
     doc.setPage(p);
