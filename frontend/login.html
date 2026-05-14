@@ -185,7 +185,12 @@ async function doLogin() {
     const data = await res.json();
     if (!res.ok) { showMsg("error", data.detail || "Invalid email or password."); btn.disabled = false; btn.textContent = "Sign In"; return; }
     localStorage.setItem("mlcqa_token", data.token || data.access_token);
-    localStorage.setItem("mlcqa_name", data.name && data.name !== "undefined" ? data.name : "");
+    // Resolve display name: prefer server response, then signup carry-over, then email prefix
+    const resolvedName = (data.name && data.name !== "undefined" && data.name.trim() !== "")
+      ? data.name
+      : (localStorage.getItem("mlcqa_pending_name") || email.split("@")[0]);
+    localStorage.setItem("mlcqa_name", resolvedName);
+    localStorage.removeItem("mlcqa_pending_name");
     window.location.href = "dashboard.html";
   } catch (err) {
     btn.disabled = false; btn.textContent = "Sign In";
