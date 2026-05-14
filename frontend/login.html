@@ -4,167 +4,203 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Sign In — MLC QA</title>
-  <link rel="stylesheet" href="style.css"/>
-  <!-- script.js deferred so it never blocks DOM or writes to #msg on load -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
   <script src="script.js" defer></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --ink: #0f1117; --ink2: #4a5068; --ink3: #9098b0;
+      --border: #e8eaf0; --bg: #ffffff; --bg2: #f6f7fb;
+      --blue: #2563eb; --blue2: #1d4ed8;
+      --pass: #16a34a; --fail: #dc2626; --warn: #d97706;
+    }
+    body {
+      background: var(--bg2); color: var(--ink);
+      font-family: 'IBM Plex Sans', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh; display: flex; flex-direction: column;
+    }
+    nav {
+      height: 60px; display: flex; align-items: center; justify-content: space-between;
+      padding: 0 40px; background: rgba(255,255,255,0.96);
+      border-bottom: 1px solid var(--border);
+    }
+    .logo { font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 1.05rem; color: var(--ink); text-decoration: none; }
+    .logo b { color: var(--blue); font-weight: 500; }
+    .auth-wrapper { flex: 1; display: flex; align-items: center; justify-content: center; padding: 48px 24px; }
+    .auth-panel {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+      padding: 40px 44px; width: 100%; max-width: 420px;
+      animation: up 0.35s ease both;
+    }
+    @keyframes up { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+    .back-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem;
+      color: var(--ink3); text-decoration: none; margin-bottom: 28px;
+      letter-spacing: 0.02em; transition: color 0.12s;
+    }
+    .back-link:hover { color: var(--ink2); }
+    .panel-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
+    .panel-logo-mark { width: 30px; height: 30px; background: var(--blue); border-radius: 7px; display: flex; align-items: center; justify-content: center; }
+    .panel-logo-mark svg { width: 16px; height: 16px; fill: #fff; }
+    .panel-logo-text { font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 1rem; color: var(--ink); letter-spacing: 0.04em; }
+    .panel-logo-text span { color: var(--blue); }
+    h1 { font-size: 1.45rem; font-weight: 600; letter-spacing: -0.03em; line-height: 1.2; margin-bottom: 6px; color: var(--ink); }
+    .subtitle { font-size: 0.85rem; font-weight: 300; color: var(--ink2); margin-bottom: 28px; }
+    .server-status {
+      display: inline-flex; align-items: center; gap: 7px;
+      font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; color: var(--ink3);
+      padding: 5px 11px; background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 6px; margin-bottom: 20px;
+    }
+    .status-dot-sm { width: 5px; height: 5px; border-radius: 50%; }
+    .dot-ok   { background: var(--pass); box-shadow: 0 0 4px var(--pass); }
+    .dot-warn { background: var(--warn); box-shadow: 0 0 4px var(--warn); }
+    .msg { display: none; font-size: 0.82rem; padding: 10px 14px; border-radius: 7px; margin-bottom: 16px; line-height: 1.5; }
+    .msg.error   { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
+    .msg.success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
+    .msg.warn    { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; }
+    .field { margin-bottom: 16px; }
+    .field label { display: block; font-size: 0.78rem; font-weight: 500; color: var(--ink2); margin-bottom: 6px; }
+    .field input {
+      width: 100%; padding: 10px 13px; background: var(--bg2);
+      border: 1px solid var(--border); border-radius: 7px;
+      font-family: 'IBM Plex Sans', sans-serif; font-size: 0.88rem; color: var(--ink);
+      outline: none; transition: border-color 0.12s, background 0.12s;
+    }
+    .field input::placeholder { color: var(--ink3); }
+    .field input:focus { border-color: var(--blue); background: var(--bg); box-shadow: 0 0 0 3px rgba(37,99,235,0.08); }
+    .password-wrapper { position: relative; }
+    .toggle-password { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); cursor: pointer; font-size: 0.9rem; user-select: none; opacity: 0.6; transition: opacity 0.12s; }
+    .toggle-password:hover { opacity: 1; }
+    .forgot-row { text-align: right; margin-top: 6px; }
+    .forgot-row a { font-family: 'IBM Plex Mono', monospace; font-size: 0.71rem; color: var(--ink3); text-decoration: none; transition: color 0.12s; }
+    .forgot-row a:hover { color: var(--blue); }
+    .btn-auth {
+      width: 100%; background: var(--blue); color: #fff; border: none;
+      padding: 11px 20px; border-radius: 7px;
+      font-family: 'IBM Plex Sans', sans-serif; font-weight: 500; font-size: 0.9rem;
+      cursor: pointer; margin-top: 8px; transition: background 0.12s, transform 0.1s;
+    }
+    .btn-auth:hover:not(:disabled) { background: var(--blue2); transform: translateY(-1px); }
+    .btn-auth:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+    .auth-divider {
+      text-align: center; font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem; color: var(--ink3); margin: 20px 0; position: relative;
+    }
+    .auth-divider::before, .auth-divider::after {
+      content: ''; position: absolute; top: 50%; width: 38%; height: 1px; background: var(--border);
+    }
+    .auth-divider::before { left: 0; } .auth-divider::after { right: 0; }
+    .auth-link { text-align: center; font-size: 0.82rem; color: var(--ink2); }
+    .auth-link a { color: var(--blue); text-decoration: none; font-weight: 500; }
+    .auth-link a:hover { text-decoration: underline; }
+    footer {
+      border-top: 1px solid var(--border); padding: 18px 40px;
+      display: flex; justify-content: space-between; align-items: center;
+      font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; color: var(--ink3);
+      background: var(--bg);
+    }
+    @media (max-width: 480px) {
+      nav { padding: 0 20px; } .auth-panel { padding: 28px 22px; }
+      footer { flex-direction: column; gap: 5px; text-align: center; }
+    }
+  </style>
 </head>
 <body>
-<div class="auth-page">
-<div class="auth-card fade-up">
-  <a href="index.html" class="back-link">← Back to home</a>
-  <div class="logo-row">
-    <div class="logo-mark"><svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg></div>
-    <div class="logo-text">MLC<span>QA</span></div>
-  </div>
-  <h1>Welcome back</h1>
-  <p class="subtitle">Sign in to your account to continue</p>
-  <div class="server-status" id="serverStatus">
-    <div class="status-dot-sm dot-warn"></div><span>Checking server...</span>
-  </div>
-  <!-- msg div is always empty on load — never pre-populated -->
-  <div id="msg" class="msg" style="display:none"></div>
-  <div class="field">
-    <label>Email Address</label>
-    <input type="email" id="email" placeholder="you@hospital.com" autocomplete="email"/>
-  </div>
-  <div class="field">
-    <label>Password</label>
-    <div class="password-wrapper">
-      <input type="password" id="password" placeholder="••••••••" autocomplete="current-password"/>
-      <span class="toggle-password" onclick="togglePassword('password', this)">🙈</span>
+<nav>
+  <a class="logo" href="index.html">MLC<b>QA</b></a>
+</nav>
+<div class="auth-wrapper">
+  <div class="auth-panel">
+    <a href="index.html" class="back-link">← Back to home</a>
+    <div class="panel-logo">
+      <div class="panel-logo-mark"><svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg></div>
+      <div class="panel-logo-text">MLC<span>QA</span></div>
     </div>
-    <div style="text-align:right;margin-top:5px">
-      <a href="#" onclick="showForgotPrompt(); return false;" style="font-size:0.75rem;color:var(--text-muted);font-family:var(--mono)">Forgot password?</a>
+    <h1>Welcome back</h1>
+    <p class="subtitle">Sign in to your account to continue</p>
+    <div class="server-status" id="serverStatus">
+      <div class="status-dot-sm dot-warn"></div><span>Checking server…</span>
     </div>
+    <div id="msg" class="msg"></div>
+    <div class="field">
+      <label>Email Address</label>
+      <input type="email" id="email" placeholder="you@hospital.com" autocomplete="email"/>
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <div class="password-wrapper">
+        <input type="password" id="password" placeholder="••••••••" autocomplete="current-password"/>
+        <span class="toggle-password" onclick="togglePassword('password', this)">🙈</span>
+      </div>
+      <div class="forgot-row">
+        <a href="#" onclick="showForgotPrompt(); return false;">Forgot password?</a>
+      </div>
+    </div>
+    <button class="btn-auth" id="loginBtn" onclick="doLogin()">Sign In</button>
+    <div class="auth-divider">or</div>
+    <div class="auth-link">Don't have an account? <a href="signup.html">Sign up free</a></div>
   </div>
-  <button class="btn-auth" id="loginBtn" onclick="doLogin()">Sign In</button>
-  <div class="auth-divider">— or —</div>
-  <div class="auth-link">Don't have an account? <a href="signup.html">Sign up free</a></div>
 </div>
-</div>
-
+<footer>
+  <span>© 2026 MLC QA · Built with Pylinac</span>
+  <span>For clinical physics use only</span>
+</footer>
 <script>
-// ── Helpers ───────────────────────────────────────────────────────────────────
 function showMsg(type, text, autoDismissMs) {
   const el = document.getElementById("msg");
-  el.className = "msg " + type;
-  el.textContent = text;
-  el.style.display = "";
-  if (autoDismissMs) {
-    setTimeout(() => hideMsg(), autoDismissMs);
-  }
+  el.className = "msg " + type; el.textContent = text; el.style.display = "";
+  if (autoDismissMs) setTimeout(() => hideMsg(), autoDismissMs);
 }
 function hideMsg() {
   const el = document.getElementById("msg");
-  el.style.display = "none";
-  el.className = "msg";
-  el.textContent = "";
+  el.style.display = "none"; el.className = "msg"; el.textContent = "";
 }
-
-// ── On load: redirect if already logged in ───────────────────────────────────
 window.addEventListener("DOMContentLoaded", () => {
   const t = localStorage.getItem("mlcqa_token");
-  if (t && t !== "undefined" && t !== "null" && t.trim() !== "") {
-    window.location.href = "dashboard.html";
-    return;
-  }
-
-  // Show session-expired banner only when explicitly redirected here
+  if (t && t !== "undefined" && t !== "null" && t.trim() !== "") { window.location.href = "dashboard.html"; return; }
   const reason = new URLSearchParams(window.location.search).get("reason");
-  if (reason === "session_expired") {
-    showMsg("warn", "⚠️ Your session has expired. Please sign in again.", 8000);
-  }
-
-  // Clear msg when user starts interacting with the form
-  ["email", "password"].forEach(id => {
+  if (reason === "session_expired") showMsg("warn", "⚠️ Your session has expired. Please sign in again.", 8000);
+  ["email","password"].forEach(id => {
     document.getElementById(id).addEventListener("input", hideMsg);
     document.getElementById(id).addEventListener("focus", hideMsg);
   });
-
-  // Enter key on password → submit
-  document.getElementById("password").addEventListener("keydown", e => {
-    if (e.key === "Enter") doLogin();
-  });
+  document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
 });
-
-// ── Login ─────────────────────────────────────────────────────────────────────
 async function doLogin() {
-  const email    = document.getElementById("email").value.trim();
+  const email = document.getElementById("email").value.trim();
   const password = document.getElementById("password").value;
-  const btn      = document.getElementById("loginBtn");
-
+  const btn = document.getElementById("loginBtn");
   hideMsg();
-
-  if (!email || !password) {
-    showMsg("error", "Please enter your email and password.");
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = "Signing in...";
-
+  if (!email || !password) { showMsg("error", "Please enter your email and password."); return; }
+  btn.disabled = true; btn.textContent = "Signing in…";
   try {
-    const res  = await fetch(`${BACKEND_URL}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const res = await fetch(`${BACKEND_URL}/auth/login`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password })
     });
     const data = await res.json();
-
-    if (!res.ok) {
-      showMsg("error", data.detail || "Invalid email or password.");
-      btn.disabled = false;
-      btn.textContent = "Sign In";
-      return;
-    }
-
+    if (!res.ok) { showMsg("error", data.detail || "Invalid email or password."); btn.disabled = false; btn.textContent = "Sign In"; return; }
     localStorage.setItem("mlcqa_token", data.token || data.access_token);
-    localStorage.setItem("mlcqa_name",  data.name && data.name !== "undefined" ? data.name : "");
+    localStorage.setItem("mlcqa_name", data.name && data.name !== "undefined" ? data.name : "");
     window.location.href = "dashboard.html";
-
   } catch (err) {
-    btn.disabled = false;
-    btn.textContent = "Sign In";
-
-    // Check if server is reachable before blaming cold start
-    try {
-      const ping = await fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(4000) });
-      if (ping.ok) {
-        showMsg("error", "Connection error. Please try again.");
-        return;
-      }
-    } catch (_) {}
-
-    // Server unreachable — show waking-up message and auto-retry
-    showMsg("warn", "⏳ Server is starting up. Will notify you when ready...");
+    btn.disabled = false; btn.textContent = "Sign In";
+    try { const ping = await fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(4000) }); if (ping.ok) { showMsg("error", "Connection error. Please try again."); return; } } catch (_) {}
+    showMsg("warn", "⏳ Server is starting up. Will notify you when ready…");
     let retryCount = 0;
     const retryInterval = setInterval(async () => {
       retryCount++;
-      try {
-        const ping = await fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(4000) });
-        if (ping.ok) {
-          clearInterval(retryInterval);
-          showMsg("success", "✅ Server is online! You can sign in now.");
-          const statusEl = document.getElementById("serverStatus");
-          if (statusEl) statusEl.innerHTML = `<div class="status-dot-sm dot-ok"></div><span>Server online</span>`;
-        }
-      } catch (_) {}
-      if (retryCount >= 30) {
-        clearInterval(retryInterval);
-        showMsg("error", "Server took too long to respond. Please refresh and try again.");
-      }
+      try { const ping = await fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(4000) }); if (ping.ok) { clearInterval(retryInterval); showMsg("success", "✅ Server is online! You can sign in now."); document.getElementById("serverStatus").innerHTML = `<div class="status-dot-sm dot-ok"></div><span>Server online</span>`; } } catch (_) {}
+      if (retryCount >= 30) { clearInterval(retryInterval); showMsg("error", "Server took too long. Please refresh and try again."); }
     }, 2000);
   }
 }
-
-// ── Forgot password ───────────────────────────────────────────────────────────
 function showForgotPrompt() {
-  // Email-based password reset is not yet implemented.
-  // Show a clear message and auto-dismiss after 8 seconds.
-  showMsg("warn",
-    "⚠️ Automated password reset is not available yet. Please contact your administrator to reset your password.",
-    8000
-  );
+  showMsg("warn", "⚠️ Automated password reset is not available yet. Please contact your administrator.", 8000);
 }
 </script>
 </body>
