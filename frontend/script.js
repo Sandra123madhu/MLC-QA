@@ -43,24 +43,25 @@ if (!isAuthPage && localStorage.getItem("mlcqa_token")) {
         fetch(`${BACKEND_URL}/`).catch(() => {});
     }, 14 * 60 * 1000);
 
+    // Resolve display name: localStorage → JWT email prefix fallback
     const storedName = localStorage.getItem("mlcqa_name");
     if (!storedName || storedName === "undefined" || storedName === "null" || storedName.trim() === "") {
-        fetch(`${BACKEND_URL}/me`, {
-            headers: { "Authorization": `Bearer ${localStorage.getItem("mlcqa_token")}` }
-        })
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-            if (data && data.name) {
-                localStorage.setItem("mlcqa_name", data.name);
-                const nameEl = document.getElementById("sidebarName");
-                const avatarEl = document.getElementById("avatarInitial");
-                if (nameEl) nameEl.textContent = data.name;
-                if (avatarEl) avatarEl.textContent = data.name.charAt(0).toUpperCase();
-                // Notify any page listening for the resolved name
-                document.dispatchEvent(new CustomEvent("mlcqa:name-resolved", { detail: { name: data.name } }));
+        try {
+            const token = localStorage.getItem("mlcqa_token");
+            if (token) {
+                const payload = JSON.parse(atob(token.split(".")[1]));
+                const email = payload.sub || payload.email || "";
+                const fallback = email ? email.split("@")[0] : "";
+                if (fallback) {
+                    localStorage.setItem("mlcqa_name", fallback);
+                    const nameEl = document.getElementById("sidebarName");
+                    const avatarEl = document.getElementById("avatarInitial");
+                    if (nameEl) nameEl.textContent = fallback;
+                    if (avatarEl) avatarEl.textContent = fallback.charAt(0).toUpperCase();
+                    document.dispatchEvent(new CustomEvent("mlcqa:name-resolved", { detail: { name: fallback } }));
+                }
             }
-        })
-        .catch(() => {});
+        } catch (e) {}
     }
 }
 
