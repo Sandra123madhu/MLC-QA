@@ -4,62 +4,155 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Sign Up — MLC QA</title>
-  <link rel="stylesheet" href="style.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
   <script src="script.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --ink: #0f1117; --ink2: #4a5068; --ink3: #9098b0;
+      --border: #e8eaf0; --bg: #ffffff; --bg2: #f6f7fb;
+      --blue: #2563eb; --blue2: #1d4ed8;
+      --pass: #16a34a; --fail: #dc2626; --warn: #d97706;
+    }
+    body {
+      background: var(--bg2); color: var(--ink);
+      font-family: 'IBM Plex Sans', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh; display: flex; flex-direction: column;
+    }
+    nav {
+      height: 60px; display: flex; align-items: center; justify-content: space-between;
+      padding: 0 40px; background: rgba(255,255,255,0.96);
+      border-bottom: 1px solid var(--border);
+    }
+    .logo { font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 1.05rem; color: var(--ink); text-decoration: none; }
+    .logo b { color: var(--blue); font-weight: 500; }
+    .auth-wrapper { flex: 1; display: flex; align-items: center; justify-content: center; padding: 48px 24px; }
+    .auth-panel {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+      padding: 40px 44px; width: 100%; max-width: 420px;
+      animation: up 0.35s ease both;
+    }
+    @keyframes up { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+    .back-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem;
+      color: var(--ink3); text-decoration: none; margin-bottom: 28px;
+      letter-spacing: 0.02em; transition: color 0.12s;
+    }
+    .back-link:hover { color: var(--ink2); }
+    .panel-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
+    .panel-logo-mark { width: 30px; height: 30px; background: var(--blue); border-radius: 7px; display: flex; align-items: center; justify-content: center; }
+    .panel-logo-mark svg { width: 16px; height: 16px; fill: #fff; }
+    .panel-logo-text { font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 1rem; color: var(--ink); letter-spacing: 0.04em; }
+    .panel-logo-text span { color: var(--blue); }
+    h1 { font-size: 1.45rem; font-weight: 600; letter-spacing: -0.03em; line-height: 1.2; margin-bottom: 6px; color: var(--ink); }
+    .subtitle { font-size: 0.85rem; font-weight: 300; color: var(--ink2); margin-bottom: 28px; }
+    .msg { font-size: 0.82rem; padding: 10px 14px; border-radius: 7px; margin-bottom: 16px; line-height: 1.5; }
+    .msg:empty { display: none; }
+    .msg.error   { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; display: block; }
+    .msg.success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; display: block; }
+    .msg.warn    { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; display: block; }
+    .field { margin-bottom: 16px; }
+    .field label { display: block; font-size: 0.78rem; font-weight: 500; color: var(--ink2); margin-bottom: 6px; }
+    .field input {
+      width: 100%; padding: 10px 13px; background: var(--bg2);
+      border: 1px solid var(--border); border-radius: 7px;
+      font-family: 'IBM Plex Sans', sans-serif; font-size: 0.88rem; color: var(--ink);
+      outline: none; transition: border-color 0.12s, background 0.12s;
+    }
+    .field input::placeholder { color: var(--ink3); }
+    .field input:focus { border-color: var(--blue); background: var(--bg); box-shadow: 0 0 0 3px rgba(37,99,235,0.08); }
+    .password-wrapper { position: relative; }
+    .toggle-password { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); cursor: pointer; font-size: 0.9rem; user-select: none; opacity: 0.6; transition: opacity 0.12s; }
+    .toggle-password:hover { opacity: 1; }
+    .strength-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 8px; }
+    .strength-fill { height: 100%; width: 0%; border-radius: 2px; transition: width 0.3s, background 0.3s; }
+    .hint { font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; margin-top: 5px; min-height: 1em; }
+    .btn-auth {
+      width: 100%; background: var(--blue); color: #fff; border: none;
+      padding: 11px 20px; border-radius: 7px;
+      font-family: 'IBM Plex Sans', sans-serif; font-weight: 500; font-size: 0.9rem;
+      cursor: pointer; margin-top: 8px; transition: background 0.12s, transform 0.1s;
+    }
+    .btn-auth:hover:not(:disabled) { background: var(--blue2); transform: translateY(-1px); }
+    .btn-auth:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+    .auth-divider {
+      text-align: center; font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.7rem; color: var(--ink3); margin: 20px 0; position: relative;
+    }
+    .auth-divider::before, .auth-divider::after {
+      content: ''; position: absolute; top: 50%; width: 38%; height: 1px; background: var(--border);
+    }
+    .auth-divider::before { left: 0; } .auth-divider::after { right: 0; }
+    .auth-link { text-align: center; font-size: 0.82rem; color: var(--ink2); }
+    .auth-link a { color: var(--blue); text-decoration: none; font-weight: 500; }
+    .auth-link a:hover { text-decoration: underline; }
+    footer {
+      border-top: 1px solid var(--border); padding: 18px 40px;
+      display: flex; justify-content: space-between; align-items: center;
+      font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; color: var(--ink3);
+      background: var(--bg);
+    }
+    @media (max-width: 480px) {
+      nav { padding: 0 20px; } .auth-panel { padding: 28px 22px; }
+      footer { flex-direction: column; gap: 5px; text-align: center; }
+    }
+  </style>
 </head>
 <body>
-<div class="auth-page">
-<div class="auth-card fade-up">
-  <a href="index.html" class="back-link">← Back to home</a>
-  <div class="logo-row">
-    <div class="logo-mark"><svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg></div>
-    <div class="logo-text">MLC<span>QA</span></div>
-  </div>
-  <h1>Create account</h1>
-  <p class="subtitle">Start running analyses in minutes — free</p>
-
-  <div id="msg" class="msg"></div>
-
-  <div class="field">
-    <label>Full Name</label>
-    <input type="text" id="name" placeholder="Dr. Jane Smith" autocomplete="name"/>
-  </div>
-  <div class="field">
-    <label>Email Address</label>
-    <input type="email" id="email" placeholder="you@hospital.com" autocomplete="email"/>
-  </div>
-  <div class="field">
-    <label>Password</label>
-    <div class="password-wrapper">
-      <input type="password" id="password" placeholder="Min. 6 characters" autocomplete="new-password" oninput="checkStrength(this.value)"/>
-      <span class="toggle-password" onclick="togglePassword('password', this)">🙈</span>
+<nav>
+  <a class="logo" href="index.html">MLC<b>QA</b></a>
+</nav>
+<div class="auth-wrapper">
+  <div class="auth-panel">
+    <a href="index.html" class="back-link">← Back to home</a>
+    <div class="panel-logo">
+      <div class="panel-logo-mark"><svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg></div>
+      <div class="panel-logo-text">MLC<span>QA</span></div>
     </div>
-    <div class="strength-bar"><div class="strength-fill" id="strengthFill"></div></div>
-    <div class="hint" id="strengthLabel"></div>
-  </div>
-  <div class="field">
-    <label>Confirm Password</label>
-    <div class="password-wrapper">
-      <input type="password" id="confirm" placeholder="Re-enter password" autocomplete="new-password"/>
-      <span class="toggle-password" onclick="togglePassword('confirm', this)">🙈</span>
+    <h1>Create account</h1>
+    <p class="subtitle">Start running analyses in minutes — free</p>
+    <div id="msg" class="msg"></div>
+    <div class="field">
+      <label>Full Name</label>
+      <input type="text" id="name" placeholder="Dr. Jane Smith" autocomplete="name"/>
     </div>
+    <div class="field">
+      <label>Email Address</label>
+      <input type="email" id="email" placeholder="you@hospital.com" autocomplete="email"/>
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <div class="password-wrapper">
+        <input type="password" id="password" placeholder="Min. 6 characters" autocomplete="new-password" oninput="checkStrength(this.value)"/>
+        <span class="toggle-password" onclick="togglePassword('password', this)">🙈</span>
+      </div>
+      <div class="strength-bar"><div class="strength-fill" id="strengthFill"></div></div>
+      <div class="hint" id="strengthLabel"></div>
+    </div>
+    <div class="field">
+      <label>Confirm Password</label>
+      <div class="password-wrapper">
+        <input type="password" id="confirm" placeholder="Re-enter password" autocomplete="new-password"/>
+        <span class="toggle-password" onclick="togglePassword('confirm', this)">🙈</span>
+      </div>
+    </div>
+    <button class="btn-auth" id="signupBtn" onclick="doSignup()">Create Account</button>
+    <div class="auth-divider">or</div>
+    <div class="auth-link">Already have an account? <a href="login.html">Sign in</a></div>
   </div>
-
-  <button class="btn-auth" id="signupBtn" onclick="doSignup()">Create Account</button>
-
-  <div class="auth-divider">— or —</div>
-  <div class="auth-link">Already have an account? <a href="login.html">Sign in</a></div>
 </div>
-</div>
-
+<footer>
+  <span>© 2026 MLC QA · Built with Pylinac</span>
+  <span>For clinical physics use only</span>
+</footer>
 <script>
-// BACKEND_URL and auth redirect are now in script.js
-if (localStorage.getItem("mlcqa_token")) {
-  window.location.href = "dashboard.html";
-}
+if (localStorage.getItem("mlcqa_token")) window.location.href = "dashboard.html";
 
 function checkStrength(val) {
-  const fill  = document.getElementById("strengthFill");
+  const fill = document.getElementById("strengthFill");
   const label = document.getElementById("strengthLabel");
   if (!val) { fill.style.width = "0%"; label.textContent = ""; return; }
   let score = 0;
@@ -69,11 +162,11 @@ function checkStrength(val) {
   if (/[0-9]/.test(val)) score++;
   if (/[^A-Za-z0-9]/.test(val)) score++;
   const levels = [
-    { w: "20%", c: "#ff4d6d", t: "Too weak" },
-    { w: "40%", c: "#ff9f43", t: "Weak" },
-    { w: "60%", c: "#ffd32a", t: "Fair" },
-    { w: "80%", c: "#00d4ff", t: "Good" },
-    { w: "100%", c: "#00e5a0", t: "Strong" },
+    { w: "20%", c: "#ef4444", t: "Too weak" },
+    { w: "40%", c: "#f97316", t: "Weak" },
+    { w: "60%", c: "#eab308", t: "Fair" },
+    { w: "80%", c: "#3b82f6", t: "Good" },
+    { w: "100%", c: "#22c55e", t: "Strong" },
   ];
   const l = levels[Math.min(score - 1, 4)] || levels[0];
   fill.style.width = l.w; fill.style.background = l.c;
@@ -87,43 +180,22 @@ async function doSignup() {
   const confirm  = document.getElementById("confirm").value;
   const btn      = document.getElementById("signupBtn");
   const msg      = document.getElementById("msg");
-
   msg.className = "msg"; msg.textContent = "";
-
-  if (!name || !email || !password || !confirm) {
-    msg.className = "msg error"; msg.textContent = "Please fill in all fields."; return;
-  }
-  if (password.length < 6) {
-    msg.className = "msg error"; msg.textContent = "Password must be at least 6 characters."; return;
-  }
-  if (password !== confirm) {
-    msg.className = "msg error"; msg.textContent = "Passwords do not match."; return;
-  }
-
-  btn.disabled = true; btn.textContent = "Creating account...";
-
+  if (!name || !email || !password || !confirm) { msg.className = "msg error"; msg.textContent = "Please fill in all fields."; return; }
+  if (password.length < 6) { msg.className = "msg error"; msg.textContent = "Password must be at least 6 characters."; return; }
+  if (password !== confirm) { msg.className = "msg error"; msg.textContent = "Passwords do not match."; return; }
+  btn.disabled = true; btn.textContent = "Creating account…";
   try {
     const res = await fetch(`${BACKEND_URL}/auth/signup`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, email, password })
     });
     const data = await res.json();
-
-    if (!res.ok) {
-      msg.className = "msg error";
-      msg.textContent = data.detail || "Signup failed. Please try again.";
-      btn.disabled = false; btn.textContent = "Create Account";
-      return;
-    }
-
-    msg.className = "msg success";
-    msg.textContent = "✅ Account created! Redirecting to login...";
+    if (!res.ok) { msg.className = "msg error"; msg.textContent = data.detail || "Signup failed. Please try again."; btn.disabled = false; btn.textContent = "Create Account"; return; }
+    msg.className = "msg success"; msg.textContent = "✅ Account created! Redirecting to login…";
     setTimeout(() => window.location.href = "login.html?new=1", 1500);
-
   } catch {
-    msg.className = "msg error";
-    msg.textContent = "Could not reach the server. Please try again.";
+    msg.className = "msg error"; msg.textContent = "Could not reach the server. Please try again.";
     btn.disabled = false; btn.textContent = "Create Account";
   }
 }
