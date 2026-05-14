@@ -206,7 +206,7 @@ async def login(body: AuthBody):
     if not SUPABASE_URL:
         raise HTTPException(500, "Backend not configured")
     resp = httpx.get(
-        f"{SUPABASE_URL}/rest/v1/users?email=eq.{body.email}&select=email,password_hash",
+        f"{SUPABASE_URL}/rest/v1/users?email=eq.{body.email}&select=email,password_hash,name",
         headers=supabase_headers(),
         timeout=10,
     )
@@ -217,7 +217,7 @@ async def login(body: AuthBody):
     if not bcrypt.checkpw(body.password.encode(), row["password_hash"].encode()):
         raise HTTPException(401, "Invalid email or password")
     token = create_token(body.email)
-    return {"token": token}
+    return {"token": token, "name": row.get("name") or ""}
 
 
 # =============================================================================
@@ -227,6 +227,22 @@ async def login(body: AuthBody):
 @app.get("/")
 async def health():
     return {"status": "ok", "service": "MLC QA API"}
+
+
+@app.get("/me")
+async def get_me(u=Depends(get_current_user)):
+    """Return the logged-in user's name and email."""
+    if not SUPABASE_URL:
+        raise HTTPException(500, "Backend not configured")
+    resp = httpx.get(
+        f"{SUPABASE_URL}/rest/v1/users?email=eq.{u}&select=email,name",
+        headers=supabase_headers(),
+        timeout=10,
+    )
+    rows = resp.json() if resp.status_code == 200 else []
+    if not rows:
+        raise HTTPException(404, "User not found")
+    return {"email": rows[0].get("email", ""), "name": rows[0].get("name") or ""}
 
 
 # =============================================================================
