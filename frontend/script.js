@@ -56,6 +56,8 @@ if (!isAuthPage && localStorage.getItem("mlcqa_token")) {
                 const avatarEl = document.getElementById("avatarInitial");
                 if (nameEl) nameEl.textContent = data.name;
                 if (avatarEl) avatarEl.textContent = data.name.charAt(0).toUpperCase();
+                // Notify any page listening for the resolved name
+                document.dispatchEvent(new CustomEvent("mlcqa:name-resolved", { detail: { name: data.name } }));
             }
         })
         .catch(() => {});
