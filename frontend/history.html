@@ -306,22 +306,27 @@ function applyName(name) {
   }
 }
 
-// 1. Try localStorage immediately (fast path — works after first login)
-const storedName = localStorage.getItem("mlcqa_name");
-applyName(storedName);
-
-// 2. If not in localStorage yet, listen for script.js to fetch it from /me
-if (!storedName || storedName === "undefined" || storedName === "null" || storedName.trim() === "") {
-  document.addEventListener("mlcqa:name-resolved", (e) => applyName(e.detail.name));
-
-  // 3. Fallback: fetch /me directly in case script.js already ran before this listener was added
-  fetch(`${BACKEND_URL}/me`, {
-    headers: { "Authorization": `Bearer ${localStorage.getItem("mlcqa_token")}` }
+// Always fetch fresh from /me — this is the single source of truth.
+// localStorage is used as a fast initial render only.
+(function initUserName() {
+  // Fast path: show stored name immediately while fetch is in flight
+  const cached = localStorage.getItem("mlcqa_name");
+  if (cached && cached !== "undefined" && cached !== "null" && cached.trim() !== "") {
+    applyName(cached);
+  }
+  // Always fetch from backend to get the real name
+  fetch(BACKEND_URL + "/me", {
+    headers: { "Authorization": "Bearer " + localStorage.getItem("mlcqa_token") }
   })
-  .then(r => r.ok ? r.json() : null)
-  .then(data => { if (data && data.name) { localStorage.setItem("mlcqa_name", data.name); applyName(data.name); } })
-  .catch(() => {});
-}
+  .then(function(r) { return r.ok ? r.json() : null; })
+  .then(function(data) {
+    if (data && data.name && data.name.trim() !== "") {
+      localStorage.setItem("mlcqa_name", data.name);
+      applyName(data.name);
+    }
+  })
+  .catch(function() {});
+})();
 
 function formatDate(iso) {
   const d = new Date(iso);
