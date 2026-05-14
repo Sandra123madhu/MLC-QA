@@ -193,6 +193,7 @@ async function doSignup() {
     const data = await res.json();
     if (!res.ok) { msg.className = "msg error"; msg.textContent = data.detail || "Signup failed. Please try again."; btn.disabled = false; btn.textContent = "Create Account"; return; }
     msg.className = "msg success"; msg.textContent = "✅ Account created! Redirecting to login…";
+    localStorage.setItem("mlcqa_pending_name", name);
     setTimeout(() => window.location.href = "login.html?new=1", 1500);
   } catch {
     msg.className = "msg error"; msg.textContent = "Could not reach the server. Please try again.";
