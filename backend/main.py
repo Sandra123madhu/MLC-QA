@@ -36,11 +36,16 @@ from typing import Optional
 
 import httpx
 import bcrypt
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, BackgroundTasks, Form
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, BackgroundTasks, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from pydantic import BaseModel
+
+# ── NEW: Rate Limiting Imports ───────────────────────────────────────────────
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # ── pylinac ──────────────────────────────────────────────────────────────────
 from pylinac import PicketFence, WinstonLutz, Starshot, FieldAnalysis
@@ -49,7 +54,12 @@ from pylinac.core.geometry import Point
 # ── Environment / config ─────────────────────────────────────────────────────
 SUPABASE_URL     = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY     = os.environ.get("SUPABASE_KEY", "")   # service-role key
-JWT_SECRET       = os.environ.get("JWT_SECRET", "mlcqa-secret-change-me")
+
+# SECURITY FIX 2: Removed hardcoded fallback. App will fail if env var is missing.
+JWT_SECRET       = os.environ.get("JWT_SECRET")
+if not JWT_SECRET:
+    raise ValueError("FATAL: JWT_SECRET environment variable is not set! Please configure it in your environment.")
+
 JWT_ALGORITHM    = "HS256"
 JWT_EXPIRE_HOURS = 72
 
@@ -62,9 +72,21 @@ jobs: dict = {}
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(title="MLC QA API")
 
+# SECURITY FIX 3: Initialize Rate Limiter
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# SECURITY FIX 1: Restrict CORS to specific frontend domains
+origins = [
+    "https://mlc-qa.onrender.com",  # Replace with your actual frontend domain
+    "http://127.0.0.1:5500",        # Local testing (VS Code Live Server)
+    "http://localhost:5500"         # Local testing
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -201,8 +223,10 @@ async def signup(body: AuthBody):
     return {"token": token}
 
 
+# SECURITY FIX 3: Rate Limiting applied to Login endpoint
 @app.post("/auth/login")
-async def login(body: AuthBody):
+@limiter.limit("5/minute")
+async def login(request: Request, body: AuthBody):
     if not SUPABASE_URL:
         raise HTTPException(500, "Backend not configured")
     resp = httpx.get(
@@ -246,7 +270,7 @@ async def get_me(u=Depends(get_current_user)):
 
 
 # =============================================================================
-# Result polling
+# Result & Job Polling
 # =============================================================================
 
 @app.get("/result/{job_id}")
@@ -256,14 +280,21 @@ async def get_result(job_id: str, u=Depends(get_current_user)):
         raise HTTPException(404, "Job not found")
     return job
 
+# FIX 4: Added Missing Cancel Endpoint for CancelManager in script.js
+@app.post("/job/{job_id}/cancel")
+async def cancel_job(job_id: str, u=Depends(get_current_user)):
+    if job_id in jobs:
+        jobs[job_id] = {"status": "Cancelled"}
+    return {"status": "ok"}
+
 
 # =============================================================================
-# Debug — diagnose Supabase connectivity (remove after confirming history works)
+# Debug — diagnose Supabase connectivity
 # =============================================================================
 
 @app.get("/debug/supabase")
 async def debug_supabase():
-    """Returns Supabase connectivity info. Remove this endpoint once history is working."""
+    """Returns Supabase connectivity info."""
     result = {
         "supabase_url_set": bool(SUPABASE_URL),
         "supabase_key_set": bool(SUPABASE_KEY),
@@ -274,7 +305,6 @@ async def debug_supabase():
         result["error"] = "SUPABASE_URL or SUPABASE_KEY env var is missing"
         return result
 
-    # Test 1: Can we reach Supabase at all?
     try:
         ping = httpx.get(f"{SUPABASE_URL}/rest/v1/", headers=supabase_headers(), timeout=10)
         result["supabase_reachable"] = ping.status_code < 500
@@ -283,7 +313,6 @@ async def debug_supabase():
         result["supabase_reachable"] = False
         result["supabase_ping_error"] = str(e)
 
-    # Test 2: Does the analyses table exist and is it readable?
     try:
         tr = httpx.get(
             f"{SUPABASE_URL}/rest/v1/analyses?limit=1&select=id",
@@ -295,7 +324,6 @@ async def debug_supabase():
     except Exception as e:
         result["analyses_table_error"] = str(e)
 
-    # Test 3: Can we insert a test row?
     try:
         test_payload = {
             "email": "debug@test.com",
@@ -316,7 +344,6 @@ async def debug_supabase():
         )
         result["insert_status"] = ir.status_code
         result["insert_response"] = ir.text[:300]
-        # Clean up the test row
         if ir.status_code in (200, 201):
             httpx.delete(
                 f"{SUPABASE_URL}/rest/v1/analyses?job_id=eq.debug-000",
@@ -370,55 +397,29 @@ MLC_TYPE_MAP = {
     "NovalisHD":  "NovalisHD",
 }
 
-
 def _extract_pf_chart_data(pf) -> dict:
-    """Extract per-leaf-pair errors and summary metrics from a pylinac 3.42 PicketFence result.
-
-    In pylinac 3.42 the key data lives in PFResult:
-      - max_error_mm          → float
-      - absolute_median_error_mm → float (used as mean proxy)
-      - failed_leaves         → list[str|int]
-      - mlc_errors_by_leaf    → dict[str, list[float]]
-            keys  = str(leaf_number)  e.g. "1", "2" … "60"
-            values = list of errors (mm) — one per picket
-      - offsets_from_cax_mm   → list[float]
-      - mlc_skew              → float
-    Total MLC pairs = length of the MLC arrangement used (60 for Millennium, 80 for Agility).
-    """
     chart_data: dict = {}
     try:
-        rd = pf.results_data()   # returns PFResult pydantic model
-
-        # ── Scalar metrics ────────────────────────────────────────────────────
+        rd = pf.results_data()
         chart_data["max_error"]     = round(float(rd.max_error_mm), 4)
         chart_data["mean_error"]    = round(float(rd.absolute_median_error_mm), 4)
         chart_data["failed_leaves"] = len(rd.failed_leaves) if rd.failed_leaves else 0
 
-        # ── Total MLC leaf count ──────────────────────────────────────────────
-        # Derive from the MLC arrangement that was used for this analysis.
         try:
-            # pf.mlc is the MLC enum member; .value is a dict with 'arrangement'
             num_leaves = len(pf.mlc.value["arrangement"].leaves)
         except Exception:
-            # Fallback: count unique keys in the errors dict (only measured leaves)
-            # and default to 60 — the rendering layer will show grey for unmeasured ones.
             num_leaves = 60
         chart_data["num_leaves"] = num_leaves
 
-        # ── Per-leaf-pair data from mlc_errors_by_leaf ────────────────────────
-        # mlc_errors_by_leaf: { "1": [e_picket0, e_picket1, ...], "2": [...], ... }
-        # We want, for each leaf: max(abs(error)) across all pickets.
         leaf_pairs      = []
         leaf_max_errors = []
 
-        errors_by_leaf: dict = rd.mlc_errors_by_leaf  # already sorted ascending by key
+        errors_by_leaf: dict = rd.mlc_errors_by_leaf
 
         for leaf_key, errors in errors_by_leaf.items():
             try:
-                # Keys are plain integers as strings for standard (non-separate) analysis
                 pair_num = int(leaf_key)
             except ValueError:
-                # Separate-leaves mode: keys look like "A30", "B30" — skip or combine
                 import re
                 m = re.search(r"(\d+)", leaf_key)
                 pair_num = int(m.group(1)) if m else 0
@@ -430,7 +431,6 @@ def _extract_pf_chart_data(pf) -> dict:
         chart_data["leaf_pairs"]      = leaf_pairs
         chart_data["leaf_max_errors"] = leaf_max_errors
 
-        # ── Extra fields ──────────────────────────────────────────────────────
         try:
             chart_data["picket_offsets"] = [round(float(o), 3) for o in rd.offsets_from_cax_mm]
         except Exception:
@@ -452,7 +452,6 @@ def _run_picket_fence(job_id: str, filepath: str, email: str,
     try:
         pf = PicketFence(filepath)
 
-        # Pass MLC type if pylinac accepts it
         try:
             pf.analyze(
                 tolerance        = tolerance,
@@ -460,7 +459,6 @@ def _run_picket_fence(job_id: str, filepath: str, email: str,
                 mlc              = mlc_type,
             )
         except TypeError:
-            # Older pylinac versions do not accept mlc= kwarg
             pf.analyze(
                 tolerance        = tolerance,
                 action_tolerance = action_tolerance,
@@ -469,7 +467,6 @@ def _run_picket_fence(job_id: str, filepath: str, email: str,
         summary    = pf.results()
         passed     = pf.passed
 
-        # Plot
         plot_path = filepath.replace(".dcm", "_pf.png")
         try:
             pf.save_analyzed_image(plot_path)
@@ -563,8 +560,6 @@ def _extract_wl_chart_data(wl) -> dict:
         chart_data["mean_offset_mm"] = round(float(getattr(rd, "mean_2d_cax_to_bb_mm", 0)), 4)
         chart_data["num_images"]     = int(getattr(rd, "num_total_images", 0))
 
-        # pylinac >= 3.6: per-image data lives in rd.image_details (WinstonLutz2DResult)
-        # gantry angle comes from wl.images[i].gantry_angle
         images_out = []
         details   = getattr(rd, "image_details", []) or []
         wl_images = getattr(wl, "images", [])
@@ -592,7 +587,6 @@ def _run_winston_lutz(job_id: str, filepaths: list, email: str, filenames: str):
         matplotlib.use("Agg")
         import matplotlib.pyplot as _plt
 
-        # Validate minimum image count before calling pylinac
         if len(filepaths) < 2:
             raise ValueError(
                 f"Winston-Lutz analysis requires a minimum of 2 DICOM images "
@@ -600,7 +594,6 @@ def _run_winston_lutz(job_id: str, filepaths: list, email: str, filenames: str):
                 f"Please upload images taken at multiple gantry angles (e.g. 0°, 90°, 180°, 270°)."
             )
 
-        # Copy uploaded files into a dedicated temp directory for pylinac
         tmp_dir = _tf.mkdtemp(prefix=f"wl_{job_id}_")
         for fp in filepaths:
             dest = os.path.join(tmp_dir, os.path.basename(fp))
@@ -610,7 +603,6 @@ def _run_winston_lutz(job_id: str, filepaths: list, email: str, filenames: str):
         wl.analyze(bb_size_mm=5)
         summary = wl.results()
 
-        # pylinac >= 3.6 removed WinstonLutz.passed — derive from tolerance
         WL_TOLERANCE_MM = 2.0
         try:
             _rd = wl.results_data()
@@ -618,7 +610,6 @@ def _run_winston_lutz(job_id: str, filepaths: list, email: str, filenames: str):
         except Exception:
             passed = False
 
-        # pylinac v3.43: correct save method is save_summary(), not save_summary_plot()
         plot_path = os.path.join(tmp_dir, "wl_plot.png")
         try:
             wl.save_summary(plot_path)
@@ -728,7 +719,6 @@ def _extract_ss_chart_data(ss) -> dict:
                 pass
         chart_data["spokes"] = spokes_out
 
-        # Radial profile around the determined wobble circle
         try:
             import numpy as np
             arr     = ss.image.array.astype(float)
@@ -833,21 +823,12 @@ async def analyze_starshot(
 
 # =============================================================================
 # Congruence  —  /analyze/congruence
-# (full implementation in congruencebackend.py — pasted here verbatim)
 # =============================================================================
 
 def _extract_congruence_chart_data(fa) -> dict:
-    """Extract edge offsets and profiles from a pylinac 3.42 FieldAnalysis result.
-
-    In pylinac 3.42 the DeviceResult / FieldResult has explicit named fields:
-      cax_to_top_mm, cax_to_bottom_mm, cax_to_left_mm, cax_to_right_mm
-      field_size_vertical_mm, field_size_horizontal_mm
-      top_penumbra_mm, bottom_penumbra_mm, left_penumbra_mm, right_penumbra_mm
-    """
     try:
-        rd = fa.results_data()   # returns FieldResult pydantic model
+        rd = fa.results_data()
 
-        # ── Edge offsets from CAX (signed, mm) ───────────────────────────────
         edges = {
             "top":    round(float(rd.cax_to_top_mm),    3),
             "bottom": round(float(rd.cax_to_bottom_mm), 3),
@@ -855,13 +836,11 @@ def _extract_congruence_chart_data(fa) -> dict:
             "right":  round(float(rd.cax_to_right_mm),  3),
         }
 
-        # ── Field size ────────────────────────────────────────────────────────
         field_size = {
             "vertical_mm":   round(float(rd.field_size_vertical_mm),   2),
             "horizontal_mm": round(float(rd.field_size_horizontal_mm), 2),
         }
 
-        # ── Penumbra widths (mm) ──────────────────────────────────────────────
         penumbra = {
             "top":    round(float(rd.top_penumbra_mm),    3),
             "bottom": round(float(rd.bottom_penumbra_mm), 3),
@@ -869,7 +848,6 @@ def _extract_congruence_chart_data(fa) -> dict:
             "right":  round(float(rd.right_penumbra_mm),  3),
         }
 
-        # ── Inline / crossline profiles ───────────────────────────────────────
         inline_profile, crossline_profile = [], []
         try:
             import numpy as np
@@ -914,8 +892,6 @@ def _run_congruence(job_id: str, filepath: str, email: str, filename: str):
         from pylinac.field_analysis import Protocol
 
         fa = FieldAnalysis(filepath)
-        # Protocol.NONE skips symmetry/flatness — appropriate for a congruence test
-        # where we only care about field edge positions.
         fa.analyze(
             protocol  = Protocol.NONE,
             is_FFF    = False,
@@ -923,9 +899,8 @@ def _run_congruence(job_id: str, filepath: str, email: str, filename: str):
 
         summary = fa.results()
 
-        # FieldAnalysis has no .passed — derive from edge offsets vs tolerance
         chart_data = _extract_congruence_chart_data(fa)
-        tol = 2.0  # mm — standard radiation/light congruence tolerance
+        tol = 2.0 
         edges = chart_data.get("edges", {})
         edge_values = [v for v in edges.values() if v is not None]
         passed = all(abs(v) <= tol for v in edge_values) if edge_values else True
