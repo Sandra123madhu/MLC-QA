@@ -33,6 +33,7 @@ import time
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import quote
 
 # Load .env file for local development (no-op if file doesn't exist or dotenv not installed)
 try:
@@ -237,7 +238,7 @@ async def login(request: Request, body: AuthBody):
     if not SUPABASE_URL:
         raise HTTPException(500, "Backend not configured")
     resp = httpx.get(
-        f"{SUPABASE_URL}/rest/v1/users?email=eq.{body.email}&select=email,password_hash,name",
+        f"{SUPABASE_URL}/rest/v1/users?email=eq.{quote(body.email)}&select=email,password_hash,name",
         headers=supabase_headers(),
         timeout=10,
     )
@@ -1013,9 +1014,16 @@ async def forgot_password(request: Request, body: ForgotBody):
     if not SUPABASE_URL:
         return {"ok": True, "reset_url": None}
 
+    # Fix 5: Purge expired tokens on every call to prevent memory leak
+    now = time.time()
+    expired_keys = [k for k, v in _reset_tokens.items() if v["expires"] < now]
+    for k in expired_keys:
+        _reset_tokens.pop(k, None)
+
     try:
+        # Fix 6: URL-encode email to handle + and special characters
         resp = httpx.get(
-            f"{SUPABASE_URL}/rest/v1/users?email=eq.{body.email}&select=email",
+            f"{SUPABASE_URL}/rest/v1/users?email=eq.{quote(body.email)}&select=email",
             headers=supabase_headers(), timeout=8,
         )
         rows = resp.json() if resp.status_code == 200 else []
@@ -1025,19 +1033,50 @@ async def forgot_password(request: Request, body: ForgotBody):
     if rows:
         token   = _secrets.token_urlsafe(32)
         expires = time.time() + 3600  # 1 hour
+
+        # Fix 3: Persist token to Supabase so it survives server restarts
+        try:
+            httpx.post(
+                f"{SUPABASE_URL}/rest/v1/reset_tokens",
+                json={"token": token, "email": body.email, "expires": expires},
+                headers=supabase_headers(),
+                timeout=8,
+            )
+        except Exception:
+            pass
+        # Also keep in-memory as fast-path fallback
         _reset_tokens[token] = {"email": body.email, "expires": expires}
+
         base_url  = os.environ.get("RESET_BASE_URL", "https://mlc-qa-1.onrender.com").rstrip("/")
-        reset_url = f"{base_url}/reset-password.html?token={token}"
+        # Fix 1: Correct filename — resetpassword.html (no hyphen)
+        reset_url = f"{base_url}/resetpassword.html?token={token}"
         return {"ok": True, "reset_url": reset_url}
 
     # Email not found — return same shape, no url
     return {"ok": True, "reset_url": None}
 
 
+# Fix 4: Add rate limiting to reset-password endpoint
 @app.post("/auth/reset-password")
-async def reset_password(body: ResetBody):
+@limiter.limit("5/minute")
+async def reset_password(request: Request, body: ResetBody):
     """Consume a reset token and update the user's password."""
+    # Check in-memory store first (fast path)
     entry = _reset_tokens.get(body.token)
+
+    # Fix 3: Fall back to Supabase if not in memory (e.g. after a server restart)
+    if not entry and SUPABASE_URL:
+        try:
+            resp = httpx.get(
+                f"{SUPABASE_URL}/rest/v1/reset_tokens?token=eq.{body.token}&select=*",
+                headers=supabase_headers(), timeout=8,
+            )
+            rows = resp.json() if resp.status_code == 200 else []
+            if rows:
+                entry = {"email": rows[0]["email"], "expires": rows[0]["expires"]}
+        except Exception:
+            pass
+
     if not entry or time.time() > entry["expires"]:
         raise HTTPException(400, "Reset link is invalid or has expired.")
 
@@ -1048,7 +1087,7 @@ async def reset_password(body: ResetBody):
     hashed = bcrypt.hashpw(body.new_password.encode(), bcrypt.gensalt()).decode()
 
     resp = httpx.patch(
-        f"{SUPABASE_URL}/rest/v1/users?email=eq.{email}",
+        f"{SUPABASE_URL}/rest/v1/users?email=eq.{quote(email)}",
         json={"password_hash": hashed},
         headers=supabase_headers(),
         timeout=10,
@@ -1056,6 +1095,16 @@ async def reset_password(body: ResetBody):
     if resp.status_code not in (200, 204):
         raise HTTPException(500, "Could not update password. Please try again.")
 
-    # Invalidate the token immediately after use
+    # Invalidate the token in both stores
     _reset_tokens.pop(body.token, None)
+    if SUPABASE_URL:
+        try:
+            httpx.delete(
+                f"{SUPABASE_URL}/rest/v1/reset_tokens?token=eq.{body.token}",
+                headers=supabase_headers(),
+                timeout=8,
+            )
+        except Exception:
+            pass
+
     return {"ok": True, "message": "Password updated successfully."}
