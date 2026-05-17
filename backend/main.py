@@ -34,6 +34,13 @@ import threading
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+# Load .env file for local development (no-op if file doesn't exist or dotenv not installed)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 import httpx
 import bcrypt
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, BackgroundTasks, Form, Request
