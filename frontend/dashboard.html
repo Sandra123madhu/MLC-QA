@@ -30,7 +30,7 @@
     }
     html { font-size: 18px; }
     body {
-      background: #0F2537; color: var(--ink);
+      background: var(--bg); color: var(--ink);
       font-family: 'IBM Plex Sans', sans-serif;
       -webkit-font-smoothing: antialiased;
       min-height: 100vh;
@@ -47,45 +47,45 @@
       background: #0B4A75; border-right: none;
       display: flex; flex-direction: column; z-index: 100;
     }
-    .sidebar-header { padding: 20px 20px 16px; border-bottom: 1px solid var(--border); }
+    .sidebar-header { padding: 20px 20px 16px; border-bottom: 1px solid rgba(255,255,255,0.1); }
     .sidebar-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; }
     .logo-mark {
       width: 28px; height: 28px; background: var(--brand); border-radius: 7px;
       display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     }
     .logo-mark svg { width: 15px; height: 15px; fill: #fff; }
-    .logo-text { font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 0.95rem; letter-spacing: 0.05em; color: var(--ink); }
-    .logo-text span { color: var(--brand); }
+    .logo-text { font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 0.95rem; letter-spacing: 0.05em; color: #fff; }
+    .logo-text span { color: #D97D64; }
 
     .sidebar-nav { padding: 14px 0 8px; flex: 1; overflow-y: auto; }
-    .nav-label { font-size: 0.62rem; font-weight: 600; color: var(--ink3); letter-spacing: 0.12em; text-transform: uppercase; padding: 0 18px; margin-bottom: 4px; font-family: 'IBM Plex Mono', monospace; }
+    .nav-label { font-size: 0.62rem; font-weight: 600; color: rgba(255,255,255,0.35); letter-spacing: 0.12em; text-transform: uppercase; padding: 0 18px; margin-bottom: 4px; font-family: 'IBM Plex Mono', monospace; }
     .nav-item {
       display: flex; align-items: center; gap: 10px;
-      padding: 9px 18px; color: var(--ink2);
+      padding: 9px 18px; color: rgba(255,255,255,0.72);
       font-size: 0.83rem; font-weight: 400;
       text-decoration: none; transition: all var(--t);
       border: none; background: none; width: 100%; text-align: left; cursor: pointer;
       position: relative;
     }
-    .nav-item:hover { color: var(--ink); background: #0F2537; }
-    .nav-item.active { color: var(--brand); background: rgba(0,90,156,0.07); font-weight: 500; }
-    .nav-item.active::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--brand); border-radius: 0 2px 2px 0; }
+    .nav-item:hover { color: #fff; background: rgba(255,255,255,0.07); }
+    .nav-item.active { color: #fff; background: rgba(255,255,255,0.13); font-weight: 500; }
+    .nav-item.active::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: #D97D64; border-radius: 0 2px 2px 0; }
     .nav-icon { width: 17px; text-align: center; font-size: 0.85rem; opacity: 0.6; }
     .nav-item.active .nav-icon { opacity: 1; }
 
-    .sidebar-footer { padding: 14px 18px; border-top: 1px solid var(--border); }
+    .sidebar-footer { padding: 14px 18px; border-top: 1px solid rgba(255,255,255,0.1); }
     .user-chip { display: flex; align-items: center; gap: 10px; padding: 8px 0; margin-bottom: 9px; }
     .avatar {
-      width: 30px; height: 30px; border-radius: 50%; background: rgba(0,90,156,0.1);
-      border: 1px solid rgba(0,90,156,0.2); display: flex; align-items: center; justify-content: center;
-      font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; color: var(--brand);
+      width: 30px; height: 30px; border-radius: 50%; background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.22); display: flex; align-items: center; justify-content: center;
+      font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; color: #fff;
       flex-shrink: 0; font-weight: 500;
     }
-    .user-name { font-size: 0.82rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
-    .user-role { font-size: 0.68rem; color: var(--ink3); margin-top: 1px; }
+    .user-name { font-size: 0.82rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; }
+    .user-role { font-size: 0.68rem; color: rgba(255,255,255,0.45); margin-top: 1px; }
     .logout-btn {
-      width: 100%; background: transparent; border: 1px solid var(--border);
-      color: var(--ink2); padding: 7px; border-radius: var(--r);
+      width: 100%; background: transparent; border: 1px solid rgba(255,255,255,0.18);
+      color: rgba(255,255,255,0.6); padding: 7px; border-radius: var(--r);
       font-family: 'IBM Plex Sans', sans-serif; font-size: 0.78rem; cursor: pointer;
       transition: all var(--t);
     }
@@ -109,7 +109,7 @@
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
     /* ── Section heading ── */
-    .section-head { margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+    .section-head { margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); }
     .section-head h2 { font-size: 0.85rem; font-weight: 600; letter-spacing: 0.01em; }
     .section-head p { font-size: 0.78rem; color: var(--ink3); margin-top: 3px; }
 
@@ -161,7 +161,7 @@
     }
     .analysis-card:hover { border-color: rgba(0,90,156,0.3); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.07); opacity: 1; }
     .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
-    .card-icon { width: 36px; height: 36px; border-radius: var(--r-lg); background: #0F2537; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 1rem; }
+    .card-icon { width: 36px; height: 36px; border-radius: var(--r-lg); background: rgba(0,90,156,0.08); border: 1px solid rgba(0,90,156,0.2); display: flex; align-items: center; justify-content: center; font-size: 1rem; }
     .card-badge { font-size: 0.64rem; font-weight: 600; padding: 3px 8px; border-radius: 100px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.05em; }
     .badge-live { background: rgba(22,163,74,0.08); color: var(--pass); border: 1px solid rgba(22,163,74,0.2); }
     .card-title { font-size: 0.86rem; font-weight: 600; margin-bottom: 5px; color: var(--ink); }
