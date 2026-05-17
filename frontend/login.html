@@ -374,44 +374,72 @@ function closeForgotModal(e) {
 }
 
 async function doForgotPassword() {
-  const email   = document.getElementById("forgotEmail").value.trim();
-  const btn     = document.getElementById("forgotBtn");
-  const msgEl   = document.getElementById("forgotMsg");
+  const email = document.getElementById("forgotEmail").value.trim();
+  const btn   = document.getElementById("forgotBtn");
+  const msgEl = document.getElementById("forgotMsg");
 
   msgEl.className = "modal-msg"; msgEl.textContent = "";
+  // Remove any previous link box
+  const old = document.getElementById("resetLinkBox");
+  if (old) old.remove();
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     msgEl.className = "modal-msg error";
     msgEl.textContent = "Please enter a valid email address."; return;
   }
 
-  btn.disabled = true; btn.textContent = "Sending…";
+  btn.disabled = true; btn.textContent = "Looking up…";
 
   try {
-    const res = await fetch(`${BACKEND_URL}/auth/forgot-password`, {
+    const res  = await fetch(`${BACKEND_URL}/auth/forgot-password`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email }),
       signal: AbortSignal.timeout(10000)
     });
+    const data = await res.json();
 
-    // Always show success — never reveal whether the email exists (security best practice)
-    msgEl.className = "modal-msg success";
-    msgEl.textContent = "✅ If that email is registered, a reset link has been sent. Check your inbox (and spam folder).";
-    btn.textContent = "Sent!";
-    // Auto-close after 4 seconds
-    setTimeout(() => { document.getElementById("forgotBackdrop").classList.remove("open"); }, 4000);
+    if (data.reset_url) {
+      // Show the reset link directly on screen
+      msgEl.className = "modal-msg success";
+      msgEl.textContent = "✅ Account found! Copy the link below and open it to reset your password:";
+
+      const box = document.createElement("div");
+      box.id = "resetLinkBox";
+      box.style.cssText = "margin-top:10px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:10px 12px;display:flex;align-items:center;gap:8px;";
+
+      const linkEl = document.createElement("a");
+      linkEl.href = data.reset_url;
+      linkEl.target = "_blank";
+      linkEl.textContent = "Open Reset Page →";
+      linkEl.style.cssText = "font-size:0.82rem;color:#166534;font-weight:600;text-decoration:none;flex:1;word-break:break-all;";
+      linkEl.onmouseover = () => linkEl.style.textDecoration = "underline";
+      linkEl.onmouseout  = () => linkEl.style.textDecoration = "none";
+
+      const copyBtn = document.createElement("button");
+      copyBtn.textContent = "Copy";
+      copyBtn.style.cssText = "flex-shrink:0;background:#16a34a;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:0.75rem;cursor:pointer;font-family:'IBM Plex Mono',monospace;";
+      copyBtn.onclick = () => {
+        navigator.clipboard.writeText(data.reset_url).then(() => {
+          copyBtn.textContent = "Copied!";
+          setTimeout(() => copyBtn.textContent = "Copy", 2000);
+        });
+      };
+
+      box.appendChild(linkEl);
+      box.appendChild(copyBtn);
+      msgEl.parentNode.insertBefore(box, msgEl.nextSibling);
+      btn.textContent = "Done";
+
+    } else {
+      // Email not in system — neutral message
+      msgEl.className = "modal-msg warn";
+      msgEl.textContent = "⚠️ No account found with that email address.";
+      btn.disabled = false; btn.textContent = "Send Reset Link";
+    }
 
   } catch (err) {
-    // If backend endpoint doesn't exist yet, show a graceful fallback
-    if (err.name === "TypeError" || err.name === "AbortError") {
-      msgEl.className = "modal-msg error";
-      msgEl.textContent = "Could not reach the server. Please try again shortly.";
-    } else {
-      // Same neutral message — don't expose errors
-      msgEl.className = "modal-msg success";
-      msgEl.textContent = "✅ If that email is registered, a reset link has been sent.";
-      setTimeout(() => { document.getElementById("forgotBackdrop").classList.remove("open"); }, 4000);
-    }
+    msgEl.className = "modal-msg error";
+    msgEl.textContent = "Could not reach the server. Please try again shortly.";
     btn.disabled = false; btn.textContent = "Send Reset Link";
   }
 }
