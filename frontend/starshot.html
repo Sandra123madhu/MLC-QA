@@ -64,7 +64,7 @@
       <p style="font-size:0.85rem;color:var(--text-2);line-height:1.7;margin-bottom:22px;">
         Analysing the wrong image type will produce <strong style="color:var(--fail);">clinically meaningless or misleading results</strong>. This action is <strong style="color:var(--fail);">blocked</strong> to protect data integrity. Please upload this file on the correct page:
       </p>
-      <a id="wtm-correct-link" href="#" style="display:flex;align-items:center;gap:12px;padding:13px 16px;background:rgba(43,159,212,0.08);border:1px solid var(--accent-border);border-radius:var(--r);text-decoration:none;margin-bottom:20px;">
+      <a id="wtm-correct-link" href="#" style="display:flex;align-items:center;gap:12px;padding:13px 16px;background:rgba(0,90,156,0.08);border:1px solid var(--accent-border);border-radius:var(--r);text-decoration:none;margin-bottom:20px;">
         <span id="wtm-correct-icon" style="font-size:1.2rem;">&#128194;</span>
         <div>
           <div id="wtm-correct-label" style="font-size:0.85rem;font-weight:600;color:var(--accent);">Go to correct test</div>
@@ -348,7 +348,7 @@ function renderSSCharts(cd) {
   if (ssChart2) ssChart2.destroy();
   ssChart2 = new Chart(document.getElementById("profileChart"), {
     type: "line",
-    data: { labels: radialLabels, datasets: [{ label: "Radial Intensity", data: radial, borderColor: "var(--accent)", backgroundColor: "rgba(43,159,212,0.07)", fill: true, tension: 0.3, pointRadius: 0 }] },
+    data: { labels: radialLabels, datasets: [{ label: "Radial Intensity", data: radial, borderColor: "var(--accent)", backgroundColor: "rgba(0,90,156,0.07)", fill: true, tension: 0.3, pointRadius: 0 }] },
     options: { responsive: true, maintainAspectRatio: true, ...cOpts, scales: {
       x: { ticks: { color: "#546a85", font: { size: 8 }, maxTicksLimit: 10 }, grid: { color: "rgba(36,53,82,0.8)" }, title: { display: true, text: "Normalised Radius", color: "#546a85", font: { size: 9 } } },
       y: { ticks: { color: "#546a85", font: { family: "'IBM Plex Mono'", size: 9 } }, grid: { color: "rgba(36,53,82,0.8)" }, title: { display: true, text: "Intensity (norm.)", color: "#546a85", font: { size: 9 } } }
