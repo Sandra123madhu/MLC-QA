@@ -11,3 +11,4 @@ httpx
 matplotlib
 bcrypt
 slowapi
+python-dotenv
