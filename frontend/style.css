@@ -64,7 +64,7 @@
   --t:             0.15s ease;
 }
 
-html { font-size: 15px; }
+html { font-size: 18px; }
 body {
   background: var(--bg); color: var(--text);
   font-family: var(--font); font-weight: 400;
