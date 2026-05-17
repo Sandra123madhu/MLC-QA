@@ -986,24 +986,10 @@ async def analyze_congruence(
 
 
 # =============================================================================
-# Forgot Password  —  /auth/forgot-password
-# =============================================================================
-# NOTE: This endpoint requires two extra environment variables to be set
-# on Render for email sending to work:
-#   SMTP_HOST     e.g. smtp.gmail.com
-#   SMTP_PORT     e.g. 587
-#   SMTP_USER     your sending email address
-#   SMTP_PASS     your email app password (Gmail: generate an App Password)
-#   RESET_BASE_URL  e.g. https://mlc-qa-1.onrender.com  (your frontend URL)
-#
-# If those vars are not set, the endpoint still returns 200 (so it
-# doesn't leak which emails are registered) but no email is sent.
+# Forgot Password  —  /auth/forgot-password  (on-screen link, no email needed)
 # =============================================================================
 
 import secrets as _secrets
-import smtplib as _smtplib
-import email.mime.text as _mime_text
-import email.mime.multipart as _mime_multi
 
 # In-memory reset token store: { token: {"email": str, "expires": float} }
 _reset_tokens: dict = {}
@@ -1015,58 +1001,18 @@ class ResetBody(BaseModel):
     token: str
     new_password: str
 
-def _send_reset_email(to_email: str, reset_url: str) -> bool:
-    """Send a password reset email. Returns True on success."""
-    smtp_host  = os.environ.get("SMTP_HOST", "")
-    smtp_port  = int(os.environ.get("SMTP_PORT", "587"))
-    smtp_user  = os.environ.get("SMTP_USER", "")
-    smtp_pass  = os.environ.get("SMTP_PASS", "")
-    if not all([smtp_host, smtp_user, smtp_pass]):
-        print("[forgot-password] SMTP env vars not set — skipping email send.")
-        return False
-    try:
-        msg = _mime_multi.MIMEMultipart("alternative")
-        msg["Subject"] = "Reset your MLC QA password"
-        msg["From"]    = f"MLC QA <{smtp_user}>"
-        msg["To"]      = to_email
-        text_body = f"Click the link below to reset your MLC QA password:\n\n{reset_url}\n\nThis link expires in 1 hour. If you did not request a reset, ignore this email."
-        html_body = f"""
-        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#f6f7fb;border-radius:12px;">
-          <div style="background:#2563eb;border-radius:8px;padding:14px 20px;margin-bottom:24px;">
-            <span style="color:#fff;font-weight:600;font-size:1.1rem;font-family:monospace;">MLC<span style="opacity:0.8;">QA</span></span>
-          </div>
-          <h2 style="color:#0f1117;margin-bottom:10px;">Reset your password</h2>
-          <p style="color:#4a5068;margin-bottom:24px;line-height:1.6;">
-            We received a request to reset the password for your MLC QA account.<br>
-            Click the button below to choose a new password.
-          </p>
-          <a href="{reset_url}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:12px 28px;border-radius:7px;font-weight:500;font-size:0.95rem;">
-            Reset Password
-          </a>
-          <p style="color:#9098b0;font-size:0.78rem;margin-top:24px;line-height:1.5;">
-            This link expires in <strong>1 hour</strong>. If you didn't request a reset, you can safely ignore this email.
-          </p>
-        </div>"""
-        msg.attach(_mime_text.MIMEText(text_body, "plain"))
-        msg.attach(_mime_text.MIMEText(html_body, "html"))
-        with _smtplib.SMTP(smtp_host, smtp_port) as s:
-            s.starttls()
-            s.login(smtp_user, smtp_pass)
-            s.sendmail(smtp_user, to_email, msg.as_string())
-        return True
-    except Exception as exc:
-        print(f"[forgot-password] Email send failed: {exc}")
-        return False
-
 
 @app.post("/auth/forgot-password")
-@limiter.limit("3/minute")
+@limiter.limit("5/minute")
 async def forgot_password(request: Request, body: ForgotBody):
-    """Always returns 200 — never reveals whether the email exists."""
+    """
+    Returns a reset link directly in the response (on-screen flow — no email).
+    Returns the same shape whether the email exists or not, to avoid leaking
+    account info. Only the reset_url field is populated when the email is found.
+    """
     if not SUPABASE_URL:
-        return {"ok": True}  # silently succeed
+        return {"ok": True, "reset_url": None}
 
-    # Check if user exists (but don't leak this info in the response)
     try:
         resp = httpx.get(
             f"{SUPABASE_URL}/rest/v1/users?email=eq.{body.email}&select=email",
@@ -1077,21 +1023,15 @@ async def forgot_password(request: Request, body: ForgotBody):
         rows = []
 
     if rows:
-        # Generate a secure token valid for 1 hour
         token   = _secrets.token_urlsafe(32)
-        expires = time.time() + 3600
+        expires = time.time() + 3600  # 1 hour
         _reset_tokens[token] = {"email": body.email, "expires": expires}
-
         base_url  = os.environ.get("RESET_BASE_URL", "https://mlc-qa-1.onrender.com").rstrip("/")
         reset_url = f"{base_url}/reset-password.html?token={token}"
+        return {"ok": True, "reset_url": reset_url}
 
-        threading.Thread(
-            target=_send_reset_email,
-            args=(body.email, reset_url),
-            daemon=True
-        ).start()
-
-    return {"ok": True}
+    # Email not found — return same shape, no url
+    return {"ok": True, "reset_url": None}
 
 
 @app.post("/auth/reset-password")
