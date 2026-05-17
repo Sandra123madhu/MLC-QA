@@ -12,6 +12,7 @@ const BACKEND_URL = "https://mlc-qa.onrender.com";
 const isAuthPage = window.location.pathname.includes("login.html") ||
                    window.location.pathname.includes("signup.html") ||
                    window.location.pathname.includes("index.html") ||
+                   window.location.pathname.includes("resetpassword.html") ||
                    window.location.pathname.endsWith("/");
 
 if (!localStorage.getItem("mlcqa_token") && !isAuthPage) {
