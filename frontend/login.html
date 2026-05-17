@@ -107,12 +107,84 @@
       nav { padding: 0 20px; } .auth-panel { padding: 28px 22px; }
       footer { flex-direction: column; gap: 5px; text-align: center; }
     }
+
+    /* ── Cold-start progress bar ───────────────────────────────────────────── */
+    .coldstart-box {
+      display: none;
+      background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px;
+      padding: 12px 14px; margin-bottom: 16px;
+    }
+    .coldstart-box.visible { display: block; }
+    .coldstart-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 8px;
+    }
+    .coldstart-label {
+      font-size: 0.8rem; font-weight: 500; color: #92400e;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .coldstart-timer {
+      font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; color: #b45309;
+    }
+    .coldstart-track {
+      height: 5px; background: #fde68a; border-radius: 99px; overflow: hidden;
+    }
+    .coldstart-fill {
+      height: 100%; background: #d97706; border-radius: 99px;
+      width: 0%; transition: width 1s linear;
+    }
+    .coldstart-hint {
+      font-size: 0.74rem; color: #92400e; margin-top: 7px; opacity: 0.8;
+    }
+
+    /* ── Forgot password modal ─────────────────────────────────────────────── */
+    .modal-backdrop {
+      display: none; position: fixed; inset: 0;
+      background: rgba(15,17,23,0.45); backdrop-filter: blur(2px);
+      z-index: 100; align-items: center; justify-content: center;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+      padding: 32px 36px; width: 100%; max-width: 380px;
+      animation: up 0.25s ease both; position: relative;
+    }
+    .modal-close {
+      position: absolute; top: 14px; right: 16px;
+      font-size: 1.1rem; color: var(--ink3); cursor: pointer;
+      background: none; border: none; line-height: 1;
+      transition: color 0.12s;
+    }
+    .modal-close:hover { color: var(--ink); }
+    .modal h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 6px; color: var(--ink); }
+    .modal p  { font-size: 0.82rem; color: var(--ink2); margin-bottom: 18px; line-height: 1.55; }
+    .modal-msg { display: none; font-size: 0.8rem; padding: 9px 12px; border-radius: 6px; margin-bottom: 14px; line-height: 1.5; }
+    .modal-msg.error   { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; display: block; }
+    .modal-msg.success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; display: block; }
+    .modal .field { margin-bottom: 14px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 4px; }
+    .btn-secondary {
+      flex: 1; background: var(--bg2); color: var(--ink2);
+      border: 1px solid var(--border); padding: 10px 16px; border-radius: 7px;
+      font-family: 'IBM Plex Sans', sans-serif; font-size: 0.88rem; font-weight: 500;
+      cursor: pointer; transition: background 0.12s;
+    }
+    .btn-secondary:hover { background: var(--border); }
+    .btn-primary-sm {
+      flex: 1; background: var(--blue); color: #fff; border: none;
+      padding: 10px 16px; border-radius: 7px;
+      font-family: 'IBM Plex Sans', sans-serif; font-size: 0.88rem; font-weight: 500;
+      cursor: pointer; transition: background 0.12s;
+    }
+    .btn-primary-sm:hover:not(:disabled) { background: var(--blue2); }
+    .btn-primary-sm:disabled { opacity: 0.45; cursor: not-allowed; }
   </style>
 </head>
 <body>
 <nav>
   <a class="logo" href="index.html">MLC<b>QA</b></a>
 </nav>
+
 <div class="auth-wrapper">
   <div class="auth-panel">
     <a href="index.html" class="back-link">← Back to home</a>
@@ -126,6 +198,19 @@
       <div class="status-dot-sm dot-warn"></div><span>Checking server…</span>
     </div>
     <div id="msg" class="msg"></div>
+
+    <!-- Cold-start progress bar -->
+    <div class="coldstart-box" id="coldstartBox">
+      <div class="coldstart-header">
+        <span class="coldstart-label">⏳ Server waking up…</span>
+        <span class="coldstart-timer" id="coldstartTimer">~60s</span>
+      </div>
+      <div class="coldstart-track">
+        <div class="coldstart-fill" id="coldstartFill"></div>
+      </div>
+      <div class="coldstart-hint">Render free-tier servers sleep after inactivity. Hang tight — this only happens once.</div>
+    </div>
+
     <div class="field">
       <label for="email">Email Address</label>
       <input type="email" id="email" placeholder="you@hospital.com" autocomplete="email"/>
@@ -137,7 +222,7 @@
         <span class="toggle-password" onclick="togglePassword('password', this)">🙈</span>
       </div>
       <div class="forgot-row">
-        <a href="#" onclick="showForgotPrompt(); return false;">Forgot password?</a>
+        <a href="#" onclick="openForgotModal(); return false;">Forgot password?</a>
       </div>
     </div>
     <button class="btn-auth" id="loginBtn" onclick="doLogin()">Sign In</button>
@@ -145,11 +230,32 @@
     <div class="auth-link">Don't have an account? <a href="signup.html">Sign up free</a></div>
   </div>
 </div>
+
 <footer>
   <span>© 2026 MLC QA · Built with Pylinac</span>
   <span>For clinical physics use only</span>
 </footer>
+
+<!-- ── Forgot Password Modal ──────────────────────────────────────────────── -->
+<div class="modal-backdrop" id="forgotBackdrop" onclick="closeForgotModal(event)">
+  <div class="modal">
+    <button class="modal-close" onclick="closeForgotModal()">✕</button>
+    <h2>Reset your password</h2>
+    <p>Enter the email address linked to your account. We'll send you a reset link.</p>
+    <div class="modal-msg" id="forgotMsg"></div>
+    <div class="field">
+      <label for="forgotEmail">Email Address</label>
+      <input type="email" id="forgotEmail" placeholder="you@hospital.com" autocomplete="email"/>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeForgotModal()">Cancel</button>
+      <button class="btn-primary-sm" id="forgotBtn" onclick="doForgotPassword()">Send Reset Link</button>
+    </div>
+  </div>
+</div>
+
 <script>
+// ── Helpers ────────────────────────────────────────────────────────────────
 function showMsg(type, text, autoDismissMs) {
   const el = document.getElementById("msg");
   el.className = "msg " + type; el.textContent = text; el.style.display = "";
@@ -159,6 +265,8 @@ function hideMsg() {
   const el = document.getElementById("msg");
   el.style.display = "none"; el.className = "msg"; el.textContent = "";
 }
+
+// ── Init ───────────────────────────────────────────────────────────────────
 window.addEventListener("DOMContentLoaded", () => {
   const t = localStorage.getItem("mlcqa_token");
   if (t && t !== "undefined" && t !== "null" && t.trim() !== "") { window.location.href = "dashboard.html"; return; }
@@ -169,23 +277,28 @@ window.addEventListener("DOMContentLoaded", () => {
     document.getElementById(id).addEventListener("focus", hideMsg);
   });
   document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+  document.getElementById("forgotEmail").addEventListener("keydown", e => { if (e.key === "Enter") doForgotPassword(); });
 });
+
+// ── Login ──────────────────────────────────────────────────────────────────
 async function doLogin() {
-  const email = document.getElementById("email").value.trim();
+  const email    = document.getElementById("email").value.trim();
   const password = document.getElementById("password").value;
-  const btn = document.getElementById("loginBtn");
+  const btn      = document.getElementById("loginBtn");
   hideMsg();
   if (!email || !password) { showMsg("error", "Please enter your email and password."); return; }
   btn.disabled = true; btn.textContent = "Signing in…";
   try {
-    const res = await fetch(`${BACKEND_URL}/auth/login`, {
+    const res  = await fetch(`${BACKEND_URL}/auth/login`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password })
     });
     const data = await res.json();
-    if (!res.ok) { showMsg("error", data.detail || "Invalid email or password."); btn.disabled = false; btn.textContent = "Sign In"; return; }
+    if (!res.ok) {
+      showMsg("error", data.detail || "Invalid email or password.");
+      btn.disabled = false; btn.textContent = "Sign In"; return;
+    }
     localStorage.setItem("mlcqa_token", data.token || data.access_token);
-    // Resolve display name: prefer server response, then signup carry-over, then email prefix
     const resolvedName = (data.name && data.name !== "undefined" && data.name.trim() !== "")
       ? data.name
       : (localStorage.getItem("mlcqa_pending_name") || email.split("@")[0]);
@@ -194,18 +307,113 @@ async function doLogin() {
     window.location.href = "dashboard.html";
   } catch (err) {
     btn.disabled = false; btn.textContent = "Sign In";
-    try { const ping = await fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(4000) }); if (ping.ok) { showMsg("error", "Connection error. Please try again."); return; } } catch (_) {}
-    showMsg("warn", "⏳ Server is starting up. Will notify you when ready…");
-    let retryCount = 0;
-    const retryInterval = setInterval(async () => {
-      retryCount++;
-      try { const ping = await fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(4000) }); if (ping.ok) { clearInterval(retryInterval); showMsg("success", "✅ Server is online! You can sign in now."); document.getElementById("serverStatus").innerHTML = `<div class="status-dot-sm dot-ok"></div><span>Server online</span>`; } } catch (_) {}
-      if (retryCount >= 30) { clearInterval(retryInterval); showMsg("error", "Server took too long. Please refresh and try again."); }
-    }, 2000);
+    // Check if server is reachable at all
+    try {
+      const ping = await fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(4000) });
+      if (ping.ok) { showMsg("error", "Connection error. Please try again."); return; }
+    } catch (_) {}
+    // Server is cold-starting — show progress bar
+    startColdStartProgress();
   }
 }
-function showForgotPrompt() {
-  showMsg("warn", "⚠️ Automated password reset is not available yet. Please contact your administrator.", 8000);
+
+// ── Cold-start progress bar ────────────────────────────────────────────────
+const COLD_START_TIMEOUT_S = 75; // Render free tier can take up to ~75s
+let coldStartInterval = null;
+
+function startColdStartProgress() {
+  const box   = document.getElementById("coldstartBox");
+  const fill  = document.getElementById("coldstartFill");
+  const timer = document.getElementById("coldstartTimer");
+  box.classList.add("visible");
+  hideMsg();
+
+  let elapsed = 0;
+  // Kick off fill animation slightly after so CSS transition fires
+  setTimeout(() => { fill.style.width = "100%"; fill.style.transition = `width ${COLD_START_TIMEOUT_S}s linear`; }, 50);
+
+  coldStartInterval = setInterval(async () => {
+    elapsed++;
+    const remaining = Math.max(0, COLD_START_TIMEOUT_S - elapsed);
+    timer.textContent = remaining > 0 ? `~${remaining}s` : "almost there…";
+
+    try {
+      const ping = await fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(4000) });
+      if (ping.ok) {
+        clearInterval(coldStartInterval); coldStartInterval = null;
+        box.classList.remove("visible");
+        fill.style.width = "100%";
+        document.getElementById("serverStatus").innerHTML =
+          `<div class="status-dot-sm dot-ok"></div><span>Server online</span>`;
+        showMsg("success", "✅ Server is online! You can sign in now.", 6000);
+        return;
+      }
+    } catch (_) {}
+
+    if (elapsed >= COLD_START_TIMEOUT_S) {
+      clearInterval(coldStartInterval); coldStartInterval = null;
+      box.classList.remove("visible");
+      showMsg("error", "Server took too long to respond. Please refresh and try again.");
+    }
+  }, 1000);
+}
+
+// ── Forgot Password Modal ──────────────────────────────────────────────────
+function openForgotModal() {
+  document.getElementById("forgotBackdrop").classList.add("open");
+  document.getElementById("forgotEmail").value = document.getElementById("email").value || "";
+  document.getElementById("forgotMsg").className = "modal-msg";
+  document.getElementById("forgotMsg").textContent = "";
+  setTimeout(() => document.getElementById("forgotEmail").focus(), 80);
+}
+
+function closeForgotModal(e) {
+  // Close only if clicking the backdrop itself (not the modal card)
+  if (e && e.target !== document.getElementById("forgotBackdrop")) return;
+  document.getElementById("forgotBackdrop").classList.remove("open");
+}
+
+async function doForgotPassword() {
+  const email   = document.getElementById("forgotEmail").value.trim();
+  const btn     = document.getElementById("forgotBtn");
+  const msgEl   = document.getElementById("forgotMsg");
+
+  msgEl.className = "modal-msg"; msgEl.textContent = "";
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    msgEl.className = "modal-msg error";
+    msgEl.textContent = "Please enter a valid email address."; return;
+  }
+
+  btn.disabled = true; btn.textContent = "Sending…";
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/auth/forgot-password`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+      signal: AbortSignal.timeout(10000)
+    });
+
+    // Always show success — never reveal whether the email exists (security best practice)
+    msgEl.className = "modal-msg success";
+    msgEl.textContent = "✅ If that email is registered, a reset link has been sent. Check your inbox (and spam folder).";
+    btn.textContent = "Sent!";
+    // Auto-close after 4 seconds
+    setTimeout(() => { document.getElementById("forgotBackdrop").classList.remove("open"); }, 4000);
+
+  } catch (err) {
+    // If backend endpoint doesn't exist yet, show a graceful fallback
+    if (err.name === "TypeError" || err.name === "AbortError") {
+      msgEl.className = "modal-msg error";
+      msgEl.textContent = "Could not reach the server. Please try again shortly.";
+    } else {
+      // Same neutral message — don't expose errors
+      msgEl.className = "modal-msg success";
+      msgEl.textContent = "✅ If that email is registered, a reset link has been sent.";
+      setTimeout(() => { document.getElementById("forgotBackdrop").classList.remove("open"); }, 4000);
+    }
+    btn.disabled = false; btn.textContent = "Send Reset Link";
+  }
 }
 </script>
 </body>
