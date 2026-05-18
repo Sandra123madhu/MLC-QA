@@ -351,19 +351,28 @@ function buildSparkline(entries) {
   const H = 72, W_SLOT = 100 / DAYS;
   const svg = document.getElementById("sparklineSVG");
   const labelsEl = document.getElementById("sparklineLabels");
+
+  // Grid lines
+  const gridLines = [0.25, 0.5, 0.75, 1].map(pct => {
+    const y = H - Math.round(pct * H);
+    return `<line x1="0" y1="${y}" x2="100%" y2="${y}" stroke="rgba(0,0,0,0.06)" stroke-width="1" stroke-dasharray="3,3"/>`;
+  }).join("");
+  const baseline = `<line x1="0" y1="${H}" x2="100%" y2="${H}" stroke="rgba(0,0,0,0.12)" stroke-width="1"/>`;
+
   const rects = buckets.map((b, i) => {
     const total = b.pass + b.fail;
-    const passH = total > 0 ? Math.round((b.pass / totalMax) * H) : 0;
-    const failH = total > 0 ? Math.round((b.fail / totalMax) * H) : 0;
+    const passH = total > 0 ? Math.max(Math.round((b.pass / totalMax) * H), 2) : 0;
+    const failH = total > 0 ? Math.max(Math.round((b.fail / totalMax) * H), 2) : 0;
     const barW = W_SLOT - 1; const xPct = i * W_SLOT + 0.5;
     const passY = H - passH; const failY = passY - failH;
-    const emptyH = total === 0 ? 3 : 0;
+    const emptyBar = total === 0 ? `<rect x="${xPct}%" y="4" width="${barW}%" height="${H - 4}" rx="2" fill="rgba(0,90,156,0.05)"/>` : "";
     return `
-      ${total === 0 ? `<rect x="${xPct}%" y="${H - emptyH}" width="${barW}%" height="${emptyH}" rx="1" fill="rgba(0,90,156,0.08)"/>` : ""}
-      ${passH > 0 ? `<rect x="${xPct}%" y="${passY}" width="${barW}%" height="${passH}" rx="1" fill="rgba(22,163,74,0.65)"><title>${b.date.toLocaleDateString("en-GB",{day:"2-digit",month:"short"})}: ${b.pass} pass, ${b.fail} fail</title></rect>` : ""}
-      ${failH > 0 ? `<rect x="${xPct}%" y="${failY}" width="${barW}%" height="${failH}" rx="1" fill="rgba(200,90,67,0.65)"><title>${b.date.toLocaleDateString("en-GB",{day:"2-digit",month:"short"})}: ${b.pass} pass, ${b.fail} fail</title></rect>` : ""}`;
+      ${emptyBar}
+      ${passH > 0 ? `<rect x="${xPct}%" y="${passY}" width="${barW}%" height="${passH}" rx="2" fill="rgba(22,163,74,0.70)"><title>${b.date.toLocaleDateString("en-GB",{day:"2-digit",month:"short"})}: ${b.pass} pass, ${b.fail} fail</title></rect>` : ""}
+      ${failH > 0 ? `<rect x="${xPct}%" y="${failY}" width="${barW}%" height="${failH}" rx="2" fill="rgba(200,90,67,0.70)"><title>${b.date.toLocaleDateString("en-GB",{day:"2-digit",month:"short"})}: ${b.pass} pass, ${b.fail} fail</title></rect>` : ""}`;
   }).join("");
-  svg.innerHTML = rects;
+
+  svg.innerHTML = gridLines + baseline + rects;
   labelsEl.innerHTML = buckets.map(b => `<span class="sparkline-axis-label">${b.label}</span>`).join("");
   document.getElementById("sparklineCard").style.display = "block";
 }
