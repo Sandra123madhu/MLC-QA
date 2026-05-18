@@ -761,7 +761,7 @@ async function generatePDF(r) {
   doc.setFillColor(...(r.pass ? [0, 168, 107] : [195, 45, 70]));
   doc.roundedRect(M, y, W - M * 2, 13, 2, 2, "F");
   doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(255, 255, 255);
-  doc.text(r.pass ? "\u2713  PASS" : "\u2717  FAIL", M + 5, y + 9);
+  doc.text(r.pass ? "PASS" : "FAIL", M + 5, y + 9);
   doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
   doc.text(r.toleranceText || (r.pass ? "Within clinical tolerance" : "Outside clinical tolerance"), M + 36, y + 9);
   y += 18;
