@@ -37,7 +37,6 @@
       min-height: 100vh;
       display: flex;
       flex-direction: column;
-      /* subtle grid */
       background-image: linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
                         linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
       background-size: 40px 40px;
@@ -65,7 +64,6 @@
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 40px 44px;
       width: 100%; max-width: 420px;
       box-shadow: 0 8px 40px rgba(0,0,0,0.28);
       animation: up 0.35s ease both;
@@ -80,14 +78,28 @@
     }
     @keyframes up { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
 
-    .back-link-above {
+    /* Back link bar — inside the panel */
+    .back-link-bar {
+      display: flex;
+      align-items: center;
+      padding: 10px 20px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      margin-top: 3px; /* clears the ::before stripe */
+    }
+    .back-link-bar a {
       display: inline-flex; align-items: center; gap: 6px;
       font-family: var(--mono); font-size: 0.7rem;
-      color: rgba(255,255,255,0.38); text-decoration: none;
-      letter-spacing: 0.04em; margin-bottom: 18px;
+      color: var(--text-muted); text-decoration: none;
+      letter-spacing: 0.04em;
       transition: color var(--t);
     }
-    .back-link-above:hover { color: rgba(255,255,255,0.8); }
+    .back-link-bar a:hover { color: var(--brand); }
+
+    /* Panel inner content */
+    .auth-panel-body {
+      padding: 32px 44px 40px;
+    }
 
     .panel-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
     .panel-logo-mark {
@@ -178,7 +190,7 @@
 
     @media (max-width: 480px) {
       nav { padding: 0 20px; }
-      .auth-panel { padding: 28px 22px; }
+      .auth-panel-body { padding: 24px 22px 32px; }
       footer { flex-direction: column; gap: 5px; text-align: center; }
     }
   </style>
@@ -190,48 +202,56 @@
 </nav>
 
 <div class="auth-wrapper">
-    <a href="index.html" class="back-link-above">← Back to home</a>
   <div class="auth-panel">
-    <div class="panel-logo">
-      <div class="panel-logo-mark">
-        <svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg>
+
+    <!-- Back to home bar — inside the panel -->
+    <div class="back-link-bar">
+      <a href="index.html">← Back to home</a>
+    </div>
+
+    <div class="auth-panel-body">
+      <div class="panel-logo">
+        <div class="panel-logo-mark">
+          <svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg>
+        </div>
+        <div class="panel-logo-text">MLC<span>QA</span></div>
       </div>
-      <div class="panel-logo-text">MLC<span>QA</span></div>
-    </div>
-    <h1>Create account</h1>
-    <p class="subtitle">Start running analyses in minutes — free</p>
-    <div id="msg" class="msg"></div>
-    <div class="field">
-      <label>Full Name</label>
-      <input type="text" id="name" placeholder="Dr. Jane Smith" autocomplete="name"/>
-    </div>
-    <div class="field">
-      <label>Email Address</label>
-      <input type="email" id="email" placeholder="you@hospital.com" autocomplete="email"/>
-    </div>
-    <div class="field">
-      <label>Password</label>
-      <div class="password-wrapper">
-        <input type="password" id="password" placeholder="Min. 6 characters" autocomplete="new-password" oninput="checkStrength(this.value)"/>
-        <span class="toggle-password" onclick="togglePassword('password', this)">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-        </span>
+      <h1>Create account</h1>
+      <p class="subtitle">Start running analyses in minutes — free</p>
+      <div id="msg" class="msg"></div>
+      <div class="field">
+        <label>Full Name</label>
+        <input type="text" id="name" placeholder="Dr. Jane Smith" autocomplete="name"/>
       </div>
-      <div class="strength-bar"><div class="strength-fill" id="strengthFill"></div></div>
-      <div class="hint" id="strengthLabel"></div>
-    </div>
-    <div class="field">
-      <label>Confirm Password</label>
-      <div class="password-wrapper">
-        <input type="password" id="confirm" placeholder="Re-enter password" autocomplete="new-password"/>
-        <span class="toggle-password" onclick="togglePassword('confirm', this)">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-        </span>
+      <div class="field">
+        <label>Email Address</label>
+        <input type="email" id="email" placeholder="you@hospital.com" autocomplete="email"/>
       </div>
+      <div class="field">
+        <label>Password</label>
+        <div class="password-wrapper">
+          <input type="password" id="password" placeholder="Min. 6 characters" autocomplete="new-password" oninput="checkStrength(this.value)"/>
+          <span class="toggle-password" onclick="togglePassword('password', this)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </span>
+        </div>
+        <div class="strength-bar"><div class="strength-fill" id="strengthFill"></div></div>
+        <div class="hint" id="strengthLabel"></div>
+      </div>
+      <div class="field">
+        <label>Confirm Password</label>
+        <div class="password-wrapper">
+          <input type="password" id="confirm" placeholder="Re-enter password" autocomplete="new-password"/>
+          <span class="toggle-password" onclick="togglePassword('confirm', this)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </span>
+        </div>
+      </div>
+      <button class="btn-auth" id="signupBtn" onclick="doSignup()">Create Account</button>
+      <div class="auth-divider">or</div>
+      <div class="auth-link">Already have an account? <a href="login.html">Sign in</a></div>
     </div>
-    <button class="btn-auth" id="signupBtn" onclick="doSignup()">Create Account</button>
-    <div class="auth-divider">or</div>
-    <div class="auth-link">Already have an account? <a href="login.html">Sign in</a></div>
+
   </div>
 </div>
 
