@@ -772,10 +772,15 @@ async function generatePDF(r) {
     return m ? m[1] : null;
   }
   const sumText = r.summary || "";
-  const maxErr  = extractMetric(sumText, /Max Error[:\s]+([\d.]+\s*mm)/i)  || extractMetric(sumText, /max.*?error[:\s]+([\d.]+)/i);
-  const leafPass= extractMetric(sumText, /Leaves passing[:\s]+([\d.]+%)/i) || extractMetric(sumText, /passing[:\s]+([\d.]+\s*%)/i);
-  const medErr  = extractMetric(sumText, /median error[:\s]+([\d.]+\s*mm)/i) || extractMetric(sumText, /Absolute median[:\s]+([\d.]+\s*mm)/i);
-  const mlcSkew = extractMetric(sumText, /MLC Skew[:\s]+(-?[\d.]+\s*deg)/i)  || extractMetric(sumText, /skew[:\s]+(-?[\d.]+)/i);
+  // Regexes match exact pylinac summary field format: "Field (unit): value"
+  const maxErr  = extractMetric(sumText, /Max Error[^:]*:\s*([\d.]+\s*mm)/i);
+  const leafPass= extractMetric(sumText, /Leaves passing[^:]*:\s*([\d.]+)/i) !== null
+                  ? extractMetric(sumText, /Leaves passing[^:]*:\s*([\d.]+)/i) + "%"
+                  : null;
+  const medErr  = extractMetric(sumText, /Absolute median error[^:]*:\s*([\d.]+\s*mm)/i);
+  const mlcSkew = extractMetric(sumText, /MLC Skew[^:]*:\s*(-?[\d.]+)/i) !== null
+                  ? extractMetric(sumText, /MLC Skew[^:]*:\s*(-?[\d.]+)/i) + "°"
+                  : null;
 
   const metrics = [
     { label: "Max Error",    value: maxErr    || "\u2014" },
