@@ -705,31 +705,149 @@ async function downloadPDF() {
   const r = window._lastResult; if (!r) return; await generatePDF(r);
 }
 async function generatePDF(r) {
-  const { jsPDF } = window.jspdf; const doc = new jsPDF({ orientation:"portrait", unit:"mm", format:"a4" }); const W=210, M=16;
-  doc.setFillColor(15,30,55); doc.rect(0,0,W,26,"F"); doc.setFillColor(0,175,215); doc.rect(0,0,5,26,"F");
-  doc.setFont("helvetica","bold"); doc.setFontSize(13); doc.setTextColor(255,255,255);
-  doc.text(`MLC QA \u2014 ${r.testType||"Analysis"} Report`, M+6, 11);
-  doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(180,210,230);
-  const now = new Date().toLocaleString("en-GB",{dateStyle:"long",timeStyle:"short"});
-  doc.text(`Generated: ${now}`, M+6, 19); doc.text(`File: ${r.filename}`, M+6, 23.5);
-  let y=34;
-  doc.setFillColor(...(r.pass?[0,168,107]:[195,45,70])); doc.roundedRect(M,y,W-M*2,13,2,2,"F");
-  doc.setFont("helvetica","bold"); doc.setFontSize(11); doc.setTextColor(255,255,255);
-  doc.text(r.pass?"\u2713  PASS":"\u2717  FAIL", M+5, y+9);
-  doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(255,255,255);
-  doc.text(r.toleranceText||(r.pass?"Within clinical tolerance":"Outside clinical tolerance"), M+36, y+9);
-  y+=20;
-  if (r.imgUrl) { try { const imgData=await fetchImageAsBase64(r.imgUrl); const imgW=W-M*2; const imgH=imgW*0.5; doc.setDrawColor(180,200,220); doc.setLineWidth(0.3); doc.rect(M,y,imgW,imgH); doc.addImage(imgData,"PNG",M,y,imgW,imgH); y+=imgH+5; doc.setFont("helvetica","italic"); doc.setFontSize(7.5); doc.setTextColor(80,105,135); doc.text(`Figure: Pylinac ${r.testType||""} \u2014 Analyzed Image`,M,y); y+=9; } catch { y+=4; } }
-  doc.setDrawColor(180,200,220); doc.setLineWidth(0.4); doc.line(M,y,W-M,y); y+=7;
-  const summaryLines=doc.splitTextToSize(r.summary,W-M*2-10); const boxH=Math.min(summaryLines.length*5.4+16,230);
-  doc.setFillColor(245,248,252); doc.roundedRect(M,y,W-M*2,boxH,2,2,"F"); doc.setDrawColor(200,215,230); doc.setLineWidth(0.3); doc.roundedRect(M,y,W-M*2,boxH,2,2,"S");
-  y+=7; doc.setFont("helvetica","bold"); doc.setFontSize(8.5); doc.setTextColor(15,40,80); doc.text("ANALYSIS SUMMARY",M+5,y); y+=7;
-  doc.setFont("courier","normal"); doc.setFontSize(8.2); doc.setTextColor(20,45,80);
-  summaryLines.forEach(line => { if(y>272){doc.addPage();y=18;doc.setFillColor(245,248,252);doc.roundedRect(M,y-4,W-M*2,240,2,2,"F");doc.setFont("courier","normal");doc.setFontSize(8.2);doc.setTextColor(20,45,80);} doc.text(line,M+5,y); y+=5.4; });
-  const pages=doc.internal.getNumberOfPages();
-  for(let i=1;i<=pages;i++){doc.setPage(i);doc.setFillColor(235,241,248);doc.rect(0,284,W,13,"F");doc.setDrawColor(180,200,220);doc.setLineWidth(0.3);doc.line(0,284,W,284);doc.setFont("helvetica","normal");doc.setFontSize(7);doc.setTextColor(60,85,120);doc.text("MLC QA Platform  \u00B7  For clinical physics use only  \u00B7  Not for diagnostic use",M,291);doc.text(`Page ${i} of ${pages}`,W-28,291);}
-  const prefix=r.testType?r.testType.replace(/\s+/g,"_").toUpperCase():"REPORT";
-  doc.save(`MLCQA_${prefix}_${r.filename.replace(/\.[^.]+$/,"")}_${Date.now()}.pdf`);
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const W = 210, M = 16;
+
+  // ── Pull context from localStorage ──────────────────────────────────────────
+  const institution = localStorage.getItem("mlcqa_institution") || ""; // fix #5
+  const machineId   = localStorage.getItem("mlcqa_machine_id")  || ""; // fix #1
+  const userName    = localStorage.getItem("mlcqa_name")        || "";
+
+  // ── Fix #2: truncate long DICOM filename with ellipsis ──────────────────────
+  function truncateFilename(name, maxChars) {
+    if (!name || name.length <= maxChars) return name;
+    const ext = name.lastIndexOf(".") > 0 ? name.slice(name.lastIndexOf(".")) : "";
+    return name.slice(0, maxChars - ext.length - 3) + "..." + ext;
+  }
+  const shortFilename = truncateFilename(r.filename, 60);
+
+  // ── Fix #3: header accent bar — navy/teal #0B4A75 instead of cyan #00afd7 ──
+  const headerH = institution ? 30 : 26;
+  doc.setFillColor(15, 37, 55);
+  doc.rect(0, 0, W, headerH, "F");
+  doc.setFillColor(11, 74, 117);  // --brand-deep #0B4A75
+  doc.rect(0, 0, 5, headerH, "F");
+
+  // ── Fix #5: institution name in header ──────────────────────────────────────
+  let titleY = 11;
+  if (institution) {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7);
+    doc.setTextColor(180, 210, 230);
+    doc.text(institution.toUpperCase(), M + 6, 8);
+    titleY = 15;
+  }
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(255, 255, 255);
+  doc.text(`MLC QA \u2014 ${r.testType || "Analysis"} Report`, M + 6, titleY);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(180, 210, 230);
+  const now = new Date().toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
+  const metaY = titleY + 7;
+  doc.text(`Generated: ${now}`, M + 6, metaY);
+  // ── Fix #2: truncated filename ───────────────────────────────────────────────
+  doc.text(`File: ${shortFilename}`, M + 6, metaY + 4);
+
+  // ── Fix #1: machine ID — top-right corner of header ─────────────────────────
+  if (machineId) {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(180, 210, 230);
+    const label = `Linac: ${machineId}`;
+    const labelW = doc.getTextWidth(label);
+    doc.text(label, W - M - labelW, metaY);
+  }
+
+  let y = headerH + 6;
+
+  // ── Pass/Fail banner ─────────────────────────────────────────────────────────
+  doc.setFillColor(...(r.pass ? [0, 168, 107] : [195, 45, 70]));
+  doc.roundedRect(M, y, W - M * 2, 13, 2, 2, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(255, 255, 255);
+  doc.text(r.pass ? "\u2713  PASS" : "\u2717  FAIL", M + 5, y + 9);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
+  doc.text(r.toleranceText || (r.pass ? "Within clinical tolerance" : "Outside clinical tolerance"), M + 36, y + 9);
+  y += 18;
+
+  // ── Fix #4: key-metrics highlight row ────────────────────────────────────────
+  function extractMetric(text, pattern) {
+    const m = text && text.match(pattern);
+    return m ? m[1] : null;
+  }
+  const sumText = r.summary || "";
+  const maxErr  = extractMetric(sumText, /Max Error[:\s]+([\d.]+\s*mm)/i)  || extractMetric(sumText, /max.*?error[:\s]+([\d.]+)/i);
+  const leafPass= extractMetric(sumText, /Leaves passing[:\s]+([\d.]+%)/i) || extractMetric(sumText, /passing[:\s]+([\d.]+\s*%)/i);
+  const medErr  = extractMetric(sumText, /median error[:\s]+([\d.]+\s*mm)/i) || extractMetric(sumText, /Absolute median[:\s]+([\d.]+\s*mm)/i);
+  const mlcSkew = extractMetric(sumText, /MLC Skew[:\s]+(-?[\d.]+\s*deg)/i)  || extractMetric(sumText, /skew[:\s]+(-?[\d.]+)/i);
+
+  const metrics = [
+    { label: "Max Error",    value: maxErr    || "\u2014" },
+    { label: "Leaves Pass",  value: leafPass  || "\u2014" },
+    { label: "Median Error", value: medErr    || "\u2014" },
+    { label: "MLC Skew",     value: mlcSkew   || "\u2014" },
+  ];
+  const cardW = (W - M * 2 - 6) / 4;
+  metrics.forEach((m2, i) => {
+    const cx = M + i * (cardW + 2);
+    doc.setFillColor(11, 74, 117);
+    doc.roundedRect(cx, y, cardW, 14, 1.5, 1.5, "F");
+    doc.setFillColor(235, 241, 248);
+    doc.roundedRect(cx, y + 4, cardW, 10, 0, 1.5, "F");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); doc.setTextColor(255, 255, 255);
+    doc.text(m2.label.toUpperCase(), cx + cardW / 2, y + 3.5, { align: "center" });
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(15, 37, 55);
+    doc.text(m2.value, cx + cardW / 2, y + 11, { align: "center" });
+  });
+  y += 20;
+
+  // ── Analysis image ───────────────────────────────────────────────────────────
+  if (r.imgUrl) {
+    try {
+      const imgData = await fetchImageAsBase64(r.imgUrl);
+      const imgW = W - M * 2; const imgH = imgW * 0.5;
+      doc.setDrawColor(180, 200, 220); doc.setLineWidth(0.3);
+      doc.rect(M, y, imgW, imgH);
+      doc.addImage(imgData, "PNG", M, y, imgW, imgH);
+      y += imgH + 5;
+      doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(80, 105, 135);
+      doc.text(`Figure: Pylinac ${r.testType || ""} \u2014 Analyzed Image`, M, y);
+      y += 9;
+    } catch { y += 4; }
+  }
+
+  // ── Summary text box ─────────────────────────────────────────────────────────
+  doc.setDrawColor(180, 200, 220); doc.setLineWidth(0.4); doc.line(M, y, W - M, y); y += 6;
+  const summaryLines = doc.splitTextToSize(r.summary, W - M * 2 - 10);
+  const boxH = Math.min(summaryLines.length * 5.4 + 16, 230);
+  doc.setFillColor(245, 248, 252); doc.roundedRect(M, y, W - M * 2, boxH, 2, 2, "F");
+  doc.setDrawColor(200, 215, 230); doc.setLineWidth(0.3); doc.roundedRect(M, y, W - M * 2, boxH, 2, 2, "S");
+  y += 7;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(15, 40, 80);
+  doc.text("ANALYSIS SUMMARY", M + 5, y); y += 7;
+  doc.setFont("courier", "normal"); doc.setFontSize(8.2); doc.setTextColor(20, 45, 80);
+  summaryLines.forEach(line => {
+    if (y > 272) {
+      doc.addPage(); y = 18;
+      doc.setFillColor(245, 248, 252); doc.roundedRect(M, y - 4, W - M * 2, 240, 2, 2, "F");
+      doc.setFont("courier", "normal"); doc.setFontSize(8.2); doc.setTextColor(20, 45, 80);
+    }
+    doc.text(line, M + 5, y); y += 5.4;
+  });
+
+  // ── Footer (all pages) ───────────────────────────────────────────────────────
+  const pages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i);
+    doc.setFillColor(235, 241, 248); doc.rect(0, 284, W, 13, "F");
+    doc.setDrawColor(180, 200, 220); doc.setLineWidth(0.3); doc.line(0, 284, W, 284);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(60, 85, 120);
+    const footerLeft = institution
+      ? `${institution}  \u00B7  MLC QA Platform  \u00B7  For clinical physics use only`
+      : "MLC QA Platform  \u00B7  For clinical physics use only  \u00B7  Not for diagnostic use";
+    doc.text(footerLeft, M, 291);
+    doc.text(`Page ${i} of ${pages}`, W - 28, 291);
+  }
+
+  const prefix = r.testType ? r.testType.replace(/\s+/g, "_").toUpperCase() : "REPORT";
+  const safeFile = r.filename.replace(/\.[^.]+$/, "").slice(0, 40);
+  doc.save(`MLCQA_${prefix}_${safeFile}_${Date.now()}.pdf`);
 }
 async function fetchImageAsBase64(url) {
   const res=await fetch(url); const blob=await res.blob();
