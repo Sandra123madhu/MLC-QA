@@ -88,16 +88,7 @@
       <div class="tol-item"><div class="tol-label">Action Tolerance</div><div class="tol-val">0.5 mm</div></div>
       <div class="tol-item"><div class="tol-label">Input Format</div><div class="tol-val">DICOM</div></div>
     </div>
-    <div style="margin: 0 0 14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-      <label for="mlcTypeSelect" style="font-family:var(--mono);font-size:0.82rem;color:var(--text-2);white-space:nowrap;">MLC Type:</label>
-      <select id="mlcTypeSelect" style="font-family:var(--mono);font-size:0.82rem;padding:6px 12px;background:var(--surface);color:var(--text-1);border:1px solid var(--border);border-radius:var(--r);cursor:pointer;">
-        <option value="Millennium">Millennium MLC (60 pairs)</option>
-        <option value="HD MLC">HD MLC (60 pairs, 2.5mm centre)</option>
-        <option value="Agility">Agility MLC (80 pairs)</option>
-        <option value="SRS500">SRS 500 MLC</option>
-        <option value="NovalisHD">Novalis HD MLC</option>
-      </select>
-    </div>
+
     <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>Run Picket Fence Analysis</button>
     <button class="btn-cancel" id="cancelBtn" onclick="cancelAnalysis()" style="display:none;">✕ Cancel Analysis</button>
   </div>
@@ -245,7 +236,6 @@ async function runAnalysis() {
     formData.append("file", fileInput.files[0]);
     formData.append("tolerance", "1.0");
     formData.append("action_tolerance", "0.5");
-    formData.append("mlc_type", document.getElementById("mlcTypeSelect").value);
 
     btn.textContent = "Uploading...";
 
