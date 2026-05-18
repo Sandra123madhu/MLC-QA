@@ -57,7 +57,7 @@
     /* MAIN */
     .auth-wrapper {
       flex: 1;
-      display: flex; align-items: center; justify-content: center;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
       padding: 48px 24px;
     }
 
@@ -80,13 +80,14 @@
     }
     @keyframes up { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
 
-    .back-link {
+    .back-link-above {
       display: inline-flex; align-items: center; gap: 6px;
       font-family: var(--mono); font-size: 0.7rem;
-      color: var(--text-muted); text-decoration: none; margin-bottom: 28px;
-      letter-spacing: 0.02em; transition: color var(--t);
+      color: rgba(255,255,255,0.38); text-decoration: none;
+      letter-spacing: 0.04em; margin-bottom: 18px;
+      transition: color var(--t);
     }
-    .back-link:hover { color: var(--brand); }
+    .back-link-above:hover { color: rgba(255,255,255,0.8); }
 
     .panel-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
     .panel-logo-mark {
@@ -189,8 +190,8 @@
 </nav>
 
 <div class="auth-wrapper">
+    <a href="index.html" class="back-link-above">← Back to home</a>
   <div class="auth-panel">
-    <a href="index.html" class="back-link">← Back to home</a>
     <div class="panel-logo">
       <div class="panel-logo-mark">
         <svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg>
