@@ -426,8 +426,11 @@ async function loadStats() {
     if (res.ok) {
       const data = await res.json();
       const serverNorm = (data.analyses || []).map(normalize);
-      const extras = serverNorm.filter(s => !localNorm.some(l => Math.abs(new Date(l.timestamp) - new Date(s.timestamp)) < 5000 && l.testType === s.testType));
-      allEntries = [...localNorm, ...extras].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      // Merge: prefer server entries, add any local-only ones not on server
+      const localOnly = localNorm.filter(l => !serverNorm.some(s =>
+        Math.abs(new Date(l.timestamp) - new Date(s.timestamp)) < 5000 && l.testType === s.testType
+      ));
+      allEntries = [...serverNorm, ...localOnly].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     }
   } catch (_) {}
   if (allEntries.length === 0) return;
