@@ -5,113 +5,204 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Sign In — MLC QA</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
   <script src="script.js" defer></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
     :root {
-      --ink: #0f1117; --ink2: #4a5068; --ink3: #9098b0;
-      --border: #e8eaf0; --bg: #ffffff; --bg2: #f6f7fb;
-      --blue: #2563eb; --blue2: #1d4ed8;
-      --pass: #16a34a; --fail: #dc2626; --warn: #d97706;
+      --brand:      #005A9C;
+      --brand-deep: #0B4A75;
+      --midnight:   #0F2537;
+      --coral:      #D97D64;
+      --bg:         #F4F7F9;
+      --surface:    #ffffff;
+      --border:     #D0DCE8;
+      --text:       #0F2537;
+      --text-2:     #3A5068;
+      --text-muted: #7A95AB;
+      --pass:       #1A9E6A;
+      --fail:       #C85A43;
+      --warn:       #d4a843;
+      --font:       'IBM Plex Sans', system-ui, sans-serif;
+      --mono:       'IBM Plex Mono', 'Courier New', monospace;
+      --r:          6px;
+      --t:          0.15s ease;
     }
+
     body {
-      background: var(--bg2); color: var(--ink);
-      font-family: 'IBM Plex Sans', sans-serif;
+      background: var(--midnight);
+      color: var(--text);
+      font-family: var(--font);
       -webkit-font-smoothing: antialiased;
-      min-height: 100vh; display: flex; flex-direction: column;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background-image: linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+      background-size: 40px 40px;
     }
+
+    /* NAV */
     nav {
-      height: 60px; display: flex; align-items: center; justify-content: space-between;
-      padding: 0 40px; background: rgba(255,255,255,0.96);
-      border-bottom: 1px solid var(--border);
+      height: 60px;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 40px;
+      background: rgba(15,37,55,0.95);
+      border-bottom: 1px solid rgba(255,255,255,0.07);
     }
-    .logo { font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 1.05rem; color: var(--ink); text-decoration: none; }
-    .logo b { color: var(--blue); font-weight: 500; }
-    .auth-wrapper { flex: 1; display: flex; align-items: center; justify-content: center; padding: 48px 24px; }
+    .logo { font-family: var(--mono); font-weight: 600; font-size: 1rem; color: #fff; text-decoration: none; letter-spacing: 0.04em; }
+    .logo b { color: var(--coral); font-weight: 600; }
+
+    /* MAIN */
+    .auth-wrapper {
+      flex: 1;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 48px 24px;
+    }
+
     .auth-panel {
-      background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
-      padding: 40px 44px; width: 100%; max-width: 420px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: 100%; max-width: 420px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.28);
       animation: up 0.35s ease both;
+      position: relative;
+      overflow: hidden;
     }
-    @keyframes up { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
-    .back-link {
+    /* Brand accent top stripe */
+    .auth-panel::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(to right, var(--brand), var(--coral));
+    }
+    @keyframes up { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
+
+    /* Back link bar — inside the panel */
+    .back-link-bar {
+      display: flex;
+      align-items: center;
+      padding: 10px 20px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      margin-top: 3px;
+    }
+    .back-link-bar a {
       display: inline-flex; align-items: center; gap: 6px;
-      font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem;
-      color: var(--ink3); text-decoration: none; margin-bottom: 28px;
-      letter-spacing: 0.02em; transition: color 0.12s;
+      font-family: var(--mono); font-size: 0.7rem;
+      color: var(--text-muted); text-decoration: none;
+      letter-spacing: 0.04em;
+      transition: color var(--t);
     }
-    .back-link:hover { color: var(--ink2); }
+    .back-link-bar a:hover { color: var(--brand); }
+
+    /* Panel inner content */
+    .auth-panel-body {
+      padding: 32px 44px 40px;
+    }
+
     .panel-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
-    .panel-logo-mark { width: 30px; height: 30px; background: var(--blue); border-radius: 7px; display: flex; align-items: center; justify-content: center; }
+    .panel-logo-mark {
+      width: 30px; height: 30px;
+      background: var(--brand-deep);
+      border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+    }
     .panel-logo-mark svg { width: 16px; height: 16px; fill: #fff; }
-    .panel-logo-text { font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 1rem; color: var(--ink); letter-spacing: 0.04em; }
-    .panel-logo-text span { color: var(--blue); }
-    h1 { font-size: 1.45rem; font-weight: 600; letter-spacing: -0.03em; line-height: 1.2; margin-bottom: 6px; color: var(--ink); }
-    .subtitle { font-size: 0.85rem; font-weight: 300; color: var(--ink2); margin-bottom: 28px; }
+    .panel-logo-text { font-family: var(--mono); font-weight: 600; font-size: 1rem; color: var(--midnight); letter-spacing: 0.04em; }
+    .panel-logo-text span { color: var(--coral); }
+
+    h1 { font-size: 1.4rem; font-weight: 600; letter-spacing: -0.03em; line-height: 1.2; margin-bottom: 6px; color: var(--midnight); }
+    .subtitle { font-size: 0.83rem; font-weight: 300; color: var(--text-muted); margin-bottom: 20px; }
+
+    /* Server status */
     .server-status {
       display: inline-flex; align-items: center; gap: 7px;
-      font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; color: var(--ink3);
-      padding: 5px 11px; background: var(--bg2); border: 1px solid var(--border);
+      font-family: var(--mono); font-size: 0.7rem; color: var(--text-muted);
+      padding: 5px 11px; background: var(--bg); border: 1px solid var(--border);
       border-radius: 6px; margin-bottom: 20px;
     }
     .status-dot-sm { width: 5px; height: 5px; border-radius: 50%; }
     .dot-ok   { background: var(--pass); box-shadow: 0 0 4px var(--pass); }
     .dot-warn { background: var(--warn); box-shadow: 0 0 4px var(--warn); }
-    .msg { display: none; font-size: 0.82rem; padding: 10px 14px; border-radius: 7px; margin-bottom: 16px; line-height: 1.5; }
-    .msg.error   { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
-    .msg.success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
-    .msg.warn    { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; }
+
+    /* Messages */
+    .msg { display: none; font-size: 0.82rem; padding: 10px 14px; border-radius: var(--r); margin-bottom: 16px; line-height: 1.5; }
+    .msg.error   { background: rgba(200,90,67,0.08); border: 1px solid rgba(200,90,67,0.3); color: var(--fail); display: block; }
+    .msg.success { background: rgba(26,158,106,0.08); border: 1px solid rgba(26,158,106,0.3); color: var(--pass); display: block; }
+    .msg.warn    { background: rgba(212,168,67,0.1);  border: 1px solid rgba(212,168,67,0.35); color: #8a6a10; display: block; }
+
+    /* Fields */
     .field { margin-bottom: 16px; }
-    .field label { display: block; font-size: 0.78rem; font-weight: 500; color: var(--ink2); margin-bottom: 6px; }
+    .field label { display: block; font-size: 0.76rem; font-weight: 500; color: var(--text-2); margin-bottom: 6px; letter-spacing: 0.02em; }
     .field input {
-      width: 100%; padding: 10px 13px; background: var(--bg2);
-      border: 1px solid var(--border); border-radius: 7px;
-      font-family: 'IBM Plex Sans', sans-serif; font-size: 0.88rem; color: var(--ink);
-      outline: none; transition: border-color 0.12s, background 0.12s;
+      width: 100%; padding: 10px 13px;
+      background: var(--bg);
+      border: 1px solid var(--border); border-radius: var(--r);
+      font-family: var(--font); font-size: 0.88rem; color: var(--text);
+      outline: none; transition: border-color var(--t), box-shadow var(--t);
     }
-    .field input::placeholder { color: var(--ink3); }
-    .field input:focus { border-color: var(--blue); background: var(--bg); box-shadow: 0 0 0 3px rgba(37,99,235,0.08); }
+    .field input::placeholder { color: var(--text-muted); }
+    .field input:focus {
+      border-color: var(--brand);
+      background: var(--surface);
+      box-shadow: 0 0 0 3px rgba(0,90,156,0.1);
+    }
+
     .password-wrapper { position: relative; }
-    .toggle-password { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); cursor: pointer; user-select: none; opacity: 0.6; transition: opacity 0.12s; display:flex; align-items:center; color: var(--text-muted, #666); }
-    .toggle-password:hover { opacity: 1; }
-    .forgot-row { text-align: right; margin-top: 6px; }
-    .forgot-row a { font-family: 'IBM Plex Mono', monospace; font-size: 0.71rem; color: var(--ink3); text-decoration: none; transition: color 0.12s; }
-    .forgot-row a:hover { color: var(--blue); }
-    .btn-auth {
-      width: 100%; background: var(--blue); color: #fff; border: none;
-      padding: 11px 20px; border-radius: 7px;
-      font-family: 'IBM Plex Sans', sans-serif; font-weight: 500; font-size: 0.9rem;
-      cursor: pointer; margin-top: 8px; transition: background 0.12s, transform 0.1s;
+    .toggle-password {
+      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+      cursor: pointer; user-select: none; opacity: 0.5; transition: opacity var(--t);
+      display: flex; align-items: center; color: var(--text-muted);
     }
-    .btn-auth:hover:not(:disabled) { background: var(--blue2); transform: translateY(-1px); }
+    .toggle-password:hover { opacity: 1; }
+
+    .forgot-row { text-align: right; margin-top: 6px; }
+    .forgot-row a { font-family: var(--mono); font-size: 0.71rem; color: var(--text-muted); text-decoration: none; transition: color var(--t); }
+    .forgot-row a:hover { color: var(--brand); }
+
+    /* Button */
+    .btn-auth {
+      width: 100%;
+      background: var(--brand);
+      color: #fff; border: none;
+      padding: 11px 20px; border-radius: var(--r);
+      font-family: var(--font); font-weight: 500; font-size: 0.9rem;
+      cursor: pointer; margin-top: 8px;
+      transition: background var(--t), transform 0.1s;
+    }
+    .btn-auth:hover:not(:disabled) { background: var(--brand-deep); transform: translateY(-1px); }
     .btn-auth:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+    /* Divider */
     .auth-divider {
-      text-align: center; font-family: 'IBM Plex Mono', monospace;
-      font-size: 0.7rem; color: var(--ink3); margin: 20px 0; position: relative;
+      text-align: center; font-family: var(--mono);
+      font-size: 0.68rem; color: var(--text-muted); margin: 20px 0; position: relative;
     }
     .auth-divider::before, .auth-divider::after {
       content: ''; position: absolute; top: 50%; width: 38%; height: 1px; background: var(--border);
     }
     .auth-divider::before { left: 0; } .auth-divider::after { right: 0; }
-    .auth-link { text-align: center; font-size: 0.82rem; color: var(--ink2); }
-    .auth-link a { color: var(--blue); text-decoration: none; font-weight: 500; }
+
+    .auth-link { text-align: center; font-size: 0.82rem; color: var(--text-muted); }
+    .auth-link a { color: var(--brand); text-decoration: none; font-weight: 500; }
     .auth-link a:hover { text-decoration: underline; }
+
+    /* Footer */
     footer {
-      border-top: 1px solid var(--border); padding: 18px 40px;
+      background: rgba(11,74,117,0.6);
+      border-top: 1px solid rgba(255,255,255,0.07);
+      padding: 18px 40px;
       display: flex; justify-content: space-between; align-items: center;
-      font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; color: var(--ink3);
-      background: var(--bg);
-    }
-    @media (max-width: 480px) {
-      nav { padding: 0 20px; } .auth-panel { padding: 28px 22px; }
-      footer { flex-direction: column; gap: 5px; text-align: center; }
+      font-family: var(--mono); font-size: 0.68rem;
+      color: rgba(255,255,255,0.32);
     }
 
     /* ── Cold-start progress bar ───────────────────────────────────────────── */
     .coldstart-box {
       display: none;
-      background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px;
+      background: rgba(212,168,67,0.08); border: 1px solid rgba(212,168,67,0.3); border-radius: 8px;
       padding: 12px 14px; margin-bottom: 16px;
     }
     .coldstart-box.visible { display: block; }
@@ -120,115 +211,126 @@
       margin-bottom: 8px;
     }
     .coldstart-label {
-      font-size: 0.8rem; font-weight: 500; color: #92400e;
+      font-size: 0.8rem; font-weight: 500; color: #8a6a10;
       display: flex; align-items: center; gap: 6px;
     }
-    .coldstart-timer {
-      font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; color: #b45309;
-    }
-    .coldstart-track {
-      height: 5px; background: #fde68a; border-radius: 99px; overflow: hidden;
-    }
-    .coldstart-fill {
-      height: 100%; background: #d97706; border-radius: 99px;
-      width: 0%; transition: width 1s linear;
-    }
-    .coldstart-hint {
-      font-size: 0.74rem; color: #92400e; margin-top: 7px; opacity: 0.8;
-    }
+    .coldstart-timer { font-family: var(--mono); font-size: 0.72rem; color: #b45309; }
+    .coldstart-track { height: 5px; background: rgba(212,168,67,0.2); border-radius: 99px; overflow: hidden; }
+    .coldstart-fill { height: 100%; background: var(--warn); border-radius: 99px; width: 0%; transition: width 1s linear; }
+    .coldstart-hint { font-size: 0.74rem; color: #8a6a10; margin-top: 7px; opacity: 0.8; }
 
     /* ── Forgot password modal ─────────────────────────────────────────────── */
     .modal-backdrop {
       display: none; position: fixed; inset: 0;
-      background: rgba(15,17,23,0.45); backdrop-filter: blur(2px);
+      background: rgba(10,20,32,0.65); backdrop-filter: blur(2px);
       z-index: 100; align-items: center; justify-content: center;
     }
     .modal-backdrop.open { display: flex; }
     .modal {
-      background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
       padding: 32px 36px; width: 100%; max-width: 380px;
       animation: up 0.25s ease both; position: relative;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.35);
     }
     .modal-close {
       position: absolute; top: 14px; right: 16px;
-      font-size: 1.1rem; color: var(--ink3); cursor: pointer;
+      font-size: 1.1rem; color: var(--text-muted); cursor: pointer;
       background: none; border: none; line-height: 1;
-      transition: color 0.12s;
+      transition: color var(--t);
     }
-    .modal-close:hover { color: var(--ink); }
-    .modal h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 6px; color: var(--ink); }
-    .modal p  { font-size: 0.82rem; color: var(--ink2); margin-bottom: 18px; line-height: 1.55; }
+    .modal-close:hover { color: var(--text); }
+    .modal h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 6px; color: var(--midnight); }
+    .modal p  { font-size: 0.82rem; color: var(--text-2); margin-bottom: 18px; line-height: 1.55; }
     .modal-msg { display: none; font-size: 0.8rem; padding: 9px 12px; border-radius: 6px; margin-bottom: 14px; line-height: 1.5; }
-    .modal-msg.error   { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; display: block; }
-    .modal-msg.success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; display: block; }
-    .modal-msg.warn    { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; display: block; }
+    .modal-msg.error   { background: rgba(200,90,67,0.08); border: 1px solid rgba(200,90,67,0.3); color: var(--fail); display: block; }
+    .modal-msg.success { background: rgba(26,158,106,0.08); border: 1px solid rgba(26,158,106,0.3); color: var(--pass); display: block; }
+    .modal-msg.warn    { background: rgba(212,168,67,0.1);  border: 1px solid rgba(212,168,67,0.35); color: #8a6a10; display: block; }
     .modal .field { margin-bottom: 14px; }
     .modal-actions { display: flex; gap: 10px; margin-top: 4px; }
     .btn-secondary {
-      flex: 1; background: var(--bg2); color: var(--ink2);
-      border: 1px solid var(--border); padding: 10px 16px; border-radius: 7px;
-      font-family: 'IBM Plex Sans', sans-serif; font-size: 0.88rem; font-weight: 500;
-      cursor: pointer; transition: background 0.12s;
+      flex: 1; background: var(--bg); color: var(--text-2);
+      border: 1px solid var(--border); padding: 10px 16px; border-radius: var(--r);
+      font-family: var(--font); font-size: 0.88rem; font-weight: 500;
+      cursor: pointer; transition: background var(--t);
     }
     .btn-secondary:hover { background: var(--border); }
     .btn-primary-sm {
-      flex: 1; background: var(--blue); color: #fff; border: none;
-      padding: 10px 16px; border-radius: 7px;
-      font-family: 'IBM Plex Sans', sans-serif; font-size: 0.88rem; font-weight: 500;
-      cursor: pointer; transition: background 0.12s;
+      flex: 1; background: var(--brand); color: #fff; border: none;
+      padding: 10px 16px; border-radius: var(--r);
+      font-family: var(--font); font-size: 0.88rem; font-weight: 500;
+      cursor: pointer; transition: background var(--t);
     }
-    .btn-primary-sm:hover:not(:disabled) { background: var(--blue2); }
+    .btn-primary-sm:hover:not(:disabled) { background: var(--brand-deep); }
     .btn-primary-sm:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    @media (max-width: 480px) {
+      nav { padding: 0 20px; }
+      .auth-panel-body { padding: 24px 22px 32px; }
+      footer { flex-direction: column; gap: 5px; text-align: center; }
+    }
   </style>
 </head>
 <body>
+
 <nav>
   <a class="logo" href="index.html">MLC<b>QA</b></a>
 </nav>
 
 <div class="auth-wrapper">
   <div class="auth-panel">
-    <a href="index.html" class="back-link">← Back to home</a>
-    <div class="panel-logo">
-      <div class="panel-logo-mark"><svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg></div>
-      <div class="panel-logo-text">MLC<span>QA</span></div>
-    </div>
-    <h1>Welcome back</h1>
-    <p class="subtitle">Sign in to your account to continue</p>
-    <div class="server-status" id="serverStatus">
-      <div class="status-dot-sm dot-warn"></div><span>Checking server…</span>
-    </div>
-    <div id="msg" class="msg"></div>
 
-    <!-- Cold-start progress bar -->
-    <div class="coldstart-box" id="coldstartBox">
-      <div class="coldstart-header">
-        <span class="coldstart-label">⏳ Server waking up…</span>
-        <span class="coldstart-timer" id="coldstartTimer">~60s</span>
-      </div>
-      <div class="coldstart-track">
-        <div class="coldstart-fill" id="coldstartFill"></div>
-      </div>
-      <div class="coldstart-hint">Render free-tier servers sleep after inactivity. Hang tight — this only happens once.</div>
+    <!-- Back to home bar — inside the panel -->
+    <div class="back-link-bar">
+      <a href="index.html">← Back to home</a>
     </div>
 
-    <div class="field">
-      <label for="email">Email Address</label>
-      <input type="email" id="email" placeholder="you@hospital.com" autocomplete="email"/>
-    </div>
-    <div class="field">
-      <label for="password">Password</label>
-      <div class="password-wrapper">
-        <input type="password" id="password" placeholder="••••••••" autocomplete="current-password"/>
-        <span class="toggle-password" onclick="togglePassword('password', this)"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg></span>
+    <div class="auth-panel-body">
+      <div class="panel-logo">
+        <div class="panel-logo-mark">
+          <svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg>
+        </div>
+        <div class="panel-logo-text">MLC<span>QA</span></div>
       </div>
-      <div class="forgot-row">
-        <a href="#" onclick="openForgotModal(); return false;">Forgot password?</a>
+      <h1>Welcome back</h1>
+      <p class="subtitle">Sign in to your account to continue</p>
+      <div class="server-status" id="serverStatus">
+        <div class="status-dot-sm dot-warn"></div><span>Checking server…</span>
       </div>
+      <div id="msg" class="msg"></div>
+
+      <!-- Cold-start progress bar -->
+      <div class="coldstart-box" id="coldstartBox">
+        <div class="coldstart-header">
+          <span class="coldstart-label">⏳ Server waking up…</span>
+          <span class="coldstart-timer" id="coldstartTimer">~60s</span>
+        </div>
+        <div class="coldstart-track">
+          <div class="coldstart-fill" id="coldstartFill"></div>
+        </div>
+        <div class="coldstart-hint">Render free-tier servers sleep after inactivity. Hang tight — this only happens once.</div>
+      </div>
+
+      <div class="field">
+        <label for="email">Email Address</label>
+        <input type="email" id="email" placeholder="you@hospital.com" autocomplete="email"/>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <div class="password-wrapper">
+          <input type="password" id="password" placeholder="••••••••" autocomplete="current-password"/>
+          <span class="toggle-password" onclick="togglePassword('password', this)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </span>
+        </div>
+        <div class="forgot-row">
+          <a href="#" onclick="openForgotModal(); return false;">Forgot password?</a>
+        </div>
+      </div>
+      <button class="btn-auth" id="loginBtn" onclick="doLogin()">Sign In</button>
+      <div class="auth-divider">or</div>
+      <div class="auth-link">Don't have an account? <a href="signup.html">Sign up free</a></div>
     </div>
-    <button class="btn-auth" id="loginBtn" onclick="doLogin()">Sign In</button>
-    <div class="auth-divider">or</div>
-    <div class="auth-link">Don't have an account? <a href="signup.html">Sign up free</a></div>
+
   </div>
 </div>
 
@@ -308,18 +410,16 @@ async function doLogin() {
     window.location.href = "dashboard.html";
   } catch (err) {
     btn.disabled = false; btn.textContent = "Sign In";
-    // Check if server is reachable at all
     try {
       const ping = await fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(4000) });
       if (ping.ok) { showMsg("error", "Connection error. Please try again."); return; }
     } catch (_) {}
-    // Server is cold-starting — show progress bar
     startColdStartProgress();
   }
 }
 
 // ── Cold-start progress bar ────────────────────────────────────────────────
-const COLD_START_TIMEOUT_S = 75; // Render free tier can take up to ~75s
+const COLD_START_TIMEOUT_S = 75;
 let coldStartInterval = null;
 
 function startColdStartProgress() {
@@ -330,7 +430,6 @@ function startColdStartProgress() {
   hideMsg();
 
   let elapsed = 0;
-  // Kick off fill animation slightly after so CSS transition fires
   setTimeout(() => { fill.style.width = "100%"; fill.style.transition = `width ${COLD_START_TIMEOUT_S}s linear`; }, 50);
 
   coldStartInterval = setInterval(async () => {
@@ -369,7 +468,6 @@ function openForgotModal() {
 }
 
 function closeForgotModal(e) {
-  // Close only if clicking the backdrop itself (not the modal card)
   if (e && e.target !== document.getElementById("forgotBackdrop")) return;
   document.getElementById("forgotBackdrop").classList.remove("open");
 }
@@ -380,7 +478,6 @@ async function doForgotPassword() {
   const msgEl = document.getElementById("forgotMsg");
 
   msgEl.className = "modal-msg"; msgEl.textContent = "";
-  // Remove any previous link box
   const old = document.getElementById("resetLinkBox");
   if (old) old.remove();
 
@@ -400,25 +497,24 @@ async function doForgotPassword() {
     const data = await res.json();
 
     if (data.reset_url) {
-      // Show the reset link directly on screen
       msgEl.className = "modal-msg success";
       msgEl.textContent = "✅ Account found! Copy the link below and open it to reset your password:";
 
       const box = document.createElement("div");
       box.id = "resetLinkBox";
-      box.style.cssText = "margin-top:10px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:10px 12px;display:flex;align-items:center;gap:8px;";
+      box.style.cssText = "margin-top:10px;background:rgba(26,158,106,0.08);border:1px solid rgba(26,158,106,0.3);border-radius:6px;padding:10px 12px;display:flex;align-items:center;gap:8px;";
 
       const linkEl = document.createElement("a");
       linkEl.href = data.reset_url;
       linkEl.target = "_blank";
       linkEl.textContent = "Open Reset Page →";
-      linkEl.style.cssText = "font-size:0.82rem;color:#166534;font-weight:600;text-decoration:none;flex:1;word-break:break-all;";
+      linkEl.style.cssText = "font-size:0.82rem;color:#1A9E6A;font-weight:600;text-decoration:none;flex:1;word-break:break-all;";
       linkEl.onmouseover = () => linkEl.style.textDecoration = "underline";
       linkEl.onmouseout  = () => linkEl.style.textDecoration = "none";
 
       const copyBtn = document.createElement("button");
       copyBtn.textContent = "Copy";
-      copyBtn.style.cssText = "flex-shrink:0;background:#16a34a;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:0.75rem;cursor:pointer;font-family:'IBM Plex Mono',monospace;";
+      copyBtn.style.cssText = "flex-shrink:0;background:#1A9E6A;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:0.75rem;cursor:pointer;font-family:'IBM Plex Mono',monospace;";
       copyBtn.onclick = () => {
         navigator.clipboard.writeText(data.reset_url).then(() => {
           copyBtn.textContent = "Copied!";
@@ -432,7 +528,6 @@ async function doForgotPassword() {
       btn.textContent = "Done";
 
     } else {
-      // Email not in system — neutral message
       msgEl.className = "modal-msg warn";
       msgEl.textContent = "⚠️ No account found with that email address.";
       btn.disabled = false; btn.textContent = "Send Reset Link";
