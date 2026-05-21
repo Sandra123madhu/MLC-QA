@@ -235,7 +235,7 @@ def _extract_catphan_chart_data(phantom) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 # Background worker
 # ─────────────────────────────────────────────────────────────────────────────
-def _run_catphan(job_id: str, zip_path: str, email: str, filename: str):
+def _run_catphan(job_id: str, file_path: str, email: str, filename: str, is_zip: bool):
     tmp_dir = None
     try:
         import matplotlib
@@ -243,11 +243,17 @@ def _run_catphan(job_id: str, zip_path: str, email: str, filename: str):
 
         tmp_dir = tempfile.mkdtemp(prefix=f"catphan_{job_id}_")
 
-        # Unzip DICOM series
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(tmp_dir)
-
-        phantom   = CatPhan604(tmp_dir)
+        if is_zip:
+            # Unzip full DICOM series into tmp_dir
+            with zipfile.ZipFile(file_path, "r") as zf:
+                zf.extractall(tmp_dir)
+            phantom = CatPhan604(tmp_dir)
+        else:
+            # Single .dcm — copy into tmp_dir so pylinac can locate it
+            import shutil as _shutil
+            dest = os.path.join(tmp_dir, os.path.basename(file_path))
+            _shutil.copy2(file_path, dest)
+            phantom = CatPhan604(tmp_dir)
         phantom.analyze()
         summary   = phantom.results()
 
@@ -301,7 +307,7 @@ def _run_catphan(job_id: str, zip_path: str, email: str, filename: str):
         }
     finally:
         try:
-            os.remove(zip_path)
+            os.remove(file_path)
         except Exception:
             pass
         if tmp_dir:
@@ -319,28 +325,43 @@ async def analyze_catphan(
     u=Depends(get_current_user),
 ):
     """
-    Accepts a .zip archive containing a CBCT DICOM series acquired with the
-    CatPhan 604 phantom.  Returns a job_id for polling via GET /result/{job_id}.
-    """
-    if not file.filename.lower().endswith(".zip"):
-        raise HTTPException(400, "Please upload a .zip archive containing the CBCT DICOM series.")
+    Accepts either:
+      - A .zip archive containing a full CBCT DICOM series (recommended — pylinac
+        uses multiple slices to locate each phantom module automatically), or
+      - A single .dcm DICOM file (limited — pylinac will analyse the one slice it
+        can find; some modules may not be detected).
 
-    job_id   = str(uuid.uuid4())
-    tmp_dir  = tempfile.gettempdir()
-    zip_path = os.path.join(tmp_dir, f"catphan_{job_id}.zip")
+    Returns a job_id for polling via GET /result/{job_id}.
+    """
+    fname_lower = file.filename.lower()
+    is_zip = fname_lower.endswith(".zip")
+    is_dcm = fname_lower.endswith(".dcm")
+
+    if not is_zip and not is_dcm:
+        raise HTTPException(
+            400,
+            "Unsupported file type. Please upload a .zip (full DICOM series, recommended) "
+            "or a .dcm (single DICOM slice)."
+        )
+
+    job_id    = str(uuid.uuid4())
+    tmp_dir   = tempfile.gettempdir()
+    ext       = ".zip" if is_zip else ".dcm"
+    file_path = os.path.join(tmp_dir, f"catphan_{job_id}{ext}")
 
     contents = await file.read()
-    with open(zip_path, "wb") as f:
+    with open(file_path, "wb") as f:
         f.write(contents)
 
     jobs[job_id] = {"status": "Processing", "_ts": time.time()}
 
     background_tasks.add_task(
         _run_catphan,
-        job_id   = job_id,
-        zip_path = zip_path,
-        email    = u["email"],
-        filename = file.filename,
+        job_id    = job_id,
+        file_path = file_path,
+        email     = u["email"],
+        filename  = file.filename,
+        is_zip    = is_zip,
     )
 
     return {"status": "Queued", "job_id": job_id}
