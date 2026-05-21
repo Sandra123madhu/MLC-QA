@@ -163,7 +163,7 @@
   <div class="info-banner">
     <span style="font-size:1.1rem;flex-shrink:0;">ℹ</span>
     <div>
-      Upload a <strong>DICOM folder as a .zip</strong> containing the CBCT scan series acquired with the CatPhan 604 phantom.
+      Upload either a <strong>.zip</strong> (recommended — full multi-slice CBCT series) or a single <strong>.dcm</strong> file acquired with the CatPhan 604 phantom. For best results, zip the entire DICOM series folder — pylinac will automatically locate each module slice.
       The backend runs an enhanced pylinac CatPhan analysis that reports low-contrast ROIs
       <strong>per contrast group</strong> (1.0%, 0.5%, 0.3%) — eliminating the aggregation limitation of the default pylinac implementation.
     </div>
@@ -172,10 +172,10 @@
   <!-- Upload card -->
   <div class="upload-card">
     <div class="upload-zone" id="uploadZone">
-      <input type="file" id="dicomFile" accept=".zip" onchange="onFileSelected(this)"/>
+      <input type="file" id="dicomFile" accept=".zip,.dcm" onchange="onFileSelected(this)"/>
       <div class="upload-icon">📂</div>
-      <h3>Drop your CBCT DICOM .zip here</h3>
-      <p>or click to browse — .zip of DICOM series only</p>
+      <h3>Drop your CatPhan DICOM file here</h3>
+      <p>or click to browse — <strong>.zip</strong> (multi-slice CBCT series) or <strong>.dcm</strong> (single slice)</p>
       <div class="file-selected" id="fileLabel"></div>
     </div>
 
@@ -185,7 +185,7 @@
       <div class="tol-item"><div class="tol-label">Slice Thickness</div><div class="tol-val">±0.2 mm</div></div>
       <div class="tol-item"><div class="tol-label">Uniformity (U index)</div><div class="tol-val">≤ 40</div></div>
       <div class="tol-item"><div class="tol-label">MTF 50%</div><div class="tol-val">Vendor spec</div></div>
-      <div class="tol-item"><div class="tol-label">Input Format</div><div class="tol-val">DICOM ZIP</div></div>
+      <div class="tol-item"><div class="tol-label">Input Format</div><div class="tol-val">.zip or .dcm</div></div>
     </div>
 
     <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>Run CatPhan 604 Analysis</button>
@@ -195,7 +195,7 @@
   <!-- Results card -->
   <div class="results-card">
     <h2>Results</h2>
-    <div id="resultsBody"><p>Upload a DICOM .zip and run the analysis to see results here.</p></div>
+    <div id="resultsBody"><p>Upload a .zip or .dcm file and run the analysis to see results here.</p></div>
 
     <!-- Verdict banner -->
     <div id="verdictBanner" class="verdict-banner" style="display:none;"></div>
@@ -326,10 +326,11 @@ async function runAnalysis() {
   const btn        = document.getElementById("analyzeBtn");
   const resultsDiv = document.getElementById("resultsBody");
 
-  if (!fileInput.files.length) { alert("Please select a .zip file first."); return; }
+  if (!fileInput.files.length) { alert("Please select a .zip or .dcm file first."); return; }
   const file = fileInput.files[0];
-  if (!file.name.toLowerCase().endsWith(".zip")) {
-    resultsDiv.innerHTML = `<p class="result-fail">❌ Only .zip archives of DICOM series are supported.</p>`;
+  const ext  = file.name.toLowerCase().split(".").pop();
+  if (!["zip", "dcm"].includes(ext)) {
+    resultsDiv.innerHTML = `<p class="result-fail">❌ Only .zip (DICOM series) or .dcm (single DICOM) files are supported.</p>`;
     return;
   }
 
@@ -340,7 +341,9 @@ async function runAnalysis() {
   });
   btn.disabled      = true;
   btn.textContent   = "Uploading…";
-  resultsDiv.innerHTML = `<p>⏳ Uploading DICOM series…</p>`;
+  resultsDiv.innerHTML = ext === "zip"
+    ? `<p>⏳ Uploading DICOM series (.zip)…</p>`
+    : `<p>⏳ Uploading DICOM file (.dcm)…</p>`;
 
   // Hide all result sections
   ["verdictBanner","contrastSection","summaryTableSection","gaugeSection",
