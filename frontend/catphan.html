@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CatPhan 604 CBCT QA — MLC QA</title>
+  <link rel="stylesheet" href="style.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="script.js"></script>
+  <style>
+    /* ── CatPhan-specific styles ── */
+    .contrast-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 20px;
+    }
+    .contrast-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 18px 16px;
+      text-align: center;
+    }
+    .contrast-card .cc-label {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .contrast-card .cc-group {
+      font-family: var(--mono);
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    .contrast-card .cc-value {
+      font-size: 1.8rem;
+      font-weight: 700;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .contrast-card .cc-unit {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: var(--mono);
+    }
+    .contrast-card.pass-card { border-color: rgba(26,158,106,0.3); background: var(--pass-dim); }
+    .contrast-card.fail-card { border-color: rgba(200,90,67,0.3); background: var(--fail-dim); }
+    .contrast-card .cc-status {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 20px;
+      margin-top: 8px;
+    }
+    .cc-status.pass { background: var(--pass-dim); color: var(--pass); border: 1px solid rgba(26,158,106,0.3); }
+    .cc-status.fail { background: var(--fail-dim); color: var(--fail); border: 1px solid rgba(200,90,67,0.3); }
+
+    .module-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.83rem;
+      margin-top: 16px;
+    }
+    .module-table th {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      text-align: left;
+      padding: 8px 12px;
+      border-bottom: 2px solid var(--border);
+      background: var(--surface-2);
+    }
+    .module-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border-subtle);
+      color: var(--text-2);
+      vertical-align: middle;
+    }
+    .module-table tr:last-child td { border-bottom: none; }
+    .module-table .td-module { font-family: var(--mono); font-size: 0.78rem; font-weight: 500; color: var(--accent); }
+    .module-table .td-param { font-weight: 500; color: var(--text); }
+    .module-table .td-tol { font-family: var(--mono); font-size: 0.8rem; }
+    .badge-pass { display: inline-flex; align-items: center; gap: 4px; background: var(--pass-dim); color: var(--pass); border: 1px solid rgba(26,158,106,0.3); border-radius: 20px; padding: 2px 10px; font-family: var(--mono); font-size: 0.7rem; font-weight: 600; }
+    .badge-fail { display: inline-flex; align-items: center; gap: 4px; background: var(--fail-dim); color: var(--fail); border: 1px solid rgba(200,90,67,0.3); border-radius: 20px; padding: 2px 10px; font-family: var(--mono); font-size: 0.7rem; font-weight: 600; }
+    .badge-na   { display: inline-flex; align-items: center; gap: 4px; background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border); border-radius: 20px; padding: 2px 10px; font-family: var(--mono); font-size: 0.7rem; font-weight: 600; }
+
+    .info-banner {
+      display: flex; align-items: flex-start; gap: 12px;
+      background: var(--accent-dim); border: 1px solid var(--accent-border);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--r); padding: 13px 16px;
+      margin-bottom: 20px; font-size: 0.83rem; color: var(--text-2); line-height: 1.6;
+    }
+    .info-banner strong { color: var(--accent); }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════
+     SIDEBAR  (matches all other pages)
+══════════════════════════════════════ -->
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <a href="dashboard.html" class="sidebar-logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg>
+      </div>
+      <div class="logo-text">MLC<span>QA</span></div>
+    </a>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">Menu</div>
+    <a class="nav-item" href="dashboard.html"><span class="nav-icon">▦</span> Dashboard</a>
+    <a class="nav-item" href="mlc-qa.html"><span class="nav-icon">⚡</span> Picket Fence</a>
+    <a class="nav-item" href="winston-lutz.html"><span class="nav-icon">◎</span> Winston-Lutz</a>
+    <a class="nav-item" href="starshot.html"><span class="nav-icon">✦</span> Starshot</a>
+    <a class="nav-item" href="congruence.html"><span class="nav-icon">⊞</span> Congruence</a>
+    <a class="nav-item active" href="catphan.html"><span class="nav-icon">⊙</span> CatPhan 604</a>
+    <a class="nav-item" href="history.html"><span class="nav-icon">≡</span> History</a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="user-chip">
+      <div class="avatar" id="avatarInitial">?</div>
+      <div>
+        <div class="user-name" id="sidebarName">Loading...</div>
+        <div class="user-role">Medical Physicist</div>
+      </div>
+    </div>
+    <button class="logout-btn" onclick="logout()">Sign Out</button>
+  </div>
+</aside>
+
+<!-- ══════════════════════════════════════
+     MAIN
+══════════════════════════════════════ -->
+<main class="main">
+
+  <div class="page-header">
+    <div class="breadcrumb"><a href="dashboard.html">Dashboard</a> <span>/</span> CatPhan 604 CBCT QA</div>
+    <h1>CatPhan 604 CBCT Image Quality QA</h1>
+    <p>
+      Enhanced low-contrast analysis with contrast-group–wise reporting (1.0% / 0.5% / 0.3%)
+      aligned to the CatPhan 604 phantom manual — includes HU linearity, MTF, uniformity and slice thickness.
+    </p>
+  </div>
+
+  <div class="server-status" id="serverStatus">
+    <div class="status-dot-sm dot-warn"></div><span>Checking server…</span>
+  </div>
+
+  <!-- Info banner -->
+  <div class="info-banner">
+    <span style="font-size:1.1rem;flex-shrink:0;">ℹ</span>
+    <div>
+      Upload a <strong>DICOM folder as a .zip</strong> containing the CBCT scan series acquired with the CatPhan 604 phantom.
+      The backend runs an enhanced pylinac CatPhan analysis that reports low-contrast ROIs
+      <strong>per contrast group</strong> (1.0%, 0.5%, 0.3%) — eliminating the aggregation limitation of the default pylinac implementation.
+    </div>
+  </div>
+
+  <!-- Upload card -->
+  <div class="upload-card">
+    <div class="upload-zone" id="uploadZone">
+      <input type="file" id="dicomFile" accept=".zip" onchange="onFileSelected(this)"/>
+      <div class="upload-icon">📂</div>
+      <h3>Drop your CBCT DICOM .zip here</h3>
+      <p>or click to browse — .zip of DICOM series only</p>
+      <div class="file-selected" id="fileLabel"></div>
+    </div>
+
+    <div class="tolerances">
+      <div class="tol-item"><div class="tol-label">HU Linearity</div><div class="tol-val">±40 HU</div></div>
+      <div class="tol-item"><div class="tol-label">Low Contrast (each group)</div><div class="tol-val">≥ 1 ROI</div></div>
+      <div class="tol-item"><div class="tol-label">Slice Thickness</div><div class="tol-val">±0.2 mm</div></div>
+      <div class="tol-item"><div class="tol-label">Uniformity (U index)</div><div class="tol-val">≤ 40</div></div>
+      <div class="tol-item"><div class="tol-label">MTF 50%</div><div class="tol-val">Vendor spec</div></div>
+      <div class="tol-item"><div class="tol-label">Input Format</div><div class="tol-val">DICOM ZIP</div></div>
+    </div>
+
+    <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>Run CatPhan 604 Analysis</button>
+    <button class="btn-cancel" id="cancelBtn" onclick="cancelAnalysis()" style="display:none;">✕ Cancel Analysis</button>
+  </div>
+
+  <!-- Results card -->
+  <div class="results-card">
+    <h2>Results</h2>
+    <div id="resultsBody"><p>Upload a DICOM .zip and run the analysis to see results here.</p></div>
+
+    <!-- Verdict banner -->
+    <div id="verdictBanner" class="verdict-banner" style="display:none;"></div>
+
+    <!-- Low-contrast group cards -->
+    <div id="contrastSection" style="display:none;">
+      <div style="font-family:var(--mono);font-size:0.78rem;font-weight:600;letter-spacing:0.06em;color:var(--text-muted);margin:24px 0 2px;text-transform:uppercase;">
+        Low-Contrast Group Results (CTP515 / CTP730)
+      </div>
+      <div class="contrast-grid">
+        <div class="contrast-card" id="cc10">
+          <div class="cc-label">Contrast Group</div>
+          <div class="cc-group">1.0%</div>
+          <div class="cc-value" id="cc10-val">—</div>
+          <div class="cc-unit">ROIs detected</div>
+          <div class="cc-status" id="cc10-status">—</div>
+        </div>
+        <div class="contrast-card" id="cc05">
+          <div class="cc-label">Contrast Group</div>
+          <div class="cc-group">0.5%</div>
+          <div class="cc-value" id="cc05-val">—</div>
+          <div class="cc-unit">ROIs detected</div>
+          <div class="cc-status" id="cc05-status">—</div>
+        </div>
+        <div class="contrast-card" id="cc03">
+          <div class="cc-label">Contrast Group</div>
+          <div class="cc-group">0.3%</div>
+          <div class="cc-value" id="cc03-val">—</div>
+          <div class="cc-unit">ROIs detected</div>
+          <div class="cc-status" id="cc03-status">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- QA Summary table -->
+    <div id="summaryTableSection" style="display:none; margin-top:28px;">
+      <div style="font-family:var(--mono);font-size:0.78rem;font-weight:600;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:2px;text-transform:uppercase;">
+        QA Summary Table
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="module-table" id="qaTable">
+          <thead>
+            <tr>
+              <th>Module</th>
+              <th>Parameter</th>
+              <th>Measured</th>
+              <th>Tolerance</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="qaTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Gauge + metrics -->
+    <div id="gaugeSection" style="display:none; margin-top:20px;">
+      <div class="gauge-label-row">
+        <span class="gauge-title">Low Contrast (1.0% group) — ROIs Detected</span>
+        <span class="gauge-val" id="gaugeVal"></span>
+      </div>
+      <div class="gauge-track">
+        <div class="gauge-fill" id="gaugeFill"></div>
+        <div class="gauge-marker" id="gaugeMarker" title="Minimum required"></div>
+      </div>
+      <div class="gauge-ticks"><span>0</span><span id="gaugeTolLabel"></span><span id="gaugeMaxLabel"></span></div>
+    </div>
+
+    <div id="metricsRow" class="metrics-row" style="display:none; margin-top:20px;"></div>
+
+    <!-- Plot image -->
+    <div id="plotSection" style="display:none; margin-top:24px;"></div>
+
+    <!-- Charts -->
+    <div id="chartsSection" style="display:none; margin-top:28px;">
+      <div class="charts-grid" id="chartsGrid"></div>
+    </div>
+
+    <!-- PDF export -->
+    <div id="pdfSection" style="display:none; margin-top:24px;">
+      <button class="btn-secondary" onclick="exportPDF()">⬇ Export PDF Report</button>
+    </div>
+  </div>
+
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script>
+// ── Init sidebar user info ──────────────────────────────────────────────────
+const _cpName = localStorage.getItem("mlcqa_name");
+if (_cpName) {
+  document.getElementById("sidebarName").textContent  = _cpName;
+  document.getElementById("avatarInitial").textContent = _cpName.charAt(0).toUpperCase();
+}
+
+// ── Drag-and-drop ───────────────────────────────────────────────────────────
+const zone = document.getElementById("uploadZone");
+zone.addEventListener("dragover",  e => { e.preventDefault(); zone.classList.add("dragover"); });
+zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+zone.addEventListener("drop", e => {
+  e.preventDefault(); zone.classList.remove("dragover");
+  const dt = new DataTransfer();
+  Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f));
+  document.getElementById("dicomFile").files = dt.files;
+  onFileSelected(document.getElementById("dicomFile"));
+});
+
+function onFileSelected(input) {
+  const label = document.getElementById("fileLabel");
+  const btn   = document.getElementById("analyzeBtn");
+  if (input.files.length > 0) {
+    label.textContent = "Selected: " + input.files[0].name;
+    btn.disabled = false;
+  } else {
+    label.textContent = "";
+    btn.disabled = true;
+  }
+}
+
+function cancelAnalysis() {
+  CancelManager.cancel();
+}
+
+// ── Run Analysis ─────────────────────────────────────────────────────────────
+async function runAnalysis() {
+  const fileInput  = document.getElementById("dicomFile");
+  const btn        = document.getElementById("analyzeBtn");
+  const resultsDiv = document.getElementById("resultsBody");
+
+  if (!fileInput.files.length) { alert("Please select a .zip file first."); return; }
+  const file = fileInput.files[0];
+  if (!file.name.toLowerCase().endsWith(".zip")) {
+    resultsDiv.innerHTML = `<p class="result-fail">❌ Only .zip archives of DICOM series are supported.</p>`;
+    return;
+  }
+
+  CancelManager.start({
+    cancelBtnId:  "cancelBtn",
+    analyzeBtnId: "analyzeBtn",
+    analyzeLabel: "Run CatPhan 604 Analysis"
+  });
+  btn.disabled      = true;
+  btn.textContent   = "Uploading…";
+  resultsDiv.innerHTML = `<p>⏳ Uploading DICOM series…</p>`;
+
+  // Hide all result sections
+  ["verdictBanner","contrastSection","summaryTableSection","gaugeSection",
+   "metricsRow","plotSection","chartsSection","pdfSection"].forEach(id => {
+    document.getElementById(id).style.display = "none";
+  });
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const data = await AnalysisHelpers.makeApiCall(
+      `${BACKEND_URL}/analyze/catphan`,
+      {
+        method:  "POST",
+        headers: authHeadersOnly(),
+        body:    formData,
+        signal:  CancelManager.getSignal()
+      },
+      120000   // CBCT analysis can be slow
+    );
+
+    if (CancelManager.isCancelled()) return;
+    if (data.status === "Error") throw new Error(data.message || "Server returned an error");
+
+    CancelManager.setJobId(data.job_id);
+    btn.textContent = "Analysing…";
+    resultsDiv.innerHTML = `<p>🔬 Running CatPhan 604 analysis<span id="dots">.</span></p>`;
+
+    await AnalysisHelpers.pollForResult(
+      data.job_id,
+      (result) => {
+        if (CancelManager.isCancelled()) return;
+        handleSuccess(result, file);
+        CancelManager.finish();
+      },
+      null,
+      () => CancelManager.isCancelled()
+    );
+
+  } catch (err) {
+    if (CancelManager.isCancelled() || err.name === "AbortError" ||
+        err.message === "Request timed out or was cancelled.") {
+      CancelManager.finish(); return;
+    }
+    console.error("CatPhan analysis error:", err);
+    resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
+    CancelManager.finish();
+    btn.disabled    = false;
+    btn.textContent = "Run CatPhan 604 Analysis";
+  }
+}
+
+// ── Handle success ────────────────────────────────────────────────────────────
+function handleSuccess(result, file) {
+  if (CancelManager.isCancelled()) return;
+
+  const btn        = document.getElementById("analyzeBtn");
+  const resultsDiv = document.getElementById("resultsBody");
+
+  const pass    = result.passed;
+  const imgUrl  = result.image_url || null;
+  const summary = result.analysis_summary || "";
+  const cd      = result.chart_data || {};
+
+  window._lastResult = {
+    pass, imgUrl, summary,
+    filename: file.name,
+    testType: "CatPhan 604",
+    toleranceText: "Low contrast ≥1 ROI per group | HU ±40 | Uniformity ≤40"
+  };
+  HistoryManager.record({
+    testType: "CatPhan 604", filename: file.name,
+    passed: pass, summary, imageUrl: imgUrl
+  });
+
+  resultsDiv.innerHTML = "<pre>" + summary + "</pre>";
+
+  // ── Verdict banner ──
+  const banner = document.getElementById("verdictBanner");
+  banner.innerHTML =
+    '<div class="verdict-icon">' + (pass ? "✓" : "✗") + '</div>' +
+    '<div class="verdict-text">' +
+      '<div class="verdict-label">' + (pass ? "PASS" : "FAIL") + '</div>' +
+      '<div class="verdict-sub">' +
+        (pass
+          ? "CBCT image quality meets all specified tolerances"
+          : "One or more parameters exceed clinical tolerances — review QA table below") +
+      '</div>' +
+    '</div>';
+  banner.className       = "verdict-banner " + (pass ? "verdict-pass" : "verdict-fail");
+  banner.style.display   = "flex";
+
+  // ── Contrast group cards ──
+  const lc = cd.low_contrast || {};
+  renderContrastCard("cc10", lc["1.0"] || 0, lc["1.0_pass"] !== false);
+  renderContrastCard("cc05", lc["0.5"] || 0, lc["0.5_pass"] !== false);
+  renderContrastCard("cc03", lc["0.3"] || 0, lc["0.3_pass"] !== false);
+  document.getElementById("contrastSection").style.display = "block";
+
+  // ── QA Summary table ──
+  const rows = cd.qa_table || [];
+  if (rows.length) {
+    const tbody = document.getElementById("qaTableBody");
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td class="td-module">${r.module || "—"}</td>
+        <td class="td-param">${r.parameter || "—"}</td>
+        <td>${r.measured ?? "—"}</td>
+        <td class="td-tol">${r.tolerance || "—"}</td>
+        <td>${badgeHTML(r.status)}</td>
+      </tr>`).join("");
+    document.getElementById("summaryTableSection").style.display = "block";
+  }
+
+  // ── Gauge (1.0% group) ──
+  const rois10   = lc["1.0"] || 0;
+  const tolROIs  = 1;
+  const maxROIs  = Math.max(rois10 * 1.4, 6);
+  const fillEl   = document.getElementById("gaugeFill");
+  fillEl.style.width      = Math.min((rois10 / maxROIs) * 100, 100) + "%";
+  fillEl.style.background = rois10 >= tolROIs ? "var(--pass)" : "var(--fail)";
+  document.getElementById("gaugeMarker").style.left    = ((tolROIs / maxROIs) * 100) + "%";
+  document.getElementById("gaugeVal").textContent      = rois10 + " ROIs";
+  document.getElementById("gaugeTolLabel").textContent = "Min: " + tolROIs;
+  document.getElementById("gaugeMaxLabel").textContent = maxROIs + " ROIs";
+  document.getElementById("gaugeSection").style.display = "block";
+
+  // ── Metrics row ──
+  const metricsRow = document.getElementById("metricsRow");
+  const huDev  = cd.hu_linearity_max_deviation != null ? cd.hu_linearity_max_deviation.toFixed(1) : "—";
+  const unif   = cd.uniformity_index           != null ? cd.uniformity_index.toFixed(2)          : "—";
+  const mtf50  = cd.mtf_50                     != null ? cd.mtf_50.toFixed(3)                    : "—";
+  const sliceT = cd.slice_thickness_mm         != null ? cd.slice_thickness_mm.toFixed(2)        : "—";
+  metricsRow.innerHTML = [
+    { label: "1.0% LC ROIs",   val: String(rois10),   unit: "seen",    cls: rois10 >= 1 ? "metric-pass" : "metric-fail" },
+    { label: "HU Dev (max)",   val: huDev,             unit: "HU",      cls: parseFloat(huDev) <= 40 ? "metric-pass" : "metric-fail" },
+    { label: "Uniformity Idx", val: unif,              unit: "",        cls: parseFloat(unif)  <= 40 ? "metric-pass" : "metric-fail" },
+    { label: "MTF 50%",        val: mtf50,             unit: "lp/mm",   cls: "metric-accent" },
+    { label: "Slice Thickness",val: sliceT,            unit: "mm",      cls: "metric-accent" },
+    { label: "Overall",        val: pass ? "PASS" : "FAIL", unit: "", cls: pass ? "metric-pass" : "metric-fail" },
+  ].map(m =>
+    `<div class="metric-card">
+      <div class="metric-label">${m.label}</div>
+      <div class="metric-value ${m.cls}">${m.val}${m.unit ? '<span class="metric-unit"> ' + m.unit + '</span>' : ''}</div>
+    </div>`
+  ).join("");
+  metricsRow.style.display = "grid";
+
+  // ── Plot image ──
+  if (imgUrl) {
+    document.getElementById("plotSection").innerHTML =
+      `<div class="plot-wrap">
+        <img src="${imgUrl}" alt="CatPhan Analysis Plot" loading="lazy"/>
+        <div class="plot-label">Pylinac · CatPhan 604 Analysis</div>
+      </div>`;
+    document.getElementById("plotSection").style.display = "block";
+  }
+
+  // ── Charts ──
+  renderCatPhanCharts(cd);
+  document.getElementById("chartsSection").style.display = "block";
+  document.getElementById("pdfSection").style.display    = "block";
+
+  btn.disabled    = false;
+  btn.textContent = "Analyse Another File";
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function renderContrastCard(id, value, passed) {
+  const card   = document.getElementById(id);
+  const valEl  = document.getElementById(id + "-val");
+  const statEl = document.getElementById(id + "-status");
+  valEl.textContent  = String(value);
+  valEl.style.color  = passed ? "var(--pass)" : "var(--fail)";
+  statEl.textContent = passed ? "PASS" : "FAIL";
+  statEl.className   = "cc-status " + (passed ? "pass" : "fail");
+  card.classList.toggle("pass-card", passed);
+  card.classList.toggle("fail-card", !passed);
+}
+
+function badgeHTML(status) {
+  if (!status) return '<span class="badge-na">N/A</span>';
+  const s = status.toUpperCase();
+  if (s === "PASS")     return '<span class="badge-pass">✓ PASS</span>';
+  if (s === "FAIL")     return '<span class="badge-fail">✗ FAIL</span>';
+  return `<span class="badge-na">${status}</span>`;
+}
+
+function renderCatPhanCharts(cd) {
+  const container = document.getElementById("chartsGrid");
+  container.innerHTML = "";
+  container.style.gridTemplateColumns = "repeat(auto-fit, minmax(320px, 1fr))";
+  container.style.gap = "20px";
+
+  // HU Linearity chart
+  if (cd.hu_values && Object.keys(cd.hu_values).length) {
+    const labels = Object.keys(cd.hu_values);
+    const vals   = labels.map(k => cd.hu_values[k]);
+    const expected = { Air: -1000, PMP: -200, LDPE: -100, Polystyrene: -35, Acrylic: 120, Delrin: 340, Teflon: 990 };
+    addBarChart(container, "HU Linearity (CTP404)", labels, vals,
+      labels.map(l => Math.abs((vals[labels.indexOf(l)] || 0) - (expected[l] || 0)) <= 40 ? "rgba(26,158,106,0.7)" : "rgba(200,90,67,0.7)"),
+      "Measured HU");
+  }
+
+  // Low contrast per group bar
+  const lc = cd.low_contrast || {};
+  if (Object.keys(lc).some(k => !k.includes("_pass"))) {
+    const lcLabels = ["1.0%", "0.5%", "0.3%"];
+    const lcVals   = [lc["1.0"] || 0, lc["0.5"] || 0, lc["0.3"] || 0];
+    addBarChart(container, "Low Contrast ROIs Detected (CTP515)", lcLabels, lcVals,
+      lcVals.map(v => v >= 1 ? "rgba(26,158,106,0.7)" : "rgba(200,90,67,0.7)"),
+      "ROIs Seen");
+  }
+
+  // MTF profile
+  if (cd.mtf_profile && cd.mtf_profile.length) {
+    addLineChart(container, "MTF Profile (CTP528)", cd.mtf_profile);
+  }
+}
+
+function addBarChart(container, title, labels, data, colors, yLabel) {
+  const wrap = document.createElement("div");
+  wrap.className = "chart-card";
+  wrap.innerHTML = `<div class="chart-title">${title}</div><canvas></canvas>`;
+  container.appendChild(wrap);
+  new Chart(wrap.querySelector("canvas"), {
+    type: "bar",
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0 }] },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { title: { display: true, text: yLabel, font: { size: 11 } } } }
+    }
+  });
+}
+
+function addLineChart(container, title, points) {
+  const wrap = document.createElement("div");
+  wrap.className = "chart-card";
+  wrap.innerHTML = `<div class="chart-title">${title}</div><canvas></canvas>`;
+  container.appendChild(wrap);
+  const labels = points.map((_, i) => (i + 1).toString());
+  new Chart(wrap.querySelector("canvas"), {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        data: points,
+        borderColor: "var(--accent)",
+        backgroundColor: "rgba(0,90,156,0.08)",
+        borderWidth: 2, pointRadius: 0, fill: true, tension: 0.35
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { title: { display: true, text: "MTF", font: { size: 11 } }, min: 0, max: 1 },
+        x: { title: { display: true, text: "lp/mm index", font: { size: 11 } } }
+      }
+    }
+  });
+}
+
+// ── PDF Export ────────────────────────────────────────────────────────────────
+function exportPDF() {
+  const lr = window._lastResult;
+  if (!lr) return;
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("CatPhan 604 CBCT QA Report", 14, 20);
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text(`File: ${lr.filename}`, 14, 30);
+  doc.text(`Date: ${new Date().toLocaleString()}`, 14, 37);
+  doc.text(`Overall: ${lr.pass ? "PASS" : "FAIL"}`, 14, 44);
+  doc.setFontSize(9);
+  const lines = doc.splitTextToSize(lr.summary || "", 180);
+  doc.text(lines, 14, 54);
+  doc.save(`catphan604_qa_${Date.now()}.pdf`);
+}
+</script>
+</body>
+</html>
