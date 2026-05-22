@@ -438,10 +438,15 @@ function handleSuccess(result, file) {
   banner.style.display   = "flex";
 
   // ── Contrast group cards ──
+  // FIX: always derive pass/fail from ROI count >= 1 (tolerance),
+  // never from the optional _pass flag which defaults to true when absent.
   const lc = cd.low_contrast || {};
-  renderContrastCard("cc10", lc["1.0"] || 0, lc["1.0_pass"] !== false);
-  renderContrastCard("cc05", lc["0.5"] || 0, lc["0.5_pass"] !== false);
-  renderContrastCard("cc03", lc["0.3"] || 0, lc["0.3_pass"] !== false);
+  const rois10val = lc["1.0"] || 0;
+  const rois05val = lc["0.5"] || 0;
+  const rois03val = lc["0.3"] || 0;
+  renderContrastCard("cc10", rois10val, rois10val >= 1);
+  renderContrastCard("cc05", rois05val, rois05val >= 1);
+  renderContrastCard("cc03", rois03val, rois03val >= 1);
   document.getElementById("contrastSection").style.display = "block";
 
   // ── QA Summary table ──
