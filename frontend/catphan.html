@@ -758,30 +758,48 @@ function parseCatPhanSummary(text) {
       const rawVal   = line.slice(colonIdx + 1).trim();
       const label    = friendlyLabel(rawLabel);
 
-      // ── Special case: HU ROI line — parse "Mat: val, Mat: val …" into sub-rows
+      // ── If we are in HU ROI collection mode, any colon-containing line is
+      //    more ROI data (e.g. "50% Bone: 90.0, LDPE: -102.0") not a new field
+      if (current._huRoiCollecting) {
+        current._huRoiRaw += " " + line;
+        current.rows[current._huRoiRowIndex].value = current._huRoiRaw;
+        continue;
+      }
+      // ── Same for Uniformity ROIs
+      if (current._unifRoiCollecting) {
+        current.rows[current._unifRoiRowIndex].value += " " + line;
+        continue;
+      }
+
+      // ── Special case: HU ROI header "HU Linearity ROIs:" (value may be empty)
       if (label === "HU Values (ROIs)") {
-        // Mark a placeholder so continuation lines can append to the raw string
         current._huRoiRaw = rawVal;
+        current._huRoiCollecting = true;
         current._huRoiRowIndex = current.rows.length;
         current.rows.push({ label: "HU Values (ROIs)", value: rawVal, cls: "", _isHuRoi: true });
         continue;
       }
 
+      // ── Once we see any normal field, stop HU ROI collection
+      current._huRoiCollecting = false;
+
       // ── Special case: Uniformity ROIs "Top: x, Right: x …"
       if (label === "Uniformity ROI Values") {
+        current._unifRoiCollecting = true;
+        current._unifRoiRowIndex = current.rows.length;
         current.rows.push({ label: "Uniformity ROI Values", value: rawVal, cls: "", _isUniformityRoi: true });
         continue;
       }
 
-      // ── Slice Thickness line may embed "Slice Thickness Passed? True" inline
-      // e.g. "Measured Slice Thickness (mm): 2.487" followed immediately by
-      // "Slice Thickness Passed? True" — handled normally, but check combined
+      // ── Stop uniformity collection on any new labelled field
+      current._unifRoiCollecting = false;
+
       const value = formatValue(label, rawVal);
       const cls   = isPassFail(rawVal) ? passClass(rawVal) : "";
       current.rows.push({ label, value, cls });
     } else if (current && line) {
-      // continuation line — append to last HU ROI raw string if applicable
-      if (current._huRoiRaw !== undefined) {
+      // Plain continuation line (no colon)
+      if (current._huRoiCollecting) {
         current._huRoiRaw += " " + line;
         current.rows[current._huRoiRowIndex].value = current._huRoiRaw;
       } else if (current.rows.length > 0) {
@@ -794,13 +812,24 @@ function parseCatPhanSummary(text) {
 
 // Parse "Mat: val, Mat2: val2, ..." into [{mat, val}] pairs
 function parseHuRois(raw) {
-  // Matches patterns like "Air: -998.0" "50% Bone: 90.0" "20% Bone: 88.0"
+  // The raw string: "Air: -998.0, PMP: -200.0, 50% Bone: 90.0, ..."
+  // Strategy: split on ", " to get chunks, then split each chunk on the last ": "
   const pairs = [];
-  // Split on ", " but only where the next token looks like a material name (has letter before colon)
-  const re = /([A-Za-z0-9%\s]+):\s*([-\d.]+)/g;
-  let m;
-  while ((m = re.exec(raw)) !== null) {
-    pairs.push({ mat: m[1].trim(), val: m[2].trim() });
+  if (!raw) return pairs;
+  // Normalize any line-break artifacts
+  const cleaned = raw.replace(/\s+/g, " ").trim();
+  // Split on ", " — but "50% Bone: 90.0" contains no comma so this is safe
+  const chunks = cleaned.split(/, /);
+  for (const chunk of chunks) {
+    // Find the last colon to split mat from value (handles "50% Bone: 90.0")
+    const lastColon = chunk.lastIndexOf(":");
+    if (lastColon < 0) continue;
+    const mat = chunk.slice(0, lastColon).trim();
+    const val = chunk.slice(lastColon + 1).trim();
+    // val must look like a number (possibly negative)
+    if (mat && /^-?[\d.]+$/.test(val)) {
+      pairs.push({ mat, val });
+    }
   }
   return pairs;
 }
