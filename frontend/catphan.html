@@ -162,9 +162,94 @@
       margin-bottom: 20px; font-size: 0.83rem; color: var(--text-2); line-height: 1.6;
     }
     .info-banner strong { color: var(--accent); }
+
+    /* ── Machine Name Modal ───────────────────────────────────────── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.55); backdrop-filter: blur(3px);
+      z-index: 9999; align-items: center; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-box {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; padding: 32px 28px; width: 100%; max-width: 420px;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.45);
+      animation: modalPop 0.18s ease;
+    }
+    @keyframes modalPop {
+      from { transform: scale(0.93); opacity: 0; }
+      to   { transform: scale(1);    opacity: 1; }
+    }
+    .modal-box h3 {
+      margin: 0 0 6px; font-size: 1.1rem; color: var(--text);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .modal-box p { margin: 0 0 20px; font-size: 0.82rem; color: var(--text-2); }
+    .modal-field { margin-bottom: 16px; }
+    .modal-field label {
+      display: block; font-size: 0.78rem; font-weight: 600;
+      color: var(--text-2); margin-bottom: 6px; letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+    .modal-field input {
+      width: 100%; box-sizing: border-box;
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 12px; font-size: 0.93rem;
+      color: var(--text); outline: none; transition: border 0.15s;
+    }
+    .modal-field input:focus { border-color: var(--accent); }
+    .modal-field input::placeholder { color: var(--text-muted); }
+    .modal-actions {
+      display: flex; gap: 10px; justify-content: flex-end; margin-top: 22px;
+    }
+    .modal-btn-cancel {
+      background: transparent; border: 1px solid var(--border);
+      color: var(--text-2); padding: 9px 18px; border-radius: 8px;
+      font-size: 0.88rem; cursor: pointer; transition: background 0.15s;
+    }
+    .modal-btn-cancel:hover { background: var(--surface-2); }
+    .modal-btn-confirm {
+      background: var(--accent); border: none; color: #fff;
+      padding: 9px 22px; border-radius: 8px;
+      font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: opacity 0.15s;
+    }
+    .modal-btn-confirm:hover { opacity: 0.88; }
+    .modal-remember {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 0.78rem; color: var(--text-2); margin-top: 14px;
+      cursor: pointer; user-select: none;
+    }
+    .modal-remember input[type=checkbox] { accent-color: var(--accent); width:14px; height:14px; }
   </style>
 </head>
 <body>
+
+<!-- ── Machine Name Modal ──────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="pdfModal" role="dialog" aria-modal="true" aria-labelledby="pdfModalTitle">
+  <div class="modal-box">
+    <h3 id="pdfModalTitle">🖨 Download PDF Report</h3>
+    <p>Enter your machine details to include them in the report header. These will be remembered for next time.</p>
+
+    <div class="modal-field">
+      <label for="modalMachineName">Machine / Linac Name <span style="color:var(--accent);">*</span></label>
+      <input type="text" id="modalMachineName" placeholder="e.g. Linac 1, TrueBeam-A, ELEKTA-2" maxlength="60" autocomplete="off"/>
+    </div>
+    <div class="modal-field">
+      <label for="modalInstitution">Institution / Department</label>
+      <input type="text" id="modalInstitution" placeholder="e.g. City General Hospital — Radiotherapy" maxlength="80" autocomplete="off"/>
+    </div>
+
+    <label class="modal-remember">
+      <input type="checkbox" id="modalRemember" checked/>
+      Remember these details for future downloads
+    </label>
+
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="closePdfModal()">Cancel</button>
+      <button class="modal-btn-confirm" onclick="confirmPdfDownload()">&#11015; Generate PDF</button>
+    </div>
+  </div>
+</div>
 
 <!-- ══════════════════════════════════════
      SIDEBAR  (matches all other pages)
@@ -933,10 +1018,61 @@ function renderCatPhanSummary(text) {
 }
 
 // ── PDF Export ────────────────────────────────────────────────────────────────
+// ── PDF Modal controls ────────────────────────────────────────────────────────
 function exportPDF() {
   const lr = window._lastResult;
   if (!lr) return;
-  generateCatPhanPDF(lr);
+
+  // Pre-fill saved values
+  const savedMachine     = localStorage.getItem("mlcqa_machine_id")  || "";
+  const savedInstitution = localStorage.getItem("mlcqa_institution") || "";
+  document.getElementById("modalMachineName").value = savedMachine;
+  document.getElementById("modalInstitution").value  = savedInstitution;
+
+  // Open modal; focus machine name field
+  const overlay = document.getElementById("pdfModal");
+  overlay.classList.add("open");
+  setTimeout(() => document.getElementById("modalMachineName").focus(), 60);
+
+  // Allow Enter key to confirm
+  overlay._keyHandler = (e) => { if (e.key === "Enter") confirmPdfDownload(); };
+  document.addEventListener("keydown", overlay._keyHandler);
+
+  // Click outside box to cancel
+  overlay._clickHandler = (e) => { if (e.target === overlay) closePdfModal(); };
+  overlay.addEventListener("click", overlay._clickHandler);
+}
+
+function closePdfModal() {
+  const overlay = document.getElementById("pdfModal");
+  overlay.classList.remove("open");
+  if (overlay._keyHandler)   { document.removeEventListener("keydown", overlay._keyHandler); overlay._keyHandler = null; }
+  if (overlay._clickHandler) { overlay.removeEventListener("click", overlay._clickHandler); overlay._clickHandler = null; }
+}
+
+function confirmPdfDownload() {
+  const machineName = document.getElementById("modalMachineName").value.trim();
+  const institution = document.getElementById("modalInstitution").value.trim();
+  const remember    = document.getElementById("modalRemember").checked;
+
+  if (!machineName) {
+    const inp = document.getElementById("modalMachineName");
+    inp.style.borderColor = "var(--fail)";
+    inp.placeholder = "Machine name is required";
+    inp.focus();
+    setTimeout(() => { inp.style.borderColor = ""; inp.placeholder = "e.g. Linac 1, TrueBeam-A, ELEKTA-2"; }, 2000);
+    return;
+  }
+
+  if (remember) {
+    localStorage.setItem("mlcqa_machine_id",  machineName);
+    localStorage.setItem("mlcqa_institution", institution);
+  }
+
+  closePdfModal();
+
+  const lr = window._lastResult;
+  if (lr) generateCatPhanPDF({ ...lr, _machineName: machineName, _institution: institution });
 }
 
 async function generateCatPhanPDF(r) {
@@ -944,8 +1080,9 @@ async function generateCatPhanPDF(r) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const W = 210, M = 16;
 
-  const institution = localStorage.getItem("mlcqa_institution") || "";
-  const machineId   = localStorage.getItem("mlcqa_machine_id")  || "";
+  // Use values passed from modal (already validated); fall back to localStorage for history/PDF re-runs
+  const institution = r._institution || localStorage.getItem("mlcqa_institution") || "";
+  const machineId   = r._machineName  || localStorage.getItem("mlcqa_machine_id")  || "";
 
   function truncateFilename(name, maxChars) {
     if (!name || name.length <= maxChars) return name;
@@ -1242,8 +1379,11 @@ async function generateCatPhanPDF(r) {
     doc.text(`Page ${i} of ${pages}`, W - 28, 291);
   }
 
-  const safeFile = (r.filename || "catphan").replace(/\.[^.]+$/, "").slice(0, 40);
-  doc.save(`MLCQA_CATPHAN604_${safeFile}_${Date.now()}.pdf`);
+  const safeFile    = (r.filename   || "catphan").replace(/\.[^.]+$/, "").slice(0, 40);
+  const safeMachine  = (r._machineName || localStorage.getItem("mlcqa_machine_id") || "")
+                         .replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 25);
+  const fileSuffix   = safeMachine ? `_${safeMachine}` : "";
+  doc.save(`MLCQA_CATPHAN604_${safeFile}${fileSuffix}_${Date.now()}.pdf`);
 }
 
 async function fetchCatPhanImageAsBase64(url) {
