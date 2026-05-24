@@ -672,10 +672,34 @@ async function generateCatPhanPDF(r) {
   // ── Pass/Fail banner ─────────────────────────────────────────────────────────
   doc.setFillColor(...(r.pass ? [0, 168, 107] : [195, 45, 70]));
   doc.roundedRect(M, y, W - M * 2, 13, 2, 2, "F");
+  // Draw PASS/FAIL label then individual labelled tolerance chips
   doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(255, 255, 255);
   doc.text(r.pass ? "PASS" : "FAIL", M + 5, y + 9);
-  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
-  doc.text(r.toleranceText || (r.pass ? "Within clinical tolerance" : "Outside clinical tolerance"), M + 36, y + 9);
+
+  // Vertical divider after PASS/FAIL label
+  doc.setDrawColor(255, 255, 255); doc.setLineWidth(0.3);
+  doc.line(M + 24, y + 2, M + 24, y + 11);
+
+  // Three clearly separated tolerance chips with amber labels
+  const toleranceChips = [
+    { label: "Low Contrast:", value: ">=1 ROI/group" },
+    { label: "HU Linearity:", value: "+/-40 HU"      },
+    { label: "Uniformity:",   value: "<=40"           },
+  ];
+  let chipX = M + 27;
+  toleranceChips.forEach((chip, idx) => {
+    if (idx > 0) {
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
+      doc.text("|", chipX, y + 9);
+      chipX += 5;
+    }
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(255, 215, 100);
+    doc.text(chip.label, chipX, y + 9);
+    chipX += doc.getTextWidth(chip.label) + 1.5;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(255, 255, 255);
+    doc.text(chip.value, chipX, y + 9);
+    chipX += doc.getTextWidth(chip.value) + 3;
+  });
   y += 18;
 
   // ── Key-metrics highlight row ─────────────────────────────────────────────────
