@@ -608,7 +608,7 @@ function renderCatPhanCharts(cd) {
   if (cd.hu_values && Object.keys(cd.hu_values).length) {
     const labels = Object.keys(cd.hu_values);
     const vals   = labels.map(k => cd.hu_values[k]);
-    const expected = { Air: -1000, PMP: -200, LDPE: -100, Polystyrene: -35, Acrylic: 120, Delrin: 340, Teflon: 990 };
+    const expected = { Air: -1000, PMP: -200, LDPE: -100, Polystyrene: -35, Poly: -35, Acrylic: 120, "20% Bone": 237, "50% Bone": 725, Delrin: 340, Teflon: 990 };
     addBarChart(container, "HU Linearity (CTP404)", labels, vals,
       labels.map(l => Math.abs((vals[labels.indexOf(l)] || 0) - (expected[l] || 0)) <= 40 ? "rgba(26,158,106,0.7)" : "rgba(200,90,67,0.7)"),
       "Measured HU");
@@ -758,8 +758,11 @@ function parseCatPhanSummary(text) {
       const rawVal   = line.slice(colonIdx + 1).trim();
       const label    = friendlyLabel(rawLabel);
 
-      // ── Stop HU ROI collection when we hit a named QA field (contains "?:" or known labels)
-      const _isNamedField = /passed\?|tolerance|visibility|geometry|thickness|noise|cnr/i.test(rawLabel);
+      // ── Stop HU ROI collection when we hit a named QA field.
+      // Use starts-with anchors so material names like "Teflon" or "50% Bone" never
+      // accidentally trigger a stop. Only fire on actual pylinac QA field labels.
+      const _isNamedField = rawLabel.endsWith("?")
+        || /^(HU\s+Linearity\s+tolerance|Low\s+contrast\s+visibility|Geometric\s+Line|Geometry\s+Passed|Measured\s+Slice|Slice\s+Thickness\s+Passed|Uniformity\s+tolerance|Uniformity\s+index|Integral\s+non|Max\s+Noise|Average\s+Noise|CNR\s+threshold|Low\s+contrast\s+ROIs|MTF\s+\d|CTP\d)/i.test(rawLabel);
       if (current._huRoiCollecting) {
         if (_isNamedField) {
           // This is a real QA field — stop collecting and process normally below
@@ -879,13 +882,15 @@ function renderCatPhanSummary(text) {
         };
         // Display name overrides (pylinac uses abbreviated names)
         const matDisplayNames = {
-          "Poly": "Polystyrene (Poly)", "50% Bone": "50% Bone Equivalent",
+          "Poly": "Polystyrene (Poly)", "Polystyrene": "Polystyrene",
+          "50% Bone": "50% Bone Equivalent",
           "20% Bone": "20% Bone Equivalent"
         };
         const pairs = parseHuRois(row.value);
         if (pairs.length) {
           pairs.forEach((p, i) => {
-            const nom = Object.entries(nominals).find(([k]) => p.mat.toLowerCase().includes(k.toLowerCase()));
+            const nom = Object.entries(nominals).find(([k]) => k.toLowerCase() === p.mat.toLowerCase())
+                     || Object.entries(nominals).find(([k]) => p.mat.toLowerCase().includes(k.toLowerCase()));
             const nomStr = nom ? `<span style="color:var(--text-muted);font-size:0.75rem;margin-left:8px;">nominal: ${nom[1]} HU</span>` : "";
             const dispName = matDisplayNames[p.mat] || p.mat;
             html += `<div class="summary-row">
@@ -1151,14 +1156,15 @@ async function generateCatPhanPDF(r) {
         y += subH;
 
         // Parse and render each material
-        const nominals = { "air":-1000,"pmp":-200,"ldpe":-100,"poly":-35,"polystyrene":-35,"acrylic":120,"20% bone":237,"50% bone":725,"delrin":340,"teflon":990 };
+        const nominals = { "Air":-1000,"PMP":-200,"LDPE":-100,"Poly":-35,"Polystyrene":-35,"Acrylic":120,"20% Bone":237,"50% Bone":725,"Delrin":340,"Teflon":990 };
         const re2 = /((?:[A-Za-z0-9%]+\s+)*[A-Za-z0-9%]+)\s*:\s*(-?\d+(?:\.\d+)?)/g;
         let m2; let matIdx = 0;
         while ((m2 = re2.exec(row.value)) !== null) {
           if (y > 272) { doc.addPage(); y = 18; }
           const mat = m2[1].trim(); const val = m2[2].trim();
           if (/passed|tolerance|visibility|geometry|thickness|noise|cnr|index|average|frequency|power/i.test(mat)) continue;
-          const nom = Object.entries(nominals).find(([k]) => mat.toLowerCase().includes(k));
+          const nom = Object.entries(nominals).find(([k]) => k.toLowerCase() === mat.toLowerCase())
+                   || Object.entries(nominals).find(([k]) => mat.toLowerCase().includes(k.toLowerCase()));
           doc.setFillColor(matIdx % 2 === 0 ? 248 : 240, matIdx % 2 === 0 ? 250 : 244, matIdx % 2 === 0 ? 255 : 252);
           doc.rect(M, y, W - M * 2, 7, "F");
           doc.setDrawColor(220, 228, 238); doc.setLineWidth(0.2);
