@@ -758,17 +758,27 @@ function parseCatPhanSummary(text) {
       const rawVal   = line.slice(colonIdx + 1).trim();
       const label    = friendlyLabel(rawLabel);
 
-      // ── If we are in HU ROI collection mode, any colon-containing line is
-      //    more ROI data (e.g. "50% Bone: 90.0, LDPE: -102.0") not a new field
+      // ── Stop HU ROI collection when we hit a named QA field (contains "?:" or known labels)
+      const _isNamedField = /passed\?|tolerance|visibility|geometry|thickness|noise|cnr/i.test(rawLabel);
       if (current._huRoiCollecting) {
-        current._huRoiRaw += " " + line;
-        current.rows[current._huRoiRowIndex].value = current._huRoiRaw;
-        continue;
+        if (_isNamedField) {
+          // This is a real QA field — stop collecting and process normally below
+          current._huRoiCollecting = false;
+        } else {
+          // Still ROI data — append whole line (preserves "LDPE: -102.0, Poly: ..." structure)
+          current._huRoiRaw += " " + line;
+          current.rows[current._huRoiRowIndex].value = current._huRoiRaw;
+          continue;
+        }
       }
       // ── Same for Uniformity ROIs
       if (current._unifRoiCollecting) {
-        current.rows[current._unifRoiRowIndex].value += " " + line;
-        continue;
+        if (_isNamedField) {
+          current._unifRoiCollecting = false;
+        } else {
+          current.rows[current._unifRoiRowIndex].value += " " + line;
+          continue;
+        }
       }
 
       // ── Special case: HU ROI header "HU Linearity ROIs:" (value may be empty)
@@ -812,24 +822,22 @@ function parseCatPhanSummary(text) {
 
 // Parse "Mat: val, Mat2: val2, ..." into [{mat, val}] pairs
 function parseHuRois(raw) {
-  // The raw string: "Air: -998.0, PMP: -200.0, 50% Bone: 90.0, ..."
-  // Strategy: split on ", " to get chunks, then split each chunk on the last ": "
+  // raw = "Air: -998.0, PMP: -200.0, 50% Bone: 90.0, LDPE: -102.0, ..."
+  // Handles multi-word materials like "50% Bone", "20% Bone"
   const pairs = [];
   if (!raw) return pairs;
-  // Normalize any line-break artifacts
-  const cleaned = raw.replace(/\s+/g, " ").trim();
-  // Split on ", " — but "50% Bone: 90.0" contains no comma so this is safe
-  const chunks = cleaned.split(/, /);
-  for (const chunk of chunks) {
-    // Find the last colon to split mat from value (handles "50% Bone: 90.0")
-    const lastColon = chunk.lastIndexOf(":");
-    if (lastColon < 0) continue;
-    const mat = chunk.slice(0, lastColon).trim();
-    const val = chunk.slice(lastColon + 1).trim();
-    // val must look like a number (possibly negative)
-    if (mat && /^-?[\d.]+$/.test(val)) {
-      pairs.push({ mat, val });
-    }
+  const cleaned = raw.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+
+  // Match: one or more word-tokens (letters/digits/%) followed by ": number"
+  // Pattern: (word [word ...]) : number  — greedy on tokens
+  const re = /((?:[A-Za-z0-9%]+\s+)*[A-Za-z0-9%]+)\s*:\s*(-?\d+(?:\.\d+)?)/g;
+  let m;
+  while ((m = re.exec(cleaned)) !== null) {
+    const mat = m[1].trim();
+    const val = m[2].trim();
+    // Skip QA field labels that aren't materials
+    if (/passed|tolerance|visibility|geometry|thickness|noise|cnr|index|average|frequency|power/i.test(mat)) continue;
+    if (mat) pairs.push({ mat, val });
   }
   return pairs;
 }
@@ -862,14 +870,26 @@ function renderCatPhanSummary(text) {
           <span class="sr-value" style="color:var(--text-muted);font-size:0.75rem;">Nominal vs Measured</span>
         </div>`;
         // HU nominal reference values for CatPhan 604
-        const nominals = { "Air":-1000,"PMP":-200,"LDPE":-100,"Poly":-35,"Acrylic":120,"20% Bone":237,"50% Bone":725,"Delrin":340,"Teflon":990 };
+        // CatPhan 604 nominal HU values (key = substring match against pylinac material name)
+        const nominals = {
+          "Air": -1000, "PMP": -200, "LDPE": -100,
+          "Poly": -35, "Polystyrene": -35,
+          "Acrylic": 120, "20% Bone": 237, "50% Bone": 725,
+          "Delrin": 340, "Teflon": 990
+        };
+        // Display name overrides (pylinac uses abbreviated names)
+        const matDisplayNames = {
+          "Poly": "Polystyrene (Poly)", "50% Bone": "50% Bone Equivalent",
+          "20% Bone": "20% Bone Equivalent"
+        };
         const pairs = parseHuRois(row.value);
         if (pairs.length) {
           pairs.forEach((p, i) => {
             const nom = Object.entries(nominals).find(([k]) => p.mat.toLowerCase().includes(k.toLowerCase()));
             const nomStr = nom ? `<span style="color:var(--text-muted);font-size:0.75rem;margin-left:8px;">nominal: ${nom[1]} HU</span>` : "";
+            const dispName = matDisplayNames[p.mat] || p.mat;
             html += `<div class="summary-row">
-              <span class="sr-label" style="padding-left:18px;">&#x2514; ${p.mat}</span>
+              <span class="sr-label" style="padding-left:18px;">&#x2514; ${dispName}</span>
               <span class="sr-value">${p.val} HU${nomStr}</span>
             </div>`;
           });
@@ -1131,12 +1151,13 @@ async function generateCatPhanPDF(r) {
         y += subH;
 
         // Parse and render each material
-        const nominals = { "air":-1000,"pmp":-200,"ldpe":-100,"poly":-35,"acrylic":120,"20% bone":237,"50% bone":725,"delrin":340,"teflon":990 };
-        const re2 = /([A-Za-z0-9%\s]+):\s*([-\d.]+)/g;
+        const nominals = { "air":-1000,"pmp":-200,"ldpe":-100,"poly":-35,"polystyrene":-35,"acrylic":120,"20% bone":237,"50% bone":725,"delrin":340,"teflon":990 };
+        const re2 = /((?:[A-Za-z0-9%]+\s+)*[A-Za-z0-9%]+)\s*:\s*(-?\d+(?:\.\d+)?)/g;
         let m2; let matIdx = 0;
         while ((m2 = re2.exec(row.value)) !== null) {
           if (y > 272) { doc.addPage(); y = 18; }
           const mat = m2[1].trim(); const val = m2[2].trim();
+          if (/passed|tolerance|visibility|geometry|thickness|noise|cnr|index|average|frequency|power/i.test(mat)) continue;
           const nom = Object.entries(nominals).find(([k]) => mat.toLowerCase().includes(k));
           doc.setFillColor(matIdx % 2 === 0 ? 248 : 240, matIdx % 2 === 0 ? 250 : 244, matIdx % 2 === 0 ? 255 : 252);
           doc.rect(M, y, W - M * 2, 7, "F");
