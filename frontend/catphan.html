@@ -95,6 +95,65 @@
     .badge-fail { display: inline-flex; align-items: center; gap: 4px; background: var(--fail-dim); color: var(--fail); border: 1px solid rgba(200,90,67,0.3); border-radius: 20px; padding: 2px 10px; font-family: var(--mono); font-size: 0.7rem; font-weight: 600; }
     .badge-na   { display: inline-flex; align-items: center; gap: 4px; background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border); border-radius: 20px; padding: 2px 10px; font-family: var(--mono); font-size: 0.7rem; font-weight: 600; }
 
+    /* ── Summary section cards ── */
+    .summary-section {
+      margin-bottom: 18px;
+    }
+    .summary-section-title {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: var(--accent-dim);
+      border: 1px solid var(--accent-border);
+      border-radius: var(--r) var(--r) 0 0;
+      padding: 6px 14px;
+      display: block;
+    }
+    .summary-rows {
+      border: 1px solid var(--border);
+      border-top: none;
+      border-radius: 0 0 var(--r) var(--r);
+      overflow: hidden;
+    }
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border-subtle);
+      gap: 12px;
+    }
+    .summary-row:last-child { border-bottom: none; }
+    .summary-row:nth-child(even) { background: var(--surface-2); }
+    .summary-row .sr-label {
+      font-size: 0.82rem;
+      color: var(--text-2);
+      flex: 1;
+    }
+    .summary-row .sr-value {
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text);
+      text-align: right;
+    }
+    .sr-pass { color: var(--pass) !important; }
+    .sr-fail { color: var(--fail) !important; }
+    .sr-section-header {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding: 6px 14px 4px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
     .info-banner {
       display: flex; align-items: flex-start; gap: 12px;
       background: var(--accent-dim); border: 1px solid var(--accent-border);
@@ -421,7 +480,7 @@ function handleSuccess(result, file) {
     passed: pass, summary, imageUrl: imgUrl
   });
 
-  resultsDiv.innerHTML = "<pre>" + summary + "</pre>";
+  resultsDiv.innerHTML = renderCatPhanSummary(summary);
 
   // ── Verdict banner ──
   const banner = document.getElementById("verdictBanner");
@@ -615,6 +674,123 @@ function addLineChart(container, title, points) {
   });
 }
 
+// ── Summary parser: turns raw pylinac text into structured sections ────────────
+function parseCatPhanSummary(text) {
+  if (!text) return [];
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+  const sections = [];
+  let current = null;
+
+  const sectionHeaders = {
+    "CTP 404 Results": "CTP404 — HU Linearity & Geometry",
+    "CTP528 Results":  "CTP528 — Spatial Resolution (MTF)",
+    "CTP486 Results":  "CTP486 — Image Uniformity",
+    "CTP515 Results":  "CTP515 — Low Contrast Detectability",
+    "CBCT/CT 604 QA Test": null,  // skip top-level header
+  };
+
+  // Friendly label map
+  const labelMap = {
+    "HU Linearity tolerance":       "HU Linearity Tolerance",
+    "HU Linearity ROIs":            "HU Values (ROIs)",
+    "HU Passed?":                   "HU Linearity Passed",
+    "Low contrast visibility":      "Low Contrast Visibility Score",
+    "Geometric Line Average (mm)":  "Geometric Line Average",
+    "Geometry Passed?":             "Geometry Passed",
+    "Measured Slice Thickness (mm)":"Measured Slice Thickness",
+    "Slice Thickness Passed?":      "Slice Thickness Passed",
+    "MTF 80% (lp/mm)":             "MTF at 80%",
+    "MTF 50% (lp/mm)":             "MTF at 50%",
+    "MTF 30% (lp/mm)":             "MTF at 30%",
+    "Uniformity tolerance":         "Uniformity Tolerance",
+    "Uniformity ROIs":              "Uniformity ROI Values",
+    "Uniformity index":             "Uniformity Index",
+    "Integral non-uniformity":      "Integral Non-Uniformity",
+    "Uniformity Passed?":           "Uniformity Passed",
+    "Max Noise Power frequency":    "Max Noise Power Frequency",
+    "Average Noise Power":          "Average Noise Power",
+    "CNR threshold":                "CNR Threshold",
+    'Low contrast ROIs "seen"':     "Low Contrast ROIs Seen",
+  };
+
+  function friendlyLabel(raw) {
+    for (const [k, v] of Object.entries(labelMap)) {
+      if (raw.toLowerCase().startsWith(k.toLowerCase())) return v;
+    }
+    return raw;
+  }
+
+  function isPassFail(val) {
+    const v = val.trim().toLowerCase();
+    return v === "true" || v === "false" || v === "pass" || v === "fail";
+  }
+  function passClass(val) {
+    const v = val.trim().toLowerCase();
+    return (v === "true" || v === "pass") ? "sr-pass" : "sr-fail";
+  }
+  function formatValue(label, val) {
+    const v = val.trim();
+    // Add units where missing
+    if (label.includes("Slice Thickness") && !label.includes("Passed") && /^[\d.]+$/.test(v)) return v + " mm";
+    if (label.includes("MTF") && /^[\d.]+$/.test(v)) return v + " lp/mm";
+    if (label.includes("Tolerance") && /^\d+$/.test(v)) return "\u00B1" + v + " HU";
+    if (v.toLowerCase() === "true")  return "✓ Yes";
+    if (v.toLowerCase() === "false") return "✗ No";
+    return v;
+  }
+
+  for (const line of lines) {
+    // Section header like "- CTP528 Results -"
+    const headerMatch = line.match(/^-\s*(.+?)\s*-$/);
+    if (headerMatch) {
+      const key = headerMatch[1].trim();
+      const title = sectionHeaders[key];
+      if (title === null) continue;  // skip top-level header
+      current = { title: title || key, rows: [] };
+      sections.push(current);
+      continue;
+    }
+
+    // Key: value line
+    const colonIdx = line.indexOf(":");
+    if (colonIdx > 0 && current) {
+      const rawLabel = line.slice(0, colonIdx).trim();
+      const rawVal   = line.slice(colonIdx + 1).trim();
+      const label    = friendlyLabel(rawLabel);
+      const value    = formatValue(label, rawVal);
+      const cls      = isPassFail(rawVal) ? passClass(rawVal) : "";
+      current.rows.push({ label, value, cls });
+    } else if (current && line) {
+      // continuation line (e.g. wrapped HU ROIs)
+      if (current.rows.length > 0) {
+        current.rows[current.rows.length - 1].value += " " + line;
+      }
+    }
+  }
+  return sections;
+}
+
+function renderCatPhanSummary(text) {
+  const sections = parseCatPhanSummary(text);
+  if (!sections.length) return "<pre>" + (text || "") + "</pre>";
+
+  let html = '<div style="display:flex;flex-direction:column;gap:16px;margin-top:8px;">';
+  for (const sec of sections) {
+    html += `<div class="summary-section">`;
+    html += `<span class="summary-section-title">${sec.title}</span>`;
+    html += `<div class="summary-rows">`;
+    for (const row of sec.rows) {
+      html += `<div class="summary-row">
+        <span class="sr-label">${row.label}</span>
+        <span class="sr-value ${row.cls}">${row.value}</span>
+      </div>`;
+    }
+    html += `</div></div>`;
+  }
+  html += "</div>";
+  return html;
+}
+
 // ── PDF Export ────────────────────────────────────────────────────────────────
 function exportPDF() {
   const lr = window._lastResult;
@@ -792,25 +968,64 @@ async function generateCatPhanPDF(r) {
     } catch(e) { y += 4; }
   }
 
-  // ── Summary text box ─────────────────────────────────────────────────────────
-  doc.setDrawColor(180, 200, 220); doc.setLineWidth(0.4); doc.line(M, y, W - M, y); y += 6;
-  const summaryLines = doc.splitTextToSize(r.summary || "", W - M * 2 - 10);
-  const boxH = Math.min(summaryLines.length * 5.4 + 16, 230);
-  if (y + boxH > 272) { doc.addPage(); y = 18; }
-  doc.setFillColor(245, 248, 252); doc.roundedRect(M, y, W - M * 2, boxH, 2, 2, "F");
-  doc.setDrawColor(200, 215, 230); doc.setLineWidth(0.3); doc.roundedRect(M, y, W - M * 2, boxH, 2, 2, "S");
-  y += 7;
-  doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(15, 40, 80);
-  doc.text("ANALYSIS SUMMARY", M + 5, y); y += 7;
-  doc.setFont("courier", "normal"); doc.setFontSize(8.2); doc.setTextColor(20, 45, 80);
-  summaryLines.forEach(line => {
-    if (y > 272) {
-      doc.addPage(); y = 18;
-      doc.setFillColor(245, 248, 252); doc.roundedRect(M, y - 4, W - M * 2, 240, 2, 2, "F");
-      doc.setFont("courier", "normal"); doc.setFontSize(8.2); doc.setTextColor(20, 45, 80);
+  // ── Structured summary sections ─────────────────────────────────────────────
+  doc.setDrawColor(180, 200, 220); doc.setLineWidth(0.4); doc.line(M, y, W - M, y); y += 5;
+
+  const pdfSections = parseCatPhanSummary(r.summary || "");
+
+  const sectionColors = {
+    "CTP404": [11, 74, 117],
+    "CTP528": [30, 100, 80],
+    "CTP486": [80, 60, 130],
+    "CTP515": [130, 70, 30],
+  };
+
+  function getSectionColor(title) {
+    for (const [key, col] of Object.entries(sectionColors)) {
+      if (title.includes(key)) return col;
     }
-    doc.text(line, M + 5, y); y += 5.4;
-  });
+    return [11, 74, 117];
+  }
+
+  for (const sec of pdfSections) {
+    if (y > 260) { doc.addPage(); y = 18; }
+
+    const col = getSectionColor(sec.title);
+
+    // Section header bar
+    doc.setFillColor(...col);
+    doc.roundedRect(M, y, W - M * 2, 8, 1.5, 1.5, "F");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(255, 255, 255);
+    doc.text(sec.title.toUpperCase(), M + 4, y + 5.5);
+    y += 8;
+
+    // Rows
+    sec.rows.forEach((row, idx) => {
+      if (y > 272) { doc.addPage(); y = 18; }
+      const rowH = 7;
+      doc.setFillColor(idx % 2 === 0 ? 245 : 237, idx % 2 === 0 ? 248 : 243, idx % 2 === 0 ? 252 : 250);
+      doc.rect(M, y, W - M * 2, rowH, "F");
+      doc.setDrawColor(220, 228, 238); doc.setLineWidth(0.2);
+      doc.line(M, y + rowH, M + (W - M * 2), y + rowH);
+
+      // Label
+      doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(40, 60, 90);
+      doc.text(row.label, M + 4, y + 5);
+
+      // Value — colour-coded pass/fail
+      const isPass = row.cls === "sr-pass";
+      const isFail = row.cls === "sr-fail";
+      if (isPass) doc.setTextColor(0, 140, 80);
+      else if (isFail) doc.setTextColor(180, 30, 50);
+      else doc.setTextColor(15, 37, 55);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(7.5);
+      const valW = doc.getTextWidth(row.value);
+      doc.text(row.value, M + (W - M * 2) - valW - 4, y + 5);
+
+      y += rowH;
+    });
+    y += 5; // gap between sections
+  }
 
   // ── Footer (all pages) ───────────────────────────────────────────────────────
   const pages = doc.internal.getNumberOfPages();
