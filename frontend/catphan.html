@@ -757,17 +757,63 @@ function parseCatPhanSummary(text) {
       const rawLabel = line.slice(0, colonIdx).trim();
       const rawVal   = line.slice(colonIdx + 1).trim();
       const label    = friendlyLabel(rawLabel);
-      const value    = formatValue(label, rawVal);
-      const cls      = isPassFail(rawVal) ? passClass(rawVal) : "";
+
+      // ── Special case: HU ROI line — parse "Mat: val, Mat: val …" into sub-rows
+      if (label === "HU Values (ROIs)") {
+        // Mark a placeholder so continuation lines can append to the raw string
+        current._huRoiRaw = rawVal;
+        current._huRoiRowIndex = current.rows.length;
+        current.rows.push({ label: "HU Values (ROIs)", value: rawVal, cls: "", _isHuRoi: true });
+        continue;
+      }
+
+      // ── Special case: Uniformity ROIs "Top: x, Right: x …"
+      if (label === "Uniformity ROI Values") {
+        current.rows.push({ label: "Uniformity ROI Values", value: rawVal, cls: "", _isUniformityRoi: true });
+        continue;
+      }
+
+      // ── Slice Thickness line may embed "Slice Thickness Passed? True" inline
+      // e.g. "Measured Slice Thickness (mm): 2.487" followed immediately by
+      // "Slice Thickness Passed? True" — handled normally, but check combined
+      const value = formatValue(label, rawVal);
+      const cls   = isPassFail(rawVal) ? passClass(rawVal) : "";
       current.rows.push({ label, value, cls });
     } else if (current && line) {
-      // continuation line (e.g. wrapped HU ROIs)
-      if (current.rows.length > 0) {
+      // continuation line — append to last HU ROI raw string if applicable
+      if (current._huRoiRaw !== undefined) {
+        current._huRoiRaw += " " + line;
+        current.rows[current._huRoiRowIndex].value = current._huRoiRaw;
+      } else if (current.rows.length > 0) {
         current.rows[current.rows.length - 1].value += " " + line;
       }
     }
   }
   return sections;
+}
+
+// Parse "Mat: val, Mat2: val2, ..." into [{mat, val}] pairs
+function parseHuRois(raw) {
+  // Matches patterns like "Air: -998.0" "50% Bone: 90.0" "20% Bone: 88.0"
+  const pairs = [];
+  // Split on ", " but only where the next token looks like a material name (has letter before colon)
+  const re = /([A-Za-z0-9%\s]+):\s*([-\d.]+)/g;
+  let m;
+  while ((m = re.exec(raw)) !== null) {
+    pairs.push({ mat: m[1].trim(), val: m[2].trim() });
+  }
+  return pairs;
+}
+
+// Parse "Top: x, Right: x, Bottom: x, Left: x, Center: x"
+function parseUniformityRois(raw) {
+  const pairs = [];
+  const re = /([A-Za-z]+):\s*([-\d.]+)/g;
+  let m;
+  while ((m = re.exec(raw)) !== null) {
+    pairs.push({ pos: m[1].trim(), val: m[2].trim() });
+  }
+  return pairs;
 }
 
 function renderCatPhanSummary(text) {
@@ -780,10 +826,51 @@ function renderCatPhanSummary(text) {
     html += `<span class="summary-section-title">${sec.title}</span>`;
     html += `<div class="summary-rows">`;
     for (const row of sec.rows) {
-      html += `<div class="summary-row">
-        <span class="sr-label">${row.label}</span>
-        <span class="sr-value ${row.cls}">${row.value}</span>
-      </div>`;
+      if (row._isHuRoi) {
+        // Section sub-header
+        html += `<div class="summary-row" style="background:var(--surface-2);border-bottom:1px solid var(--border);">
+          <span class="sr-label" style="font-weight:600;color:var(--text);">HU Values by Material</span>
+          <span class="sr-value" style="color:var(--text-muted);font-size:0.75rem;">Nominal vs Measured</span>
+        </div>`;
+        // HU nominal reference values for CatPhan 604
+        const nominals = { "Air":-1000,"PMP":-200,"LDPE":-100,"Poly":-35,"Acrylic":120,"20% Bone":237,"50% Bone":725,"Delrin":340,"Teflon":990 };
+        const pairs = parseHuRois(row.value);
+        if (pairs.length) {
+          pairs.forEach((p, i) => {
+            const nom = Object.entries(nominals).find(([k]) => p.mat.toLowerCase().includes(k.toLowerCase()));
+            const nomStr = nom ? `<span style="color:var(--text-muted);font-size:0.75rem;margin-left:8px;">nominal: ${nom[1]} HU</span>` : "";
+            html += `<div class="summary-row">
+              <span class="sr-label" style="padding-left:18px;">&#x2514; ${p.mat}</span>
+              <span class="sr-value">${p.val} HU${nomStr}</span>
+            </div>`;
+          });
+        } else {
+          html += `<div class="summary-row"><span class="sr-label" style="padding-left:18px;">${row.value}</span></div>`;
+        }
+      } else if (row._isUniformityRoi) {
+        html += `<div class="summary-row" style="background:var(--surface-2);">
+          <span class="sr-label" style="font-weight:600;color:var(--text);">Uniformity ROI Values</span>
+          <span class="sr-value" style="color:var(--text-muted);font-size:0.75rem;">HU per position</span>
+        </div>`;
+        const pairs = parseUniformityRois(row.value);
+        if (pairs.length) {
+          // Render as a horizontal mini-grid
+          html += `<div class="summary-row" style="flex-wrap:wrap;gap:8px;justify-content:flex-start;">`;
+          pairs.forEach(p => {
+            html += `<span style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-family:var(--mono);font-size:0.78rem;">
+              <span style="color:var(--text-muted)">${p.pos}:</span> <strong>${p.val}</strong>
+            </span>`;
+          });
+          html += `</div>`;
+        } else {
+          html += `<div class="summary-row"><span class="sr-label">${row.value}</span></div>`;
+        }
+      } else {
+        html += `<div class="summary-row">
+          <span class="sr-label">${row.label}</span>
+          <span class="sr-value ${row.cls}">${row.value}</span>
+        </div>`;
+      }
     }
     html += `</div></div>`;
   }
@@ -1000,29 +1087,87 @@ async function generateCatPhanPDF(r) {
     y += 8;
 
     // Rows
-    sec.rows.forEach((row, idx) => {
+    sec.rows.forEach((row, rowIdx) => {
       if (y > 272) { doc.addPage(); y = 18; }
-      const rowH = 7;
-      doc.setFillColor(idx % 2 === 0 ? 245 : 237, idx % 2 === 0 ? 248 : 243, idx % 2 === 0 ? 252 : 250);
-      doc.rect(M, y, W - M * 2, rowH, "F");
-      doc.setDrawColor(220, 228, 238); doc.setLineWidth(0.2);
-      doc.line(M, y + rowH, M + (W - M * 2), y + rowH);
 
-      // Label
-      doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(40, 60, 90);
-      doc.text(row.label, M + 4, y + 5);
+      if (row._isHuRoi) {
+        // Sub-header
+        const subH = 7;
+        doc.setFillColor(220, 230, 245);
+        doc.rect(M, y, W - M * 2, subH, "F");
+        doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(40, 60, 110);
+        doc.text("HU Values by Material", M + 4, y + 5);
+        doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(100, 120, 150);
+        doc.text("Measured  |  Nominal", M + (W - M * 2) - 42, y + 5);
+        y += subH;
 
-      // Value — colour-coded pass/fail
-      const isPass = row.cls === "sr-pass";
-      const isFail = row.cls === "sr-fail";
-      if (isPass) doc.setTextColor(0, 140, 80);
-      else if (isFail) doc.setTextColor(180, 30, 50);
-      else doc.setTextColor(15, 37, 55);
-      doc.setFont("helvetica", "bold"); doc.setFontSize(7.5);
-      const valW = doc.getTextWidth(row.value);
-      doc.text(row.value, M + (W - M * 2) - valW - 4, y + 5);
+        // Parse and render each material
+        const nominals = { "air":-1000,"pmp":-200,"ldpe":-100,"poly":-35,"acrylic":120,"20% bone":237,"50% bone":725,"delrin":340,"teflon":990 };
+        const re2 = /([A-Za-z0-9%\s]+):\s*([-\d.]+)/g;
+        let m2; let matIdx = 0;
+        while ((m2 = re2.exec(row.value)) !== null) {
+          if (y > 272) { doc.addPage(); y = 18; }
+          const mat = m2[1].trim(); const val = m2[2].trim();
+          const nom = Object.entries(nominals).find(([k]) => mat.toLowerCase().includes(k));
+          doc.setFillColor(matIdx % 2 === 0 ? 248 : 240, matIdx % 2 === 0 ? 250 : 244, matIdx % 2 === 0 ? 255 : 252);
+          doc.rect(M, y, W - M * 2, 7, "F");
+          doc.setDrawColor(220, 228, 238); doc.setLineWidth(0.2);
+          doc.line(M, y + 7, M + (W - M * 2), y + 7);
+          doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(40, 60, 90);
+          doc.text("  └ " + mat, M + 4, y + 5);
+          doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(15, 37, 55);
+          const measured = val + " HU";
+          const mW = doc.getTextWidth(measured);
+          doc.text(measured, M + (W - M * 2) - mW - 4, y + 5);
+          if (nom) {
+            doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(110, 130, 160);
+            const nomStr = "nom: " + nom[1];
+            const nW = doc.getTextWidth(nomStr);
+            doc.text(nomStr, M + (W - M * 2) - mW - nW - 10, y + 5);
+          }
+          y += 7; matIdx++;
+        }
 
-      y += rowH;
+      } else if (row._isUniformityRoi) {
+        // Uniformity positions as a single wrapped row
+        const subH = 7;
+        doc.setFillColor(220, 230, 245);
+        doc.rect(M, y, W - M * 2, subH, "F");
+        doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(40, 60, 110);
+        doc.text("Uniformity ROI Values (HU)", M + 4, y + 5);
+        y += subH;
+        const re3 = /([A-Za-z]+):\s*([-\d.]+)/g;
+        let m3; const posPairs = []; 
+        while ((m3 = re3.exec(row.value)) !== null) posPairs.push(m3[1].trim() + ": " + m3[2].trim());
+        if (posPairs.length) {
+          doc.setFillColor(245, 248, 252);
+          doc.rect(M, y, W - M * 2, 7, "F");
+          doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(15, 37, 55);
+          doc.text(posPairs.join("   |   "), M + 4, y + 5);
+          y += 7;
+        }
+
+      } else {
+        const rowH = 7;
+        doc.setFillColor(rowIdx % 2 === 0 ? 245 : 237, rowIdx % 2 === 0 ? 248 : 243, rowIdx % 2 === 0 ? 252 : 250);
+        doc.rect(M, y, W - M * 2, rowH, "F");
+        doc.setDrawColor(220, 228, 238); doc.setLineWidth(0.2);
+        doc.line(M, y + rowH, M + (W - M * 2), y + rowH);
+
+        doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(40, 60, 90);
+        doc.text(row.label, M + 4, y + 5);
+
+        const isPass = row.cls === "sr-pass";
+        const isFail = row.cls === "sr-fail";
+        if (isPass) doc.setTextColor(0, 140, 80);
+        else if (isFail) doc.setTextColor(180, 30, 50);
+        else doc.setTextColor(15, 37, 55);
+        doc.setFont("helvetica", "bold"); doc.setFontSize(7.5);
+        const valW = doc.getTextWidth(row.value);
+        doc.text(row.value, M + (W - M * 2) - valW - 4, y + 5);
+
+        y += rowH;
+      }
     });
     y += 5; // gap between sections
   }
