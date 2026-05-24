@@ -276,7 +276,7 @@
 
     <!-- PDF export -->
     <div id="pdfSection" style="display:none; margin-top:24px;">
-      <button class="btn-secondary" onclick="exportPDF()">⬇ Export PDF Report</button>
+      <button class="btn-outline" onclick="exportPDF()">&#11015; Download PDF Report</button>
     </div>
   </div>
 
@@ -413,7 +413,8 @@ function handleSuccess(result, file) {
     pass, imgUrl, summary,
     filename: file.name,
     testType: "CatPhan 604",
-    toleranceText: "Low contrast ≥1 ROI per group | HU ±40 | Uniformity ≤40"
+    toleranceText: "Low contrast ≥1 ROI per group | HU ±40 | Uniformity ≤40",
+    chart_data: cd
   };
   HistoryManager.record({
     testType: "CatPhan 604", filename: file.name,
@@ -618,20 +619,201 @@ function addLineChart(container, title, points) {
 function exportPDF() {
   const lr = window._lastResult;
   if (!lr) return;
+  generateCatPhanPDF(lr);
+}
+
+async function generateCatPhanPDF(r) {
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.text("CatPhan 604 CBCT QA Report", 14, 20);
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.text(`File: ${lr.filename}`, 14, 30);
-  doc.text(`Date: ${new Date().toLocaleString()}`, 14, 37);
-  doc.text(`Overall: ${lr.pass ? "PASS" : "FAIL"}`, 14, 44);
-  doc.setFontSize(9);
-  const lines = doc.splitTextToSize(lr.summary || "", 180);
-  doc.text(lines, 14, 54);
-  doc.save(`catphan604_qa_${Date.now()}.pdf`);
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const W = 210, M = 16;
+
+  const institution = localStorage.getItem("mlcqa_institution") || "";
+  const machineId   = localStorage.getItem("mlcqa_machine_id")  || "";
+
+  function truncateFilename(name, maxChars) {
+    if (!name || name.length <= maxChars) return name;
+    const ext = name.lastIndexOf(".") > 0 ? name.slice(name.lastIndexOf(".")) : "";
+    return name.slice(0, maxChars - ext.length - 3) + "..." + ext;
+  }
+  const shortFilename = truncateFilename(r.filename, 60);
+
+  // ── Header ──────────────────────────────────────────────────────────────────
+  const headerH = institution ? 30 : 26;
+  doc.setFillColor(15, 37, 55);
+  doc.rect(0, 0, W, headerH, "F");
+  doc.setFillColor(11, 74, 117);
+  doc.rect(0, 0, 5, headerH, "F");
+
+  let titleY = 11;
+  if (institution) {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7);
+    doc.setTextColor(180, 210, 230);
+    doc.text(institution.toUpperCase(), M + 6, 8);
+    titleY = 15;
+  }
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(255, 255, 255);
+  doc.text("CatPhan 604 \u2014 CBCT QA Report", M + 6, titleY);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(180, 210, 230);
+  const now = new Date().toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
+  const metaY = titleY + 7;
+  doc.text(`Generated: ${now}`, M + 6, metaY);
+  doc.text(`File: ${shortFilename}`, M + 6, metaY + 4);
+
+  if (machineId) {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(180, 210, 230);
+    const label = `Linac: ${machineId}`;
+    const labelW = doc.getTextWidth(label);
+    doc.text(label, W - M - labelW, metaY);
+  }
+
+  let y = headerH + 6;
+
+  // ── Pass/Fail banner ─────────────────────────────────────────────────────────
+  doc.setFillColor(...(r.pass ? [0, 168, 107] : [195, 45, 70]));
+  doc.roundedRect(M, y, W - M * 2, 13, 2, 2, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(255, 255, 255);
+  doc.text(r.pass ? "PASS" : "FAIL", M + 5, y + 9);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
+  doc.text(r.toleranceText || (r.pass ? "Within clinical tolerance" : "Outside clinical tolerance"), M + 36, y + 9);
+  y += 18;
+
+  // ── Key-metrics highlight row ─────────────────────────────────────────────────
+  const cd = r.chart_data || {};
+  const lc = cd.low_contrast || {};
+  function fmtNum(v, dec) { return (v !== null && v !== undefined && !isNaN(v)) ? Number(v).toFixed(dec) : "\u2014"; }
+
+  const metrics = [
+    { label: "Max HU Dev",     value: cd.hu_linearity_max_deviation != null ? fmtNum(cd.hu_linearity_max_deviation, 1) + " HU" : "\u2014" },
+    { label: "Uniformity Idx", value: cd.uniformity_index != null ? fmtNum(cd.uniformity_index, 2) : "\u2014" },
+    { label: "MTF 50%",        value: cd.mtf_50 != null ? fmtNum(cd.mtf_50, 3) + " lp/mm" : "\u2014" },
+    { label: "LC 1.0% ROIs",   value: lc["1.0"] != null ? String(lc["1.0"]) + " seen" : "\u2014" },
+  ];
+  const cardW = (W - M * 2 - 6) / 4;
+  metrics.forEach((m2, i) => {
+    const cx = M + i * (cardW + 2);
+    doc.setFillColor(11, 74, 117);
+    doc.roundedRect(cx, y, cardW, 14, 1.5, 1.5, "F");
+    doc.setFillColor(235, 241, 248);
+    doc.roundedRect(cx, y + 4, cardW, 10, 0, 1.5, "F");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); doc.setTextColor(255, 255, 255);
+    doc.text(m2.label.toUpperCase(), cx + cardW / 2, y + 3.5, { align: "center" });
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(15, 37, 55);
+    doc.text(m2.value, cx + cardW / 2, y + 11, { align: "center" });
+  });
+  y += 20;
+
+  // ── QA Table ──────────────────────────────────────────────────────────────────
+  const qaTable = cd.qa_table;
+  if (qaTable && qaTable.length) {
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(15, 40, 80);
+    doc.text("QA SUMMARY TABLE", M, y); y += 5;
+
+    const cols = [
+      { label: "Module",    w: 22 },
+      { label: "Parameter", w: 52 },
+      { label: "Measured",  w: 45 },
+      { label: "Tolerance", w: 35 },
+      { label: "Status",    w: 24 },
+    ];
+    const rowH = 8;
+    // Header row
+    doc.setFillColor(11, 74, 117);
+    doc.rect(M, y, W - M * 2, rowH, "F");
+    let cx2 = M + 2;
+    cols.forEach(c => {
+      doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(255, 255, 255);
+      doc.text(c.label, cx2, y + 5.5);
+      cx2 += c.w;
+    });
+    y += rowH;
+
+    qaTable.forEach((row, idx) => {
+      doc.setFillColor(idx % 2 === 0 ? 245 : 235, idx % 2 === 0 ? 248 : 241, idx % 2 === 0 ? 252 : 248);
+      doc.rect(M, y, W - M * 2, rowH, "F");
+      cx2 = M + 2;
+      const rowData = [row.module, row.parameter, row.measured, row.tolerance, row.status];
+      cols.forEach((c, ci) => {
+        if (ci === 4) {
+          // Status: coloured badge
+          const isPass = row.status === "PASS";
+          doc.setFillColor(...(isPass ? [0, 168, 107] : [195, 45, 70]));
+          doc.roundedRect(cx2, y + 1.5, 18, 5, 1, 1, "F");
+          doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); doc.setTextColor(255, 255, 255);
+          doc.text(row.status, cx2 + 9, y + 5.5, { align: "center" });
+        } else {
+          doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(20, 45, 80);
+          doc.text(String(rowData[ci] || ""), cx2, y + 5.5);
+        }
+        cx2 += c.w;
+      });
+      y += rowH;
+    });
+    y += 6;
+  }
+
+  // ── Analysis image ───────────────────────────────────────────────────────────
+  if (r.imgUrl) {
+    try {
+      const imgData = await fetchCatPhanImageAsBase64(r.imgUrl);
+      const imgW = W - M * 2; const imgH = imgW * 0.5;
+      if (y + imgH > 270) { doc.addPage(); y = 18; }
+      doc.setDrawColor(180, 200, 220); doc.setLineWidth(0.3);
+      doc.rect(M, y, imgW, imgH);
+      doc.addImage(imgData, "PNG", M, y, imgW, imgH);
+      y += imgH + 5;
+      doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(80, 105, 135);
+      doc.text("Figure: Pylinac CatPhan 604 \u2014 Analyzed Image", M, y);
+      y += 9;
+    } catch(e) { y += 4; }
+  }
+
+  // ── Summary text box ─────────────────────────────────────────────────────────
+  doc.setDrawColor(180, 200, 220); doc.setLineWidth(0.4); doc.line(M, y, W - M, y); y += 6;
+  const summaryLines = doc.splitTextToSize(r.summary || "", W - M * 2 - 10);
+  const boxH = Math.min(summaryLines.length * 5.4 + 16, 230);
+  if (y + boxH > 272) { doc.addPage(); y = 18; }
+  doc.setFillColor(245, 248, 252); doc.roundedRect(M, y, W - M * 2, boxH, 2, 2, "F");
+  doc.setDrawColor(200, 215, 230); doc.setLineWidth(0.3); doc.roundedRect(M, y, W - M * 2, boxH, 2, 2, "S");
+  y += 7;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(15, 40, 80);
+  doc.text("ANALYSIS SUMMARY", M + 5, y); y += 7;
+  doc.setFont("courier", "normal"); doc.setFontSize(8.2); doc.setTextColor(20, 45, 80);
+  summaryLines.forEach(line => {
+    if (y > 272) {
+      doc.addPage(); y = 18;
+      doc.setFillColor(245, 248, 252); doc.roundedRect(M, y - 4, W - M * 2, 240, 2, 2, "F");
+      doc.setFont("courier", "normal"); doc.setFontSize(8.2); doc.setTextColor(20, 45, 80);
+    }
+    doc.text(line, M + 5, y); y += 5.4;
+  });
+
+  // ── Footer (all pages) ───────────────────────────────────────────────────────
+  const pages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i);
+    doc.setFillColor(235, 241, 248); doc.rect(0, 284, W, 13, "F");
+    doc.setDrawColor(180, 200, 220); doc.setLineWidth(0.3); doc.line(0, 284, W, 284);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(60, 85, 120);
+    const footerLeft = institution
+      ? `${institution}  \u00B7  MLC QA Platform  \u00B7  For clinical physics use only`
+      : "MLC QA Platform  \u00B7  For clinical physics use only  \u00B7  Not for diagnostic use";
+    doc.text(footerLeft, M, 291);
+    doc.text(`Page ${i} of ${pages}`, W - 28, 291);
+  }
+
+  const safeFile = (r.filename || "catphan").replace(/\.[^.]+$/, "").slice(0, 40);
+  doc.save(`MLCQA_CATPHAN604_${safeFile}_${Date.now()}.pdf`);
+}
+
+async function fetchCatPhanImageAsBase64(url) {
+  const res = await fetch(url); const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 }
 </script>
 </body>
