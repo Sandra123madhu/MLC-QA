@@ -348,3 +348,61 @@ tbody td { padding:11px 16px; font-size:0.83rem; color:var(--text); }
   .charts-grid { grid-template-columns:1fr; }
   .metrics-row { grid-template-columns:1fr 1fr; }
 }
+
+/* ── PDF Download Modal ─────────────────────────────────────────────────────── */
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.55); backdrop-filter: blur(3px);
+  z-index: 9999; align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 32px 28px; width: 100%; max-width: 420px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.45);
+  animation: modalPop 0.18s ease;
+}
+@keyframes modalPop {
+  from { transform: scale(0.93); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+.modal-box h3 {
+  margin: 0 0 6px; font-size: 1.1rem; color: var(--text);
+  display: flex; align-items: center; gap: 8px;
+}
+.modal-box p { margin: 0 0 20px; font-size: 0.82rem; color: var(--text-2); }
+.modal-field { margin-bottom: 16px; }
+.modal-field label {
+  display: block; font-size: 0.78rem; font-weight: 600;
+  color: var(--text-2); margin-bottom: 6px; letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.modal-field input {
+  width: 100%; box-sizing: border-box;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px; font-size: 0.93rem;
+  color: var(--text); outline: none; transition: border 0.15s;
+}
+.modal-field input:focus { border-color: var(--accent); }
+.modal-field input::placeholder { color: var(--text-muted); }
+.modal-actions {
+  display: flex; gap: 10px; justify-content: flex-end; margin-top: 22px;
+}
+.modal-btn-cancel {
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text-2); padding: 9px 18px; border-radius: 8px;
+  font-size: 0.88rem; cursor: pointer; transition: background 0.15s;
+}
+.modal-btn-cancel:hover { background: var(--surface-2); }
+.modal-btn-confirm {
+  background: var(--accent); border: none; color: #fff;
+  padding: 9px 22px; border-radius: 8px;
+  font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: opacity 0.15s;
+}
+.modal-btn-confirm:hover { opacity: 0.88; }
+.modal-remember {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.78rem; color: var(--text-2); margin-top: 14px;
+  cursor: pointer; user-select: none;
+}
+.modal-remember input[type=checkbox] { accent-color: var(--accent); width:14px; height:14px; }
