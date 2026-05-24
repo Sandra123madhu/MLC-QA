@@ -9,6 +9,33 @@
   <script src="script.js"></script>
 </head>
 <body>
+
+<!-- ── Machine Name Modal ──────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="pdfModal" role="dialog" aria-modal="true" aria-labelledby="pdfModalTitle">
+  <div class="modal-box">
+    <h3 id="pdfModalTitle">🖨 Download PDF Report</h3>
+    <p>Enter your machine details to include them in the report header. These will be remembered for next time.</p>
+
+    <div class="modal-field">
+      <label for="modalMachineName">Machine / Linac Name <span style="color:var(--accent);">*</span></label>
+      <input type="text" id="modalMachineName" placeholder="e.g. Linac 1, TrueBeam-A, ELEKTA-2" maxlength="60" autocomplete="off"/>
+    </div>
+    <div class="modal-field">
+      <label for="modalInstitution">Institution / Department</label>
+      <input type="text" id="modalInstitution" placeholder="e.g. City General Hospital — Radiotherapy" maxlength="80" autocomplete="off"/>
+    </div>
+
+    <label class="modal-remember">
+      <input type="checkbox" id="modalRemember" checked/>
+      Remember these details for future downloads
+    </label>
+
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="closePdfModal()">Cancel</button>
+      <button class="modal-btn-confirm" onclick="confirmPdfDownload()">&#11015; Generate PDF</button>
+    </div>
+  </div>
+</div>
 <aside class="sidebar">
   <div class="sidebar-header">
     <a href="dashboard.html" class="sidebar-logo">
@@ -356,14 +383,77 @@ function renderSSCharts(cd) {
   });
 }
 
-async function downloadPDF() { const r = window._lastResult; if (!r) return; await generatePDF(r); }
+
+// ── PDF Modal controls ────────────────────────────────────────────────────────
+function exportPDF() {
+  const lr = window._lastResult;
+  if (!lr) return;
+
+  // Pre-fill saved values
+  const savedMachine     = localStorage.getItem("mlcqa_machine_id")  || "";
+  const savedInstitution = localStorage.getItem("mlcqa_institution") || "";
+  document.getElementById("modalMachineName").value = savedMachine;
+  document.getElementById("modalInstitution").value  = savedInstitution;
+
+  // Open modal; focus machine name field
+  const overlay = document.getElementById("pdfModal");
+  overlay.classList.add("open");
+  setTimeout(() => document.getElementById("modalMachineName").focus(), 60);
+
+  // Allow Enter key to confirm
+  overlay._keyHandler = (e) => { if (e.key === "Enter") confirmPdfDownload(); };
+  document.addEventListener("keydown", overlay._keyHandler);
+
+  // Click outside box to cancel
+  overlay._clickHandler = (e) => { if (e.target === overlay) closePdfModal(); };
+  overlay.addEventListener("click", overlay._clickHandler);
+}
+
+function closePdfModal() {
+  const overlay = document.getElementById("pdfModal");
+  overlay.classList.remove("open");
+  if (overlay._keyHandler)   { document.removeEventListener("keydown", overlay._keyHandler); overlay._keyHandler = null; }
+  if (overlay._clickHandler) { overlay.removeEventListener("click", overlay._clickHandler); overlay._clickHandler = null; }
+}
+
+function confirmPdfDownload() {
+  const machineName = document.getElementById("modalMachineName").value.trim();
+  const institution = document.getElementById("modalInstitution").value.trim();
+  const remember    = document.getElementById("modalRemember").checked;
+
+  if (!machineName) {
+    const inp = document.getElementById("modalMachineName");
+    inp.style.borderColor = "var(--fail)";
+    inp.placeholder = "Machine name is required";
+    inp.focus();
+    setTimeout(() => { inp.style.borderColor = ""; inp.placeholder = "e.g. Linac 1, TrueBeam-A, ELEKTA-2"; }, 2000);
+    return;
+  }
+
+  if (remember) {
+    localStorage.setItem("mlcqa_machine_id",  machineName);
+    localStorage.setItem("mlcqa_institution", institution);
+  }
+
+  closePdfModal();
+
+  const lr = window._lastResult;
+  if (lr) generatePDF({ ...lr, _machineName: machineName, _institution: institution });
+}
+
+function downloadPDF() { exportPDF(); }
 async function generatePDF(r) {
   const { jsPDF } = window.jspdf; const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" }); const W = 210, M = 16;
-  doc.setFillColor(15, 30, 55); doc.rect(0, 0, W, 26, "F"); doc.setFillColor(0, 175, 215); doc.rect(0, 0, 5, 26, "F");
+  const institution = r._institution || localStorage.getItem("mlcqa_institution") || "";
+  const machineId   = r._machineName  || localStorage.getItem("mlcqa_machine_id")  || "";
+  const headerH = (institution || machineId) ? 34 : 26;
+  doc.setFillColor(15, 30, 55); doc.rect(0, 0, W, headerH, "F"); doc.setFillColor(0, 175, 215); doc.rect(0, 0, 5, headerH, "F");
   doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(255, 255, 255); doc.text(`MLC QA \u2014 ${r.testType || "Analysis"} Report`, M + 6, 11);
   doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(180, 210, 230);
   const now = new Date().toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" }); doc.text(`Generated: ${now}`, M + 6, 19); doc.text(`File: ${r.filename}`, M + 6, 23.5);
-  let y = 34; doc.setFillColor(...(r.pass ? [0, 168, 107] : [195, 45, 70])); doc.roundedRect(M, y, W - M * 2, 13, 2, 2, "F");
+  if (institution) { doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(160, 200, 230); doc.text(institution.toUpperCase(), M + 6, 29); }
+  if (machineId)   { doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(160, 200, 230); const label = `Linac: ${machineId}`; doc.text(label, institution ? W - M - doc.getTextWidth(label) : M + 6, 29); }
+  let y = headerH + 8; doc.setFillColor(...(r.pass ? [0, 168, 107] : [195, 45, 70])); doc.roundedRect(M, y, W - M * 2, 13, 2, 2, "F");
   doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(255, 255, 255); doc.text(r.pass ? "\u2713  PASS" : "\u2717  FAIL", M + 5, y + 9);
   doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(255, 255, 255); doc.text(r.toleranceText || (r.pass ? "Within clinical tolerance" : "Outside clinical tolerance"), M + 36, y + 9); y += 20;
   if (r.imgUrl) { try { const imgData = await fetchImageAsBase64(r.imgUrl); const imgW = W - M * 2; const imgH = imgW * 0.5; doc.setDrawColor(180, 200, 220); doc.setLineWidth(0.3); doc.rect(M, y, imgW, imgH); doc.addImage(imgData, "PNG", M, y, imgW, imgH); y += imgH + 5; doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(80, 105, 135); doc.text(`Figure: Pylinac ${r.testType || ""} \u2014 Analyzed Image`, M, y); y += 9; } catch { y += 4; } }
@@ -374,7 +464,10 @@ async function generatePDF(r) {
   doc.setFont("courier", "normal"); doc.setFontSize(8.2); doc.setTextColor(20, 45, 80);
   summaryLines.forEach(line => { if (y > 272) { doc.addPage(); y = 18; doc.setFillColor(245, 248, 252); doc.roundedRect(M, y - 4, W - M * 2, 240, 2, 2, "F"); doc.setFont("courier", "normal"); doc.setFontSize(8.2); doc.setTextColor(20, 45, 80); } doc.text(line, M + 5, y); y += 5.4; });
   const pages = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= pages; i++) { doc.setPage(i); doc.setFillColor(235, 241, 248); doc.rect(0, 284, W, 13, "F"); doc.setDrawColor(180, 200, 220); doc.setLineWidth(0.3); doc.line(0, 284, W, 284); doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(60, 85, 120); doc.text("MLC QA Platform  \u00B7  For clinical physics use only  \u00B7  Not for diagnostic use", M, 291); doc.text(`Page ${i} of ${pages}`, W - 28, 291); }
+  for (let i = 1; i <= pages; i++) { doc.setPage(i); doc.setFillColor(235, 241, 248); doc.rect(0, 284, W, 13, "F"); doc.setDrawColor(180, 200, 220); doc.setLineWidth(0.3); doc.line(0, 284, W, 284); doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(60, 85, 120); const footerLeft = institution
+        ? `${institution}  \u00B7  MLC QA Platform  \u00B7  For clinical physics use only`
+        : "MLC QA Platform  \u00B7  For clinical physics use only  \u00B7  Not for diagnostic use";
+      doc.text(footerLeft, M, 291); doc.text(`Page ${i} of ${pages}`, W - 28, 291); }
   const prefix = r.testType ? r.testType.replace(/\s+/g, "_").toUpperCase() : "REPORT";
   doc.save(`MLCQA_${prefix}_${r.filename.replace(/\.[^.]+$/, "")}_${Date.now()}.pdf`);
 }
