@@ -420,6 +420,124 @@ const HistoryManager = (function () {
 })();
 
 
+// ── Profile Modal ─────────────────────────────────────────────────────────────
+(function initProfileModal() {
+    if (isAuthPage) return;
+
+    // Inject modal HTML into body once DOM is ready
+    function injectModal() {
+        if (document.getElementById("profileOverlay")) return;
+        const el = document.createElement("div");
+        el.innerHTML = `
+<div class="profile-overlay" id="profileOverlay" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+  <div class="profile-modal">
+    <div class="profile-modal-header">
+      <h3 id="profileModalTitle">My Profile</h3>
+      <button class="profile-close-btn" id="profileCloseBtn" aria-label="Close">&times;</button>
+    </div>
+    <div class="profile-avatar-section">
+      <div class="profile-avatar-lg" id="profileAvatarLg">?</div>
+      <div class="profile-display-name" id="profileDisplayName">—</div>
+      <div class="profile-display-role">Medical Physicist</div>
+    </div>
+    <div class="profile-fields">
+      <div class="profile-field-row">
+        <div class="profile-field-label">Full Name</div>
+        <div class="profile-field-value" id="profileName"><span class="profile-loading">Loading…</span></div>
+      </div>
+      <div class="profile-field-row">
+        <div class="profile-field-label">Email Address</div>
+        <div class="profile-field-value" id="profileEmail"><span class="profile-loading">Loading…</span></div>
+      </div>
+    </div>
+    <div class="profile-modal-footer">
+      <button class="profile-sign-out-btn" onclick="logout()">Sign Out</button>
+    </div>
+  </div>
+</div>`;
+        document.body.appendChild(el.firstElementChild);
+
+        // Close on overlay click
+        document.getElementById("profileOverlay").addEventListener("click", function(e) {
+            if (e.target === this) closeProfileModal();
+        });
+        // Close button
+        document.getElementById("profileCloseBtn").addEventListener("click", closeProfileModal);
+        // Close on Escape
+        document.addEventListener("keydown", function(e) {
+            if (e.key === "Escape") closeProfileModal();
+        });
+    }
+
+    function openProfileModal() {
+        const overlay = document.getElementById("profileOverlay");
+        if (!overlay) return;
+        overlay.classList.add("open");
+
+        // Pre-fill from localStorage immediately
+        const cachedName  = localStorage.getItem("mlcqa_name")  || "";
+        const cachedEmail = localStorage.getItem("mlcqa_email") || "";
+        if (cachedName)  setProfileFields(cachedName, cachedEmail);
+
+        // Always fetch fresh from backend
+        fetch(`${BACKEND_URL}/me`, { headers: authHeadersOnly() })
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(data => {
+                const name  = data.name  || cachedName  || "—";
+                const email = data.email || cachedEmail || "—";
+                localStorage.setItem("mlcqa_email", email);
+                setProfileFields(name, email);
+            })
+            .catch(() => {
+                // Fall back to cached values; if nothing cached show placeholders
+                if (!cachedName && !cachedEmail) setProfileFields("—", "—");
+            });
+    }
+
+    function setProfileFields(name, email) {
+        const initial = (name && name !== "—") ? name.charAt(0).toUpperCase() : "?";
+        const avatarLg = document.getElementById("profileAvatarLg");
+        const dispName = document.getElementById("profileDisplayName");
+        const nameEl   = document.getElementById("profileName");
+        const emailEl  = document.getElementById("profileEmail");
+        if (avatarLg) avatarLg.textContent = initial;
+        if (dispName) dispName.textContent  = name || "—";
+        if (nameEl)   nameEl.textContent    = name  || "—";
+        if (emailEl)  emailEl.textContent   = email || "—";
+        // Dim if placeholder
+        if (nameEl)  nameEl.classList.toggle("placeholder", !name || name === "—");
+        if (emailEl) emailEl.classList.toggle("placeholder", !email || email === "—");
+    }
+
+    function closeProfileModal() {
+        const overlay = document.getElementById("profileOverlay");
+        if (overlay) overlay.classList.remove("open");
+    }
+
+    // Attach click handler to user-chip (works even if chip is rendered late)
+    function attachChipListener() {
+        const chip = document.querySelector(".user-chip");
+        if (chip && !chip.dataset.profileBound) {
+            chip.dataset.profileBound = "1";
+            chip.setAttribute("role", "button");
+            chip.setAttribute("tabindex", "0");
+            chip.setAttribute("aria-label", "View profile");
+            chip.addEventListener("click", openProfileModal);
+            chip.addEventListener("keydown", function(e) {
+                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openProfileModal(); }
+            });
+        }
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", function() { injectModal(); attachChipListener(); });
+    } else {
+        injectModal(); attachChipListener();
+    }
+    // Also try after a short delay for pages that build the sidebar dynamically
+    setTimeout(attachChipListener, 300);
+})();
+
 // ── Shared UI helpers ─────────────────────────────────────────────────────────
 const SVG_EYE_OPEN = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
 const SVG_EYE_CLOSED = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
