@@ -90,6 +90,9 @@ const CancelManager = (function () {
     function _showCancelBtn(show) {
         const c = document.getElementById(_cancelBtnId);
         if (c) c.style.display = show ? "inline-flex" : "none";
+        // Also toggle the sticky cancel bar if it exists on this page
+        const bar = document.getElementById("stickyCancelBar");
+        if (bar) bar.style.display = show ? "flex" : "none";
     }
 
     function _setAnalyzeBtn(disabled, label) {
