@@ -403,18 +403,6 @@
       </div>
     </div>
 
-    <!-- Gauge + metrics -->
-    <div id="gaugeSection" style="display:none; margin-top:20px;">
-      <div class="gauge-label-row">
-        <span class="gauge-title">Low Contrast (1.0% group) — ROIs Detected</span>
-        <span class="gauge-val" id="gaugeVal"></span>
-      </div>
-      <div class="gauge-track">
-        <div class="gauge-fill" id="gaugeFill"></div>
-        <div class="gauge-marker" id="gaugeMarker" title="Minimum required"></div>
-      </div>
-      <div class="gauge-ticks"><span>0</span><span id="gaugeTolLabel"></span><span id="gaugeMaxLabel"></span></div>
-    </div>
 
     <div id="metricsRow" class="metrics-row" style="display:none; margin-top:20px;"></div>
 
@@ -500,7 +488,7 @@ async function runAnalysis() {
     : `<p>⏳ Uploading DICOM file (.dcm)…</p>`;
 
   // Hide all result sections
-  ["verdictBanner","contrastSection","summaryTableSection","gaugeSection",
+  ["verdictBanner","contrastSection","summaryTableSection",
    "metricsRow","plotSection","chartsSection","pdfSection"].forEach(id => {
     document.getElementById(id).style.display = "none";
   });
@@ -620,18 +608,6 @@ function handleSuccess(result, file) {
     document.getElementById("summaryTableSection").style.display = "block";
   }
 
-  // ── Gauge (1.0% group) ──
-  const rois10   = lc["1.0"] || 0;
-  const tolROIs  = 1;
-  const maxROIs  = Math.max(rois10 * 1.4, 6);
-  const fillEl   = document.getElementById("gaugeFill");
-  fillEl.style.width      = Math.min((rois10 / maxROIs) * 100, 100) + "%";
-  fillEl.style.background = rois10 >= tolROIs ? "var(--pass)" : "var(--fail)";
-  document.getElementById("gaugeMarker").style.left    = ((tolROIs / maxROIs) * 100) + "%";
-  document.getElementById("gaugeVal").textContent      = rois10 + " ROIs";
-  document.getElementById("gaugeTolLabel").textContent = "Min: " + tolROIs;
-  document.getElementById("gaugeMaxLabel").textContent = maxROIs + " ROIs";
-  document.getElementById("gaugeSection").style.display = "block";
 
   // ── Metrics row ──
   const metricsRow = document.getElementById("metricsRow");
