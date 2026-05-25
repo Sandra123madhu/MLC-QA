@@ -78,8 +78,49 @@ JWT_EXPIRE_HOURS = 72
 # Supabase Storage bucket for plot images
 PLOT_BUCKET      = os.environ.get("PLOT_BUCKET", "mlcqa-plots")
 
-# ── In-memory job store (keyed by job_id UUID) ────────────────────────────────
-jobs: dict = {}
+# ── Supabase-backed job store ─────────────────────────────────────────────────
+# Replaces the in-memory dict so jobs survive Render free-tier restarts.
+# Requires a `jobs` table in Supabase (run in Supabase SQL editor):
+#
+#   create table if not exists jobs (
+#     job_id     text primary key,
+#     status     text,
+#     payload    jsonb,
+#     created_at timestamptz default now()
+#   );
+#   alter table jobs disable row level security;
+
+def _job_url(job_id: str) -> str:
+    return f"{SUPABASE_URL}/rest/v1/jobs?job_id=eq.{job_id}"
+
+def job_set(job_id: str, value: dict):
+    """Upsert a job record into Supabase."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
+    try:
+        headers = supabase_headers(prefer_return=False)
+        headers["Prefer"] = "resolution=merge-duplicates"
+        httpx.post(
+            f"{SUPABASE_URL}/rest/v1/jobs",
+            headers=headers,
+            json={"job_id": job_id, "status": value.get("status", "Processing"), "payload": value},
+            timeout=10,
+        )
+    except Exception:
+        pass
+
+def job_get(job_id: str):
+    """Fetch a job record from Supabase."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return None
+    try:
+        r = httpx.get(_job_url(job_id), headers=supabase_headers(), timeout=10)
+        rows = r.json()
+        if rows:
+            return rows[0].get("payload")
+    except Exception:
+        pass
+    return None
 
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(title="MLC QA API")
@@ -124,11 +165,18 @@ def supabase_headers(use_service_key: bool = True, prefer_return: bool = False) 
 
 
 def cleanup():
-    """Remove jobs older than 2 hours from the in-memory store."""
-    cutoff = time.time() - 7200
-    stale  = [k for k, v in jobs.items() if isinstance(v, dict) and v.get("_ts", time.time()) < cutoff]
-    for k in stale:
-        jobs.pop(k, None)
+    """Delete jobs older than 2 hours from Supabase."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+        httpx.delete(
+            f"{SUPABASE_URL}/rest/v1/jobs?created_at=lt.{cutoff}",
+            headers=supabase_headers(),
+            timeout=10,
+        )
+    except Exception:
+        pass
 
 
 def create_token(email: str) -> str:
@@ -287,7 +335,7 @@ async def get_me(u=Depends(get_current_user)):
 
 @app.get("/result/{job_id}")
 async def get_result(job_id: str, u=Depends(get_current_user)):
-    job = jobs.get(job_id)
+    job = job_get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
     return job
@@ -296,7 +344,7 @@ async def get_result(job_id: str, u=Depends(get_current_user)):
 @app.post("/job/{job_id}/cancel")
 async def cancel_job(job_id: str, u=Depends(get_current_user)):
     if job_id in jobs:
-        jobs[job_id] = {"status": "Cancelled"}
+        job_set(job_id, {"status": "Cancelled"})
     return {"status": "ok"}
 
 
@@ -499,19 +547,19 @@ def _run_picket_fence(job_id: str, filepath: str, email: str,
             job_id     = job_id,
         )
 
-        jobs[job_id] = {
+        job_set(job_id, {
             "status":           "Success",
             "passed":           passed,
             "analysis_summary": summary,
             "image_url":        image_url,
             "chart_data":       chart_data,
-        }
+        })
 
     except Exception as e:
-        jobs[job_id] = {
+        job_set(job_id, {
             "status":  "Error",
             "message": f"Picket Fence analysis failed: {e}",
-        }
+        })
     finally:
         try:
             os.remove(filepath)
@@ -544,7 +592,7 @@ async def analyze_picket_fence(
     with open(filepath, "wb") as f:
         f.write(contents)
 
-    jobs[job_id] = {"status": "Processing", "_ts": time.time()}
+    job_set(job_id, {"status": "Processing", "_ts": time.time()})
 
     background_tasks.add_task(
         _run_picket_fence,
@@ -648,19 +696,19 @@ def _run_winston_lutz(job_id: str, filepaths: list, email: str, filenames: str):
             job_id     = job_id,
         )
 
-        jobs[job_id] = {
+        job_set(job_id, {
             "status":           "Success",
             "passed":           passed,
             "analysis_summary": summary,
             "image_url":        image_url,
             "chart_data":       chart_data,
-        }
+        })
 
     except Exception as e:
-        jobs[job_id] = {
+        job_set(job_id, {
             "status":  "Error",
             "message": f"Winston-Lutz analysis failed: {e}",
-        }
+        })
     finally:
         if tmp_dir:
             import shutil
@@ -697,7 +745,7 @@ async def analyze_winston_lutz(
         raise HTTPException(400, "No valid .dcm files found")
 
     filenames = f"{len(saved)} DICOM image(s)"
-    jobs[job_id] = {"status": "Processing", "_ts": time.time()}
+    job_set(job_id, {"status": "Processing", "_ts": time.time()})
 
     background_tasks.add_task(
         _run_winston_lutz,
@@ -777,19 +825,19 @@ def _run_starshot(job_id: str, filepath: str, email: str, filename: str):
             job_id     = job_id,
         )
 
-        jobs[job_id] = {
+        job_set(job_id, {
             "status":           "Success",
             "passed":           passed,
             "analysis_summary": summary,
             "image_url":        image_url,
             "chart_data":       chart_data,
-        }
+        })
 
     except Exception as e:
-        jobs[job_id] = {
+        job_set(job_id, {
             "status":  "Error",
             "message": f"Starshot analysis failed: {e}",
-        }
+        })
     finally:
         try:
             os.remove(filepath)
@@ -820,7 +868,7 @@ async def analyze_starshot(
     with open(filepath, "wb") as f:
         f.write(contents)
 
-    jobs[job_id] = {"status": "Processing", "_ts": time.time()}
+    job_set(job_id, {"status": "Processing", "_ts": time.time()})
 
     background_tasks.add_task(
         _run_starshot,
@@ -939,19 +987,19 @@ def _run_congruence(job_id: str, filepath: str, email: str, filename: str):
             job_id     = job_id,
         )
 
-        jobs[job_id] = {
+        job_set(job_id, {
             "status":           "Success",
             "passed":           passed,
             "analysis_summary": summary,
             "image_url":        image_url,
             "chart_data":       chart_data,
-        }
+        })
 
     except Exception as e:
-        jobs[job_id] = {
+        job_set(job_id, {
             "status":  "Error",
             "message": f"Congruence analysis failed: {e}",
-        }
+        })
     finally:
         try:
             os.remove(filepath)
@@ -977,7 +1025,7 @@ async def analyze_congruence(
     with open(filepath, "wb") as f:
         f.write(contents)
 
-    jobs[job_id] = {"status": "Processing", "_ts": time.time()}
+    job_set(job_id, {"status": "Processing", "_ts": time.time()})
 
     background_tasks.add_task(
         _run_congruence,
@@ -1415,19 +1463,19 @@ def _run_catphan(job_id: str, file_path: str, email: str, filename: str, is_zip:
             job_id     = job_id,
         )
 
-        jobs[job_id] = {
+        job_set(job_id, {
             "status":           "Success",
             "passed":           passed,
             "analysis_summary": summary,
             "image_url":        image_url,
             "chart_data":       chart_data,
-        }
+        })
 
     except Exception as exc:
-        jobs[job_id] = {
+        job_set(job_id, {
             "status":  "Error",
             "message": f"CatPhan 604 analysis failed: {exc}",
-        }
+        })
     finally:
         try:
             os.remove(file_path)
@@ -1476,7 +1524,7 @@ async def analyze_catphan(
     with open(file_path, "wb") as f:
         f.write(contents)
 
-    jobs[job_id] = {"status": "Processing", "_ts": time.time()}
+    job_set(job_id, {"status": "Processing", "_ts": time.time()})
 
     background_tasks.add_task(
         _run_catphan,
