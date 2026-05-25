@@ -1356,7 +1356,21 @@ def _run_catphan(job_id: str, file_path: str, email: str, filename: str, is_zip:
             # Unzip full DICOM series into tmp_dir
             with zipfile.ZipFile(file_path, "r") as zf:
                 zf.extractall(tmp_dir)
-            phantom = CatPhan604(tmp_dir)
+            # If DICOMs landed inside a subfolder (e.g. catphan/CT.*.dcm),
+            # find the actual directory containing the .dcm files so Pylinac
+            # can locate them regardless of how the zip was structured.
+            dicom_dir = tmp_dir
+            dcm_files = [f for f in os.listdir(tmp_dir) if f.lower().endswith(".dcm")]
+            if not dcm_files:
+                # Look one level deeper for a subfolder containing DICOMs
+                for entry in os.listdir(tmp_dir):
+                    sub = os.path.join(tmp_dir, entry)
+                    if os.path.isdir(sub):
+                        sub_dcms = [f for f in os.listdir(sub) if f.lower().endswith(".dcm")]
+                        if sub_dcms:
+                            dicom_dir = sub
+                            break
+            phantom = CatPhan604(dicom_dir)
         else:
             # Single .dcm — copy into tmp_dir so pylinac can locate it
             import shutil as _shutil
