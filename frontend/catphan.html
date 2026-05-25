@@ -338,11 +338,6 @@
     </div>
   </div>
 
-  <!-- Sticky cancel bar — visible while analysis is running -->
-  <div class="sticky-cancel-bar" id="stickyCancelBar" style="display:none;">
-    <span id="stickyCancelLabel">🔬 Analysis in progress…</span>
-    <button onclick="cancelAnalysis()">✕ Cancel Analysis</button>
-  </div>
 
   <!-- Results card -->
   <div class="results-card">
@@ -481,8 +476,6 @@ async function runAnalysis() {
   });
   btn.disabled      = true;
   btn.textContent   = "Uploading…";
-  const _stickyLabel = document.getElementById("stickyCancelLabel");
-  if (_stickyLabel) _stickyLabel.textContent = "⏳ Uploading file…";
   resultsDiv.innerHTML = ext === "zip"
     ? `<p>⏳ Uploading DICOM series (.zip)…</p>`
     : `<p>⏳ Uploading DICOM file (.dcm)…</p>`;
@@ -513,7 +506,6 @@ async function runAnalysis() {
 
     CancelManager.setJobId(data.job_id);
     btn.textContent = "Analysing…";
-    if (_stickyLabel) _stickyLabel.textContent = "🔬 CatPhan 604 analysis in progress…";
     resultsDiv.innerHTML = `<p>🔬 Running CatPhan 604 analysis<span id="dots">.</span></p>`;
 
     await AnalysisHelpers.pollForResult(
