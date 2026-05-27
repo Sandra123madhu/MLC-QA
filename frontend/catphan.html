@@ -344,8 +344,7 @@
     <h2>Results</h2>
     <div id="resultsBody"><p>Upload a .zip or .dcm file and run the analysis to see results here.</p></div>
 
-    <!-- Verdict banner -->
-    <div id="verdictBanner" class="verdict-banner" style="display:none;"></div>
+    <!-- Verdict banner removed -->
 
     <!-- Low-contrast group cards -->
     <div id="contrastSection" style="display:none;">
@@ -358,21 +357,21 @@
           <div class="cc-group">1.0%</div>
           <div class="cc-value" id="cc10-val">—</div>
           <div class="cc-unit">ROIs detected</div>
-          <div class="cc-status" id="cc10-status">—</div>
+          <div class="cc-status" id="cc10-status" style="display:none;"></div>
         </div>
         <div class="contrast-card" id="cc05">
           <div class="cc-label">Contrast Group</div>
           <div class="cc-group">0.5%</div>
           <div class="cc-value" id="cc05-val">—</div>
           <div class="cc-unit">ROIs detected</div>
-          <div class="cc-status" id="cc05-status">—</div>
+          <div class="cc-status" id="cc05-status" style="display:none;"></div>
         </div>
         <div class="contrast-card" id="cc03">
           <div class="cc-label">Contrast Group</div>
           <div class="cc-group">0.3%</div>
           <div class="cc-value" id="cc03-val">—</div>
           <div class="cc-unit">ROIs detected</div>
-          <div class="cc-status" id="cc03-status">—</div>
+          <div class="cc-status" id="cc03-status" style="display:none;"></div>
         </div>
       </div>
     </div>
@@ -390,7 +389,6 @@
               <th>Parameter</th>
               <th>Measured</th>
               <th>Tolerance</th>
-              <th>Status</th>
             </tr>
           </thead>
           <tbody id="qaTableBody"></tbody>
@@ -561,20 +559,7 @@ function handleSuccess(result, file) {
 
   resultsDiv.innerHTML = renderCatPhanSummary(summary);
 
-  // ── Verdict banner ──
-  const banner = document.getElementById("verdictBanner");
-  banner.innerHTML =
-    '<div class="verdict-icon">' + (pass ? "✓" : "✗") + '</div>' +
-    '<div class="verdict-text">' +
-      '<div class="verdict-label">' + (pass ? "PASS" : "FAIL") + '</div>' +
-      '<div class="verdict-sub">' +
-        (pass
-          ? "CBCT image quality meets all specified tolerances"
-          : "One or more parameters exceed clinical tolerances — review QA table below") +
-      '</div>' +
-    '</div>';
-  banner.className       = "verdict-banner " + (pass ? "verdict-pass" : "verdict-fail");
-  banner.style.display   = "flex";
+  // Verdict banner removed — no pass/fail display for CatPhan
 
   // ── Contrast group cards ──
   // FIX: always derive pass/fail from ROI count >= 1 (tolerance),
@@ -598,7 +583,6 @@ function handleSuccess(result, file) {
         <td class="td-param">${r.parameter || "—"}</td>
         <td>${r.measured ?? "—"}</td>
         <td class="td-tol">${r.tolerance || "—"}</td>
-        <td>${badgeHTML(r.status)}</td>
       </tr>`).join("");
     document.getElementById("summaryTableSection").style.display = "block";
   }
@@ -616,7 +600,6 @@ function handleSuccess(result, file) {
     { label: "Uniformity Idx", val: unif,              unit: "",        cls: parseFloat(unif)  <= 40 ? "metric-pass" : "metric-fail" },
     { label: "MTF 50%",        val: mtf50,             unit: "lp/mm",   cls: "metric-accent" },
     { label: "Slice Thickness",val: sliceT,            unit: "mm",      cls: "metric-accent" },
-    { label: "Overall",        val: pass ? "PASS" : "FAIL", unit: "", cls: pass ? "metric-pass" : "metric-fail" },
   ].map(m =>
     `<div class="metric-card">
       <div class="metric-label">${m.label}</div>
@@ -656,13 +639,9 @@ function handleSuccess(result, file) {
 function renderContrastCard(id, value, passed) {
   const card   = document.getElementById(id);
   const valEl  = document.getElementById(id + "-val");
-  const statEl = document.getElementById(id + "-status");
   valEl.textContent  = String(value);
-  valEl.style.color  = passed ? "var(--pass)" : "var(--fail)";
-  statEl.textContent = passed ? "PASS" : "FAIL";
-  statEl.className   = "cc-status " + (passed ? "pass" : "fail");
-  card.classList.toggle("pass-card", passed);
-  card.classList.toggle("fail-card", !passed);
+  // No pass/fail colour or badge — analysis only
+  card.classList.remove("pass-card", "fail-card");
 }
 
 function badgeHTML(status) {
