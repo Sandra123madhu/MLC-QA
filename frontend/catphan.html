@@ -479,9 +479,10 @@ async function runAnalysis() {
     : `<p>⏳ Uploading DICOM file (.dcm)…</p>`;
 
   // Hide all result sections
-  ["verdictBanner","contrastSection","summaryTableSection",
+  ["contrastSection","summaryTableSection",
    "metricsRow","plotSection","chartsSection","pdfSection"].forEach(id => {
-    document.getElementById(id).style.display = "none";
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
   });
 
   try {
