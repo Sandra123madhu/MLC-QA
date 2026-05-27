@@ -514,7 +514,6 @@ async function runAnalysis() {
       (result) => {
         if (CancelManager.isCancelled()) return;
         handleSuccess(result, file);
-        CancelManager.finish();
       },
       null,
       () => CancelManager.isCancelled()
@@ -539,6 +538,9 @@ function handleSuccess(result, file) {
 
   const btn        = document.getElementById("analyzeBtn");
   const resultsDiv = document.getElementById("resultsBody");
+
+  // Clear the "Analysing..." status message immediately
+  resultsDiv.innerHTML = "";
 
   const pass    = result.passed;
   const imgUrl  = result.image_url || null;
@@ -641,9 +643,12 @@ function handleSuccess(result, file) {
   btn.disabled    = false;
   btn.textContent = "✓ Analysis Complete";
   btn.style.background = "var(--pass, #1a9e6a)";
+  btn.style.color = "#fff";
+  CancelManager.finish();
   setTimeout(() => {
     btn.textContent = "Analyse Another File";
     btn.style.background = "";
+    btn.style.color = "";
   }, 2500);
 }
 
