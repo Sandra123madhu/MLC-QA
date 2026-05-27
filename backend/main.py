@@ -329,6 +329,46 @@ async def get_me(u=Depends(get_current_user)):
     return {"email": rows[0].get("email", ""), "name": rows[0].get("name") or "", "created_at": rows[0].get("created_at", "")}
 
 
+class ChangePasswordBody(BaseModel):
+    current_password: str
+    new_password: str
+
+@app.post("/change-password")
+async def change_password(body: ChangePasswordBody, u=Depends(get_current_user)):
+    """Allow a logged-in user to change their password after verifying the current one."""
+    if not SUPABASE_URL:
+        raise HTTPException(500, "Backend not configured")
+
+    # Fetch current password hash
+    resp = httpx.get(
+        f"{SUPABASE_URL}/rest/v1/users?email=eq.{quote(u)}&select=email,password_hash",
+        headers=supabase_headers(),
+        timeout=10,
+    )
+    rows = resp.json() if resp.status_code == 200 else []
+    if not rows:
+        raise HTTPException(404, "User not found")
+
+    row = rows[0]
+    if not bcrypt.checkpw(body.current_password.encode(), row["password_hash"].encode()):
+        raise HTTPException(401, "Current password is incorrect")
+
+    if len(body.new_password) < 8:
+        raise HTTPException(400, "New password must be at least 8 characters")
+
+    hashed = bcrypt.hashpw(body.new_password.encode(), bcrypt.gensalt()).decode()
+    patch = httpx.patch(
+        f"{SUPABASE_URL}/rest/v1/users?email=eq.{quote(u)}",
+        headers=supabase_headers(),
+        json={"password_hash": hashed},
+        timeout=10,
+    )
+    if patch.status_code not in (200, 204):
+        raise HTTPException(500, "Could not update password. Please try again.")
+
+    return {"detail": "Password updated successfully"}
+
+
 # =============================================================================
 # Result & Job Polling
 # =============================================================================
