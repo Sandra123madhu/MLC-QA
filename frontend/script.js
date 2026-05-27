@@ -431,28 +431,98 @@ const HistoryManager = (function () {
         el.innerHTML = `
 <div class="profile-overlay" id="profileOverlay" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
   <div class="profile-modal">
+
+    <!-- Header -->
     <div class="profile-modal-header">
       <h3 id="profileModalTitle">My Profile</h3>
       <button class="profile-close-btn" id="profileCloseBtn" aria-label="Close">&times;</button>
     </div>
+
+    <!-- Avatar Hero -->
     <div class="profile-avatar-section">
-      <div class="profile-avatar-lg" id="profileAvatarLg">?</div>
+      <div class="profile-avatar-lg" id="profileAvatarLg">
+        ?
+        <div class="profile-avatar-ring"></div>
+      </div>
       <div class="profile-display-name" id="profileDisplayName">—</div>
-      <div class="profile-display-role">Medical Physicist</div>
+      <div class="profile-display-role" id="profileDisplayRole">Medical Physicist</div>
     </div>
-    <div class="profile-fields">
-      <div class="profile-field-row">
-        <div class="profile-field-label">Full Name</div>
-        <div class="profile-field-value" id="profileName"><span class="profile-loading">Loading…</span></div>
+
+    <!-- Scrollable body -->
+    <div class="profile-modal-body">
+
+      <!-- Section 1: Identity & Role -->
+      <div class="profile-section">
+        <div class="profile-section-title">Identity &amp; Role</div>
+        <div class="profile-fields">
+          <div class="profile-field-row">
+            <div class="profile-field-label">Full Name</div>
+            <div class="profile-field-value" id="profileName"><span class="profile-shimmer"></span></div>
+          </div>
+          <div class="profile-field-row">
+            <div class="profile-field-label">Role</div>
+            <div class="profile-field-value" id="profileRole">Medical Physicist</div>
+          </div>
+          <div class="profile-field-row">
+            <div class="profile-field-label">Department</div>
+            <div class="profile-field-value" id="profileDept">Radiation Oncology</div>
+          </div>
+        </div>
       </div>
-      <div class="profile-field-row">
-        <div class="profile-field-label">Email Address</div>
-        <div class="profile-field-value" id="profileEmail"><span class="profile-loading">Loading…</span></div>
+
+      <!-- Section 2: Account Info -->
+      <div class="profile-section">
+        <div class="profile-section-title">Account Info</div>
+        <div class="profile-fields">
+          <div class="profile-field-row">
+            <div class="profile-field-label">Email Address</div>
+            <div class="profile-field-value" id="profileEmail"><span class="profile-shimmer"></span></div>
+          </div>
+          <div class="profile-field-row">
+            <div class="profile-field-label">Member Since</div>
+            <div class="profile-field-value" id="profileCreated"><span class="profile-shimmer"></span></div>
+          </div>
+          <div class="profile-field-row">
+            <div class="profile-field-label">Last Login</div>
+            <div class="profile-last-login-badge" id="profileLastLogin">Just now</div>
+          </div>
+        </div>
       </div>
-    </div>
+
+      <!-- Section 3: Change Password -->
+      <div class="profile-section">
+        <div class="profile-section-title">Change Password</div>
+        <div class="profile-change-pw">
+          <div class="profile-pw-row">
+            <input class="profile-pw-input" type="password" id="profilePwCurrent" placeholder="Current password" autocomplete="current-password">
+            <button class="profile-pw-toggle" type="button" onclick="togglePassword('profilePwCurrent', this)" aria-label="Toggle visibility">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+          <div class="profile-pw-row">
+            <input class="profile-pw-input" type="password" id="profilePwNew" placeholder="New password (min 8 chars)" autocomplete="new-password">
+            <button class="profile-pw-toggle" type="button" onclick="togglePassword('profilePwNew', this)" aria-label="Toggle visibility">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+          <div class="profile-pw-row">
+            <input class="profile-pw-input" type="password" id="profilePwConfirm" placeholder="Confirm new password" autocomplete="new-password">
+            <button class="profile-pw-toggle" type="button" onclick="togglePassword('profilePwConfirm', this)" aria-label="Toggle visibility">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+          <div class="profile-pw-msg" id="profilePwMsg"></div>
+          <button class="profile-pw-btn" id="profilePwSaveBtn" onclick="saveProfilePassword()">Update Password</button>
+        </div>
+      </div>
+
+    </div><!-- end .profile-modal-body -->
+
+    <!-- Footer -->
     <div class="profile-modal-footer">
       <button class="profile-sign-out-btn" onclick="logout()">Sign Out</button>
     </div>
+
   </div>
 </div>`;
         document.body.appendChild(el.firstElementChild);
@@ -483,31 +553,110 @@ const HistoryManager = (function () {
         fetch(`${BACKEND_URL}/me`, { headers: authHeadersOnly() })
             .then(r => r.ok ? r.json() : Promise.reject())
             .then(data => {
-                const name  = data.name  || cachedName  || "—";
-                const email = data.email || cachedEmail || "—";
+                const name      = data.name       || cachedName  || "—";
+                const email     = data.email      || cachedEmail || "—";
+                const createdAt = data.created_at || null;
                 localStorage.setItem("mlcqa_email", email);
-                setProfileFields(name, email);
+                setProfileFields(name, email, createdAt);
             })
             .catch(() => {
                 // Fall back to cached values; if nothing cached show placeholders
-                if (!cachedName && !cachedEmail) setProfileFields("—", "—");
+                if (!cachedName && !cachedEmail) setProfileFields("—", "—", null);
             });
     }
 
-    function setProfileFields(name, email) {
+    function setProfileFields(name, email, createdAt) {
         const initial = (name && name !== "—") ? name.charAt(0).toUpperCase() : "?";
-        const avatarLg = document.getElementById("profileAvatarLg");
-        const dispName = document.getElementById("profileDisplayName");
-        const nameEl   = document.getElementById("profileName");
-        const emailEl  = document.getElementById("profileEmail");
-        if (avatarLg) avatarLg.textContent = initial;
-        if (dispName) dispName.textContent  = name || "—";
-        if (nameEl)   nameEl.textContent    = name  || "—";
-        if (emailEl)  emailEl.textContent   = email || "—";
-        // Dim if placeholder
+        const avatarLg  = document.getElementById("profileAvatarLg");
+        const dispName  = document.getElementById("profileDisplayName");
+        const nameEl    = document.getElementById("profileName");
+        const emailEl   = document.getElementById("profileEmail");
+        const createdEl = document.getElementById("profileCreated");
+        const lastEl    = document.getElementById("profileLastLogin");
+
+        // Avatar: preserve ring div
+        if (avatarLg) {
+            const ring = avatarLg.querySelector(".profile-avatar-ring");
+            avatarLg.textContent = initial;
+            if (ring) avatarLg.appendChild(ring);
+        }
+        if (dispName) dispName.textContent = name || "—";
+        if (nameEl)   nameEl.textContent   = name  || "—";
+        if (emailEl)  emailEl.textContent  = email || "—";
         if (nameEl)  nameEl.classList.toggle("placeholder", !name || name === "—");
         if (emailEl) emailEl.classList.toggle("placeholder", !email || email === "—");
+
+        // Member Since
+        if (createdEl) {
+            if (createdAt) {
+                try {
+                    const d = new Date(createdAt);
+                    createdEl.textContent = d.toLocaleDateString(undefined, { year:"numeric", month:"long", day:"numeric" });
+                } catch { createdEl.textContent = createdAt; }
+            } else {
+                createdEl.textContent = "—";
+                createdEl.classList.add("placeholder");
+            }
+        }
+
+        // Last Login — always show "Just now" for current session
+        if (lastEl) lastEl.textContent = "Just now";
     }
+
+    // Change password handler
+    window.saveProfilePassword = async function() {
+        const curEl  = document.getElementById("profilePwCurrent");
+        const newEl  = document.getElementById("profilePwNew");
+        const conEl  = document.getElementById("profilePwConfirm");
+        const msgEl  = document.getElementById("profilePwMsg");
+        const btnEl  = document.getElementById("profilePwSaveBtn");
+        if (!curEl || !newEl || !conEl || !msgEl) return;
+
+        const cur = curEl.value.trim();
+        const nw  = newEl.value.trim();
+        const con = conEl.value.trim();
+
+        msgEl.className = "profile-pw-msg";
+        msgEl.textContent = "";
+
+        if (!cur || !nw || !con) {
+            msgEl.textContent = "Please fill in all password fields.";
+            msgEl.classList.add("error"); return;
+        }
+        if (nw.length < 8) {
+            msgEl.textContent = "New password must be at least 8 characters.";
+            msgEl.classList.add("error"); return;
+        }
+        if (nw !== con) {
+            msgEl.textContent = "New passwords do not match.";
+            msgEl.classList.add("error"); return;
+        }
+
+        btnEl.disabled = true;
+        btnEl.textContent = "Updating…";
+        try {
+            const res = await fetch(`${BACKEND_URL}/change-password`, {
+                method: "POST",
+                headers: { ...authHeaders(), "Content-Type": "application/json" },
+                body: JSON.stringify({ current_password: cur, new_password: nw })
+            });
+            if (res.ok) {
+                msgEl.textContent = "Password updated successfully!";
+                msgEl.classList.add("success");
+                curEl.value = ""; newEl.value = ""; conEl.value = "";
+            } else {
+                const d = await res.json().catch(() => ({}));
+                msgEl.textContent = d.detail || "Failed to update password.";
+                msgEl.classList.add("error");
+            }
+        } catch {
+            msgEl.textContent = "Network error. Please try again.";
+            msgEl.classList.add("error");
+        } finally {
+            btnEl.disabled = false;
+            btnEl.textContent = "Update Password";
+        }
+    };
 
     function closeProfileModal() {
         const overlay = document.getElementById("profileOverlay");
