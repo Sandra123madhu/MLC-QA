@@ -596,11 +596,11 @@ function handleSuccess(result, file) {
   const mtf50  = cd.mtf_50                     != null ? cd.mtf_50.toFixed(3)                    : "—";
   const sliceT = cd.slice_thickness_mm         != null ? cd.slice_thickness_mm.toFixed(2)        : "—";
   metricsRow.innerHTML = [
-    { label: "1.0% LC ROIs",   val: String(rois10),   unit: "seen",    cls: rois10 >= 1 ? "metric-pass" : "metric-fail" },
-    { label: "HU Dev (max)",   val: huDev,             unit: "HU",      cls: parseFloat(huDev) <= 40 ? "metric-pass" : "metric-fail" },
-    { label: "Uniformity Idx", val: unif,              unit: "",        cls: parseFloat(unif)  <= 40 ? "metric-pass" : "metric-fail" },
-    { label: "MTF 50%",        val: mtf50,             unit: "lp/mm",   cls: "metric-accent" },
-    { label: "Slice Thickness",val: sliceT,            unit: "mm",      cls: "metric-accent" },
+    { label: "1.0% LC ROIs",   val: String(rois10val),   unit: "seen",    cls: rois10val >= 1 ? "metric-pass" : "metric-fail" },
+    { label: "HU Dev (max)",   val: huDev,               unit: "HU",      cls: parseFloat(huDev) <= 40 ? "metric-pass" : "metric-fail" },
+    { label: "Uniformity Idx", val: unif,                unit: "",        cls: parseFloat(unif)  <= 40 ? "metric-pass" : "metric-fail" },
+    { label: "MTF 50%",        val: mtf50,               unit: "lp/mm",   cls: "metric-accent" },
+    { label: "Slice Thickness",val: sliceT,              unit: "mm",      cls: "metric-accent" },
   ].map(m =>
     `<div class="metric-card">
       <div class="metric-label">${m.label}</div>
