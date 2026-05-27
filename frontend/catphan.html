@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>CatPhan 604 CBCT QA — MLC QA</title>
+  <title>CatPhan CBCT QA — MLC QA</title>
   <link rel="stylesheet" href="style.css"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="script.js"></script>
@@ -270,7 +270,7 @@
     <a class="nav-item" href="winston-lutz.html"><span class="nav-icon">◎</span> Winston-Lutz</a>
     <a class="nav-item" href="starshot.html"><span class="nav-icon">✦</span> Starshot</a>
     <a class="nav-item" href="congruence.html"><span class="nav-icon">⊞</span> Congruence</a>
-    <a class="nav-item active" href="catphan.html"><span class="nav-icon">⊙</span> CatPhan 604</a>
+    <a class="nav-item active" href="catphan.html"><span class="nav-icon">⊙</span> CatPhan</a>
     <a class="nav-item" href="history.html"><span class="nav-icon">≡</span> History</a>
   </nav>
   <div class="sidebar-footer">
@@ -291,11 +291,11 @@
 <main class="main">
 
   <div class="page-header">
-    <div class="breadcrumb"><a href="dashboard.html">Dashboard</a> <span>/</span> CatPhan 604 CBCT QA</div>
-    <h1>CatPhan 604 CBCT Image Quality QA</h1>
+    <div class="breadcrumb"><a href="dashboard.html">Dashboard</a> <span>/</span> CatPhan CBCT QA</div>
+    <h1>CatPhan CBCT Image Quality QA</h1>
     <p>
       Enhanced low-contrast analysis with contrast-group–wise reporting (1.0% / 0.5% / 0.3%)
-      aligned to the CatPhan 604 phantom manual — includes HU linearity, MTF, uniformity and slice thickness.
+      aligned to the CatPhan phantom manual — includes HU linearity, MTF, uniformity and slice thickness.
     </p>
   </div>
 
@@ -307,7 +307,7 @@
   <div class="info-banner">
     <span style="font-size:1.1rem;flex-shrink:0;">ℹ</span>
     <div>
-      Upload either a <strong>.zip</strong> (recommended — full multi-slice CBCT series) or a single <strong>.dcm</strong> file acquired with the CatPhan 604 phantom. For best results, zip the entire DICOM series folder — pylinac will automatically locate each module slice.
+      Upload either a <strong>.zip</strong> (recommended — full multi-slice CBCT series) or a single <strong>.dcm</strong> file acquired with the CatPhan phantom. For best results, zip the entire DICOM series folder — pylinac will automatically locate each module slice.
       The backend runs an enhanced pylinac CatPhan analysis that reports low-contrast ROIs
       <strong>per contrast group</strong> (1.0%, 0.5%, 0.3%) — eliminating the aggregation limitation of the default pylinac implementation.
     </div>
@@ -333,7 +333,7 @@
     </div>
 
     <div class="action-row">
-      <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>Run CatPhan 604 Analysis</button>
+      <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>Run CatPhan Analysis</button>
       <button class="btn-cancel" id="cancelBtn" onclick="cancelAnalysis()" style="display:none;">✕ Cancel Analysis</button>
     </div>
   </div>
@@ -472,7 +472,7 @@ async function runAnalysis() {
   CancelManager.start({
     cancelBtnId:  "cancelBtn",
     analyzeBtnId: "analyzeBtn",
-    analyzeLabel: "Run CatPhan 604 Analysis"
+    analyzeLabel: "Run CatPhan Analysis"
   });
   btn.disabled      = true;
   btn.textContent   = "Uploading…";
@@ -506,7 +506,8 @@ async function runAnalysis() {
 
     CancelManager.setJobId(data.job_id);
     btn.textContent = "Analysing…";
-    resultsDiv.innerHTML = `<p>🔬 Running CatPhan 604 analysis<span id="dots">.</span></p>`;
+    btn.style.background = "";
+    resultsDiv.innerHTML = `<p>🔬 Running CatPhan analysis<span id="dots">.</span></p>`;
 
     await AnalysisHelpers.pollForResult(
       data.job_id,
@@ -528,7 +529,7 @@ async function runAnalysis() {
     resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
     CancelManager.finish();
     btn.disabled    = false;
-    btn.textContent = "Run CatPhan 604 Analysis";
+    btn.textContent = "Run CatPhan Analysis";
   }
 }
 
@@ -627,7 +628,7 @@ function handleSuccess(result, file) {
     document.getElementById("plotSection").innerHTML =
       `<div class="plot-wrap">
         <img src="${imgUrl}" alt="CatPhan Analysis Plot" loading="lazy"/>
-        <div class="plot-label">Pylinac · CatPhan 604 Analysis</div>
+        <div class="plot-label">Pylinac · CatPhan Analysis</div>
       </div>`;
     document.getElementById("plotSection").style.display = "block";
   }
@@ -638,7 +639,12 @@ function handleSuccess(result, file) {
   document.getElementById("pdfSection").style.display    = "block";
 
   btn.disabled    = false;
-  btn.textContent = "Analyse Another File";
+  btn.textContent = "✓ Analysis Complete";
+  btn.style.background = "var(--pass, #1a9e6a)";
+  setTimeout(() => {
+    btn.textContent = "Analyse Another File";
+    btn.style.background = "";
+  }, 2500);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
