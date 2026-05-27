@@ -319,14 +319,14 @@ async def get_me(u=Depends(get_current_user)):
     if not SUPABASE_URL:
         raise HTTPException(500, "Backend not configured")
     resp = httpx.get(
-        f"{SUPABASE_URL}/rest/v1/users?email=eq.{u}&select=email,name",
+        f"{SUPABASE_URL}/rest/v1/users?email=eq.{u}&select=email,name,created_at",
         headers=supabase_headers(),
         timeout=10,
     )
     rows = resp.json() if resp.status_code == 200 else []
     if not rows:
         raise HTTPException(404, "User not found")
-    return {"email": rows[0].get("email", ""), "name": rows[0].get("name") or ""}
+    return {"email": rows[0].get("email", ""), "name": rows[0].get("name") or "", "created_at": rows[0].get("created_at", "")}
 
 
 # =============================================================================
