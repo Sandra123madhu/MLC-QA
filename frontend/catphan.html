@@ -550,7 +550,7 @@ function handleSuccess(result, file) {
     pass, imgUrl, summary,
     filename: file.name,
     testType: "CatPhan 604",
-    toleranceText: "Low contrast ≥1 ROI per group | HU ±40 | Uniformity ≤40",
+    toleranceText: "Low contrast ≥3 ROIs total | HU ±40 | Uniformity ≤40",
     chart_data: cd
   };
   HistoryManager.record({
@@ -562,16 +562,9 @@ function handleSuccess(result, file) {
 
   // Verdict banner removed — no pass/fail display for CatPhan
 
-  // ── Contrast group cards ──
-  // FIX: always derive pass/fail from ROI count >= 1 (tolerance),
-  // never from the optional _pass flag which defaults to true when absent.
-  const lc = cd.low_contrast || {};
-  const rois10val = lc["1.0"] || 0;
-  const rois05val = lc["0.5"] || 0;
-  const rois03val = lc["0.3"] || 0;
-  renderContrastCard("cc10", rois10val, rois10val >= 1);
-  renderContrastCard("cc05", rois05val, rois05val >= 1);
-  renderContrastCard("cc03", rois03val, rois03val >= 1);
+  // ── Low contrast total ROIs ──
+  const totalRois = cd.low_contrast_total || 0;
+  renderContrastCard("cc10", totalRois, totalRois >= 3);
   document.getElementById("contrastSection").style.display = "block";
 
   // ── QA Summary table ──
@@ -669,13 +662,11 @@ function renderCatPhanCharts(cd) {
       "Measured HU");
   }
 
-  // Low contrast per group bar
-  const lc = cd.low_contrast || {};
-  if (Object.keys(lc).some(k => !k.includes("_pass"))) {
-    const lcLabels = ["1.0%", "0.5%", "0.3%"];
-    const lcVals   = [lc["1.0"] || 0, lc["0.5"] || 0, lc["0.3"] || 0];
-    addBarChart(container, "Low Contrast ROIs Detected (CTP515)", lcLabels, lcVals,
-      lcVals.map(v => v >= 1 ? "rgba(26,158,106,0.7)" : "rgba(200,90,67,0.7)"),
+  // Low contrast total ROIs bar
+  const totalSeen = cd.low_contrast_total || 0;
+  if (totalSeen > 0) {
+    addBarChart(container, "Low Contrast ROIs Detected (CTP515)", ["Total ROIs"], [totalSeen],
+      [totalSeen >= 3 ? "rgba(26,158,106,0.7)" : "rgba(200,90,67,0.7)"],
       "ROIs Seen");
   }
 
@@ -1128,14 +1119,13 @@ async function generateCatPhanPDF(r) {
 
   // ── Key-metrics highlight row ─────────────────────────────────────────────────
   const cd = r.chart_data || {};
-  const lc = cd.low_contrast || {};
   function fmtNum(v, dec) { return (v !== null && v !== undefined && !isNaN(v)) ? Number(v).toFixed(dec) : "\u2014"; }
 
   const metrics = [
     { label: "Max HU Dev",     value: cd.hu_linearity_max_deviation != null ? fmtNum(cd.hu_linearity_max_deviation, 1) + " HU" : "\u2014" },
     { label: "Uniformity Idx", value: cd.uniformity_index != null ? fmtNum(cd.uniformity_index, 2) : "\u2014" },
     { label: "MTF 50%",        value: cd.mtf_50 != null ? fmtNum(cd.mtf_50, 3) + " lp/mm" : "\u2014" },
-    { label: "LC 1.0% ROIs",   value: lc["1.0"] != null ? String(lc["1.0"]) + " seen" : "\u2014" },
+    { label: "LC Total ROIs",  value: cd.low_contrast_total != null ? String(cd.low_contrast_total) + " seen" : "\u2014" },
   ];
   const cardW = (W - M * 2 - 6) / 4;
   metrics.forEach((m2, i) => {
