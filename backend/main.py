@@ -56,8 +56,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 # ── pylinac ──────────────────────────────────────────────────────────────────
-from pylinac import PicketFence, WinstonLutz, Starshot, FieldAnalysis
-from pylinac import CatPhan503, CatPhan504, CatPhan600, CatPhan604, CatPhan700
+from pylinac import PicketFence, WinstonLutz, Starshot, FieldAnalysis, CatPhan604
 from pylinac.ct import CTP515
 import zipfile
 import shutil
@@ -1203,9 +1202,112 @@ async def reset_password(request: Request, body: ResetBody):
     return {"ok": True, "message": "Password updated successfully."}
 # =============================================================================
 # CatPhan 604 CBCT QA  —  /analyze/catphan
+#
+# HOW TO INTEGRATE:
+#   1. Paste this entire block at the bottom of your existing main.py
+#   2. The import at the top is the only new dependency (already in pylinac)
+#   3. The frontend page (catphan.html) calls POST /analyze/catphan
+#
+# ENHANCED FEATURES (based on Hemant K B N, Shaleen Cancer Centre paper):
+#   - Contrast-group–wise low-contrast detection: 1.0% / 0.5% / 0.3%
+#   - Visual fallback using relative signal difference (local background ROIs)
+#   - Background ROIs placed adjacent to signal ROIs (matches phantom geometry)
+#   - Per-group pass/fail logic (tolerance: ≥1 ROI per group)
+#   - Full QA summary table: HU linearity, uniformity, MTF, slice thickness
 # =============================================================================
 
 
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Enhanced CTP515 subclass
+# Adds per-contrast-group detection with a visual fallback.
+# ─────────────────────────────────────────────────────────────────────────────
+class EnhancedCTP515(CTP515):
+    """
+    Drop-in replacement for pylinac's CTP515 that reports low-contrast ROIs
+    broken down by contrast group (1.0%, 0.5%, 0.3%) as specified in the
+    CatPhan 604 manual.
+
+    Visual fallback: if the CNR criterion does not detect an ROI, we apply a
+    relative-signal-difference check against a local background reference ROI
+    placed adjacent to the signal disc — mimicking human visual assessment.
+    """
+
+    # Angular positions for each contrast group (degrees, measured from
+    # phantom geometry in the CatPhan 604 / CTP730 module manual).
+    CONTRAST_GROUPS = {
+        "1.0": {"angles": [-87.4, -69, -51.7, -38.5, -25.1, -12]},
+        "0.5": {"angles": [36, 53.1, 66.5, 78.7, 90.1, 102.4]},
+        "0.3": {"angles": [150, 170, 188, 202, 215, 227]},
+    }
+
+    # Relative signal difference threshold that mimics human visibility
+    # (~3 % relative contrast → just-visible disc)
+    VISUAL_THRESHOLD = 0.03
+
+    def _is_roi_visible(self, roi_angle_deg: float) -> bool:
+        """
+        Returns True if the ROI at the given angle is considered 'seen' by
+        either the standard CNR criterion OR the visual fallback.
+        """
+        # 1. Standard pylinac CNR-based check ----------------------------
+        for roi in self.rois.values():
+            if abs(roi.angle - roi_angle_deg) < 2.0:
+                if roi.cnr > self.cnr_threshold:
+                    return True
+                # 2. Visual fallback: relative signal difference ----------
+                try:
+                    bg_val  = self._sample_local_background(roi)
+                    rel_sig = abs(roi.pixel_value - bg_val) / (abs(bg_val) + 1e-9)
+                    if rel_sig >= self.VISUAL_THRESHOLD:
+                        return True
+                except Exception:
+                    pass
+                return False
+        return False
+
+    def _sample_local_background(self, roi) -> float:
+        """
+        Sample a small circular region placed just outside the disc boundary
+        (adjacent background), matching the phantom geometry recommendation.
+        """
+        # Offset the centre outward by 1.5× the ROI radius along the same
+        # radial direction as the disc.
+        angle_rad = np.deg2rad(roi.angle)
+        offset    = roi.radius_pixels * 1.5
+        bg_x = roi.center.x + offset * np.cos(angle_rad)
+        bg_y = roi.center.y + offset * np.sin(angle_rad)
+
+        arr    = self.image.array
+        r_px   = max(int(roi.radius_pixels * 0.6), 2)
+        x0, x1 = int(bg_x - r_px), int(bg_x + r_px)
+        y0, y1 = int(bg_y - r_px), int(bg_y + r_px)
+        x0, y0 = max(x0, 0), max(y0, 0)
+        x1, y1 = min(x1, arr.shape[1]), min(y1, arr.shape[0])
+
+        patch = arr[y0:y1, x0:x1]
+        return float(np.mean(patch)) if patch.size > 0 else float(np.mean(arr))
+
+    def group_results(self) -> dict:
+        """
+        Returns a dict with per-group ROI counts and pass/fail flags:
+        {
+            "1.0": <int>,  "1.0_pass": <bool>,
+            "0.5": <int>,  "0.5_pass": <bool>,
+            "0.3": <int>,  "0.3_pass": <bool>,
+        }
+        Tolerance: ≥1 ROI seen per group.
+        """
+        result = {}
+        for group_name, info in self.CONTRAST_GROUPS.items():
+            seen = sum(
+                1 for angle in info["angles"]
+                if self._is_roi_visible(angle)
+            )
+            result[group_name]             = seen
+            result[f"{group_name}_pass"]   = seen >= 1
+        return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1215,14 +1317,16 @@ def _extract_catphan_chart_data(phantom) -> dict:
     """Build the chart_data dict that the frontend consumes."""
     cd: dict = {}
 
-    # ── Low contrast (pylinac default) ───────────────────────────────────────
+    # ── Low contrast (enhanced, per-group) ──────────────────────────────────
     try:
         ctp515 = phantom.ctp515
-        cd["low_contrast_total"] = ctp515.rois_visible
-        cd["cnr_threshold"]      = ctp515.cnr_threshold
+        enhanced = EnhancedCTP515.__new__(EnhancedCTP515)
+        enhanced.__dict__.update(ctp515.__dict__)   # copy state
+        cd["low_contrast"] = enhanced.group_results()
+        cd["low_contrast"]["total_seen"] = ctp515.num_contrast_rois_seen
+        cd["cnr_threshold"]              = ctp515.cnr_threshold
     except Exception as exc:
-        cd["low_contrast_total"] = 0
-        cd["low_contrast_error"] = str(exc)
+        cd["low_contrast"] = {"1.0": 0, "0.5": 0, "0.3": 0, "error": str(exc)}
 
     # ── HU Linearity (CTP404) ───────────────────────────────────────────────
     try:
@@ -1264,7 +1368,8 @@ def _extract_catphan_chart_data(phantom) -> dict:
         cd["mtf_profile"] = []
         cd["mtf_error"]   = str(exc)
 
-    # ── QA Summary table ─────────────────────────────────────────────────────
+    # ── QA Summary table rows (matches paper layout) ─────────────────────────
+    lc    = cd.get("low_contrast", {})
     hu_ok = (cd.get("hu_linearity_max_deviation") or 9999) <= 40
     un_ok = (cd.get("uniformity_index")            or 9999) <= 40
     st    = cd.get("slice_thickness_mm")
@@ -1300,63 +1405,28 @@ def _extract_catphan_chart_data(phantom) -> dict:
         },
         {
             "module":    "CTP515",
-            "parameter": "Low Contrast (Total ROIs Seen)",
-            "measured":  f"{cd.get('low_contrast_total', 0)} ROIs",
-            "tolerance": "≥ 3",
-            "status":    "PASS" if cd.get("low_contrast_total", 0) >= 3 else "FAIL",
+            "parameter": "Low Contrast 1.0%",
+            "measured":  f"{lc.get('1.0', 0)} ROIs",
+            "tolerance": "≥ 1",
+            "status":    "PASS" if lc.get("1.0_pass") else "FAIL",
+        },
+        {
+            "module":    "CTP515",
+            "parameter": "Low Contrast 0.5%",
+            "measured":  f"{lc.get('0.5', 0)} ROIs",
+            "tolerance": "≥ 1",
+            "status":    "PASS" if lc.get("0.5_pass") else "FAIL",
+        },
+        {
+            "module":    "CTP515",
+            "parameter": "Low Contrast 0.3%",
+            "measured":  f"{lc.get('0.3', 0)} ROIs",
+            "tolerance": "≥ 1",
+            "status":    "PASS" if lc.get("0.3_pass") else "FAIL",
         },
     ]
 
     return cd
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# CatPhan model auto-detector
-# Reads DICOM headers to find the model number, falls back to CatPhan604
-# ─────────────────────────────────────────────────────────────────────────────
-def _detect_catphan(dicom_dir: str):
-    """
-    Tries to detect CatPhan model from DICOM filenames or headers.
-    Supports 503, 504, 600, 604, 700. Defaults to CatPhan604.
-    """
-    MODEL_MAP = {
-        "503": CatPhan503,
-        "504": CatPhan504,
-        "600": CatPhan600,
-        "604": CatPhan604,
-        "700": CatPhan700,
-    }
-    # Check filenames first
-    try:
-        for fname in os.listdir(dicom_dir):
-            for model_num, cls in MODEL_MAP.items():
-                if model_num in fname:
-                    return cls(dicom_dir)
-    except Exception:
-        pass
-
-    # Check DICOM headers
-    try:
-        import pydicom
-        for fname in os.listdir(dicom_dir):
-            if fname.lower().endswith(".dcm"):
-                ds = pydicom.dcmread(
-                    os.path.join(dicom_dir, fname),
-                    stop_before_pixels=True,
-                    force=True,
-                )
-                # Check series description and study description
-                for tag in ["SeriesDescription", "StudyDescription", "ProtocolName", "PatientName"]:
-                    val = str(getattr(ds, tag, "") or "").lower()
-                    for model_num, cls in MODEL_MAP.items():
-                        if model_num in val:
-                            return cls(dicom_dir)
-                break  # only need to check one file
-    except Exception:
-        pass
-
-    # Default to CatPhan604
-    return CatPhan604(dicom_dir)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1370,14 +1440,17 @@ def _run_catphan(job_id: str, file_path: str, email: str, filename: str, is_zip:
 
         tmp_dir = tempfile.mkdtemp(prefix=f"catphan_{job_id}_")
 
-        dicom_dir = tmp_dir  # default; updated below if zip has a subfolder
         if is_zip:
             # Unzip full DICOM series into tmp_dir
             with zipfile.ZipFile(file_path, "r") as zf:
                 zf.extractall(tmp_dir)
-            # If DICOMs landed inside a subfolder, find the actual directory
+            # If DICOMs landed inside a subfolder (e.g. catphan/CT.*.dcm),
+            # find the actual directory containing the .dcm files so Pylinac
+            # can locate them regardless of how the zip was structured.
+            dicom_dir = tmp_dir
             dcm_files = [f for f in os.listdir(tmp_dir) if f.lower().endswith(".dcm")]
             if not dcm_files:
+                # Look one level deeper for a subfolder containing DICOMs
                 for entry in os.listdir(tmp_dir):
                     sub = os.path.join(tmp_dir, entry)
                     if os.path.isdir(sub):
@@ -1385,42 +1458,24 @@ def _run_catphan(job_id: str, file_path: str, email: str, filename: str, is_zip:
                         if sub_dcms:
                             dicom_dir = sub
                             break
-            phantom = _detect_catphan(dicom_dir)
+            phantom = CatPhan604(dicom_dir)
         else:
             # Single .dcm — copy into tmp_dir so pylinac can locate it
             import shutil as _shutil
             dest = os.path.join(tmp_dir, os.path.basename(file_path))
             _shutil.copy2(file_path, dest)
-            phantom = _detect_catphan(tmp_dir)
-        model_name = f"CatPhan {phantom._model}" if hasattr(phantom, '_model') else "CatPhan 604"
-
-        # Attempt analysis; if the scan doesn't cover the full phantom extent
-        # (e.g. a partial CBCT series), bypass the strict extent check and retry.
-        try:
-            phantom.analyze()
-        except ValueError as ve:
-            if "physical scan extent" in str(ve).lower() or "scan extent" in str(ve).lower():
-                # Monkey-patch the extent guard so pylinac skips the check,
-                # then re-instantiate a fresh phantom and analyze it.
-                import types
-                phantom2 = _detect_catphan(dicom_dir)
-                phantom2._ensure_physical_scan_extent = types.MethodType(
-                    lambda self: True, phantom2
-                )
-                phantom2.analyze()
-                phantom = phantom2
-            else:
-                raise
-
+            phantom = CatPhan604(tmp_dir)
+        phantom.analyze()
         summary   = phantom.results()
 
         # Overall pass: HU ±40, uniformity ≤40, slice thickness ±0.2,
-        # AND low contrast total ROIs seen ≥ 3
+        # AND low contrast 1.0% group ≥ 1 ROI
         chart_data = _extract_catphan_chart_data(phantom)
-        hu_ok  = (chart_data.get("hu_linearity_max_deviation") or 9999) <= 40
-        un_ok  = (chart_data.get("uniformity_index")            or 9999) <= 40
-        lc_ok  = chart_data.get("low_contrast_total", 0) >= 3
-        passed = hu_ok and un_ok and lc_ok
+        lc         = chart_data.get("low_contrast", {})
+        hu_ok      = (chart_data.get("hu_linearity_max_deviation") or 9999) <= 40
+        un_ok      = (chart_data.get("uniformity_index")            or 9999) <= 40
+        lc_ok      = lc.get("1.0_pass", False)  # primary clinical criterion
+        passed     = hu_ok and un_ok and lc_ok
 
         # Save analysis plot
         plot_path = os.path.join(tmp_dir, "catphan_plot.png")
@@ -1439,7 +1494,7 @@ def _run_catphan(job_id: str, file_path: str, email: str, filename: str, is_zip:
 
         save_analysis(
             email      = email,
-            test_type  = model_name,
+            test_type  = "CatPhan 604",
             filename   = filename,
             passed     = passed,
             summary    = summary,
@@ -1459,7 +1514,7 @@ def _run_catphan(job_id: str, file_path: str, email: str, filename: str, is_zip:
     except Exception as exc:
         job_set(job_id, {
             "status":  "Error",
-            "message": f"CatPhan analysis failed: {exc}",
+            "message": f"CatPhan 604 analysis failed: {exc}",
         })
     finally:
         try:
