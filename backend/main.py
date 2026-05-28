@@ -56,7 +56,8 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 # ── pylinac ──────────────────────────────────────────────────────────────────
-from pylinac import PicketFence, WinstonLutz, Starshot, FieldAnalysis, CatPhan604
+from pylinac import PicketFence, WinstonLutz, Starshot, FieldAnalysis
+from pylinac import CatPhan503, CatPhan504, CatPhan600, CatPhan604, CatPhan700
 from pylinac.ct import CTP515
 import zipfile
 import shutil
@@ -1310,6 +1311,55 @@ def _extract_catphan_chart_data(phantom) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# CatPhan model auto-detector
+# Reads DICOM headers to find the model number, falls back to CatPhan604
+# ─────────────────────────────────────────────────────────────────────────────
+def _detect_catphan(dicom_dir: str):
+    """
+    Tries to detect CatPhan model from DICOM filenames or headers.
+    Supports 503, 504, 600, 604, 700. Defaults to CatPhan604.
+    """
+    MODEL_MAP = {
+        "503": CatPhan503,
+        "504": CatPhan504,
+        "600": CatPhan600,
+        "604": CatPhan604,
+        "700": CatPhan700,
+    }
+    # Check filenames first
+    try:
+        for fname in os.listdir(dicom_dir):
+            for model_num, cls in MODEL_MAP.items():
+                if model_num in fname:
+                    return cls(dicom_dir)
+    except Exception:
+        pass
+
+    # Check DICOM headers
+    try:
+        import pydicom
+        for fname in os.listdir(dicom_dir):
+            if fname.lower().endswith(".dcm"):
+                ds = pydicom.dcmread(
+                    os.path.join(dicom_dir, fname),
+                    stop_before_pixels=True,
+                    force=True,
+                )
+                # Check series description and study description
+                for tag in ["SeriesDescription", "StudyDescription", "ProtocolName", "PatientName"]:
+                    val = str(getattr(ds, tag, "") or "").lower()
+                    for model_num, cls in MODEL_MAP.items():
+                        if model_num in val:
+                            return cls(dicom_dir)
+                break  # only need to check one file
+    except Exception:
+        pass
+
+    # Default to CatPhan604
+    return CatPhan604(dicom_dir)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Background worker
 # ─────────────────────────────────────────────────────────────────────────────
 def _run_catphan(job_id: str, file_path: str, email: str, filename: str, is_zip: bool):
@@ -1324,13 +1374,10 @@ def _run_catphan(job_id: str, file_path: str, email: str, filename: str, is_zip:
             # Unzip full DICOM series into tmp_dir
             with zipfile.ZipFile(file_path, "r") as zf:
                 zf.extractall(tmp_dir)
-            # If DICOMs landed inside a subfolder (e.g. catphan/CT.*.dcm),
-            # find the actual directory containing the .dcm files so Pylinac
-            # can locate them regardless of how the zip was structured.
+            # If DICOMs landed inside a subfolder, find the actual directory
             dicom_dir = tmp_dir
             dcm_files = [f for f in os.listdir(tmp_dir) if f.lower().endswith(".dcm")]
             if not dcm_files:
-                # Look one level deeper for a subfolder containing DICOMs
                 for entry in os.listdir(tmp_dir):
                     sub = os.path.join(tmp_dir, entry)
                     if os.path.isdir(sub):
@@ -1338,13 +1385,14 @@ def _run_catphan(job_id: str, file_path: str, email: str, filename: str, is_zip:
                         if sub_dcms:
                             dicom_dir = sub
                             break
-            phantom = CatPhan604(dicom_dir)
+            phantom = _detect_catphan(dicom_dir)
         else:
             # Single .dcm — copy into tmp_dir so pylinac can locate it
             import shutil as _shutil
             dest = os.path.join(tmp_dir, os.path.basename(file_path))
             _shutil.copy2(file_path, dest)
-            phantom = CatPhan604(tmp_dir)
+            phantom = _detect_catphan(tmp_dir)
+        model_name = f"CatPhan {phantom._model}" if hasattr(phantom, '_model') else "CatPhan 604"
         phantom.analyze()
         summary   = phantom.results()
 
@@ -1373,7 +1421,7 @@ def _run_catphan(job_id: str, file_path: str, email: str, filename: str, is_zip:
 
         save_analysis(
             email      = email,
-            test_type  = "CatPhan 604",
+            test_type  = model_name,
             filename   = filename,
             passed     = passed,
             summary    = summary,
