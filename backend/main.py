@@ -57,6 +57,7 @@ from slowapi.errors import RateLimitExceeded
 
 # ── pylinac ──────────────────────────────────────────────────────────────────
 from pylinac import PicketFence, WinstonLutz, Starshot, FieldAnalysis
+from pylinac import CatPhan503, CatPhan504, CatPhan600, CatPhan604, CatPhan700
 
 # ── Environment / config ─────────────────────────────────────────────────────
 SUPABASE_URL     = os.environ.get("SUPABASE_URL", "")
@@ -911,6 +912,173 @@ async def analyze_starshot(
         filepath = filepath,
         email    = u["email"],
         filename = file.filename,
+    )
+
+    return {"status": "Queued", "job_id": job_id}
+
+
+
+# =============================================================================
+# CatPhantom (CatPhan)  —  /analyze/catphantom
+# =============================================================================
+
+CATPHAN_MODELS = {
+    "503": CatPhan503,
+    "504": CatPhan504,
+    "600": CatPhan600,
+    "604": CatPhan604,
+    "700": CatPhan700,
+}
+
+
+def _extract_catphan_chart_data(cp) -> dict:
+    chart_data: dict = {}
+    try:
+        rd = cp.results_data(as_dict=True)
+
+        ctp404 = rd.get("ctp404", {})
+        hu_rois = ctp404.get("hu_rois", {})
+        hu_labels, hu_measured, hu_nominal = [], [], []
+        for name, roi in hu_rois.items():
+            hu_labels.append(name)
+            hu_measured.append(round(float(roi.get("measured_value", 0)), 1))
+            hu_nominal.append(round(float(roi.get("expected_value", 0)), 1))
+        chart_data["hu_labels"]   = hu_labels
+        chart_data["hu_measured"] = hu_measured
+        chart_data["hu_nominal"]  = hu_nominal
+
+        chart_data["geometry_passed"]          = ctp404.get("geometry_passed", None)
+        chart_data["avg_line_distance_mm"]     = ctp404.get("avg_line_distance_mm", None)
+        chart_data["thickness_passed"]         = ctp404.get("thickness_passed", None)
+        chart_data["measured_slice_thickness"] = ctp404.get("measured_slice_thickness_mm", None)
+        chart_data["hu_linearity_passed"]      = ctp404.get("hu_linearity_passed", None)
+        chart_data["low_contrast_visibility"]  = ctp404.get("low_contrast_visibility", None)
+
+        ctp528 = rd.get("ctp528")
+        if ctp528:
+            mtf_raw = ctp528.get("mtf_lp_mm", {})
+            mtf_percents = sorted(mtf_raw.keys(), key=lambda x: float(x))
+            chart_data["mtf_percents"] = [float(p) for p in mtf_percents]
+            chart_data["mtf_lp_mm"]    = [round(float(mtf_raw[p]), 3) for p in mtf_percents]
+
+        ctp486 = rd.get("ctp486")
+        if ctp486:
+            chart_data["uniformity_index"]        = ctp486.get("uniformity_index", None)
+            chart_data["integral_non_uniformity"] = ctp486.get("integral_non_uniformity", None)
+            chart_data["uniformity_passed"]       = ctp486.get("passed", None)
+            uni_rois = ctp486.get("rois", {})
+            chart_data["uniformity_roi_labels"] = list(uni_rois.keys())
+            chart_data["uniformity_roi_values"] = [
+                round(float(v.get("measured_value", 0)), 1) for v in uni_rois.values()
+            ]
+
+        ctp515 = rd.get("ctp515")
+        if ctp515:
+            chart_data["num_rois_seen"] = ctp515.get("num_rois_seen", None)
+            chart_data["cnr_threshold"] = ctp515.get("cnr_threshold", None)
+
+        chart_data["catphan_roll_deg"] = rd.get("catphan_roll_deg", None)
+        chart_data["num_images"]       = rd.get("num_images", None)
+
+    except Exception as e:
+        chart_data["error"] = str(e)
+    return chart_data
+
+
+def _run_catphantom(job_id: str, zip_path: str, email: str, filename: str, model: str):
+    import zipfile, shutil
+    tmp_dir = None
+    try:
+        CatPhanClass = CATPHAN_MODELS.get(model, CatPhan504)
+
+        tmp_dir = os.path.join(tempfile.gettempdir(), f"cp_{job_id}")
+        os.makedirs(tmp_dir, exist_ok=True)
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(tmp_dir)
+
+        cp = CatPhanClass(tmp_dir)
+        cp.analyze()
+
+        summary = cp.results()
+        passed  = getattr(cp, "passed", None)
+
+        plot_path = os.path.join(tempfile.gettempdir(), f"cp_{job_id}.png")
+        try:
+            cp.save_analyzed_image(plot_path)
+        except AttributeError:
+            cp.plot_analyzed_image(filename=plot_path, show=False)
+
+        image_url  = upload_plot(plot_path, f"cp_{job_id}.png")
+        chart_data = _extract_catphan_chart_data(cp)
+
+        save_analysis(
+            email      = email,
+            test_type  = f"CatPhan {model}",
+            filename   = filename,
+            passed     = passed,
+            summary    = summary,
+            image_url  = image_url,
+            chart_data = chart_data,
+            job_id     = job_id,
+        )
+
+        job_set(job_id, {
+            "status":           "Success",
+            "passed":           passed,
+            "analysis_summary": summary,
+            "image_url":        image_url,
+            "chart_data":       chart_data,
+        })
+
+    except Exception as e:
+        job_set(job_id, {
+            "status":  "Error",
+            "message": f"CatPhantom analysis failed: {e}",
+        })
+    finally:
+        try:
+            os.remove(zip_path)
+        except Exception:
+            pass
+        try:
+            os.remove(os.path.join(tempfile.gettempdir(), f"cp_{job_id}.png"))
+        except Exception:
+            pass
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        cleanup()
+
+
+@app.post("/analyze/catphantom")
+async def analyze_catphantom(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    model: str = Form("504"),
+    u=Depends(get_current_user),
+):
+    if not file.filename.lower().endswith(".zip"):
+        raise HTTPException(400, "CatPhantom analysis requires a .zip archive of DICOM files.")
+
+    if model not in CATPHAN_MODELS:
+        raise HTTPException(400, f"Unknown CatPhan model. Choose from: {', '.join(CATPHAN_MODELS.keys())}.")
+
+    job_id   = str(uuid.uuid4())
+    tmp_path = os.path.join(tempfile.gettempdir(), f"cp_{job_id}.zip")
+
+    contents = await file.read()
+    with open(tmp_path, "wb") as f:
+        f.write(contents)
+
+    job_set(job_id, {"status": "Processing", "_ts": time.time()})
+
+    background_tasks.add_task(
+        _run_catphantom,
+        job_id   = job_id,
+        zip_path = tmp_path,
+        email    = u["email"],
+        filename = file.filename,
+        model    = model,
     )
 
     return {"status": "Queued", "job_id": job_id}
