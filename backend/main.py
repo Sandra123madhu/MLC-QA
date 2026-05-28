@@ -1220,113 +1220,20 @@ async def reset_password(request: Request, body: ResetBody):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Enhanced CTP515 subclass
-# Adds per-contrast-group detection with a visual fallback.
-# ─────────────────────────────────────────────────────────────────────────────
-class EnhancedCTP515(CTP515):
-    """
-    Drop-in replacement for pylinac's CTP515 that reports low-contrast ROIs
-    broken down by contrast group (1.0%, 0.5%, 0.3%) as specified in the
-    CatPhan 604 manual.
-
-    Visual fallback: if the CNR criterion does not detect an ROI, we apply a
-    relative-signal-difference check against a local background reference ROI
-    placed adjacent to the signal disc — mimicking human visual assessment.
-    """
-
-    # Angular positions for each contrast group (degrees, measured from
-    # phantom geometry in the CatPhan 604 / CTP730 module manual).
-    CONTRAST_GROUPS = {
-        "1.0": {"angles": [-87.4, -69, -51.7, -38.5, -25.1, -12]},
-        "0.5": {"angles": [36, 53.1, 66.5, 78.7, 90.1, 102.4]},
-        "0.3": {"angles": [150, 170, 188, 202, 215, 227]},
-    }
-
-    # Relative signal difference threshold that mimics human visibility
-    # (~3 % relative contrast → just-visible disc)
-    VISUAL_THRESHOLD = 0.03
-
-    def _is_roi_visible(self, roi_angle_deg: float) -> bool:
-        """
-        Returns True if the ROI at the given angle is considered 'seen' by
-        either the standard CNR criterion OR the visual fallback.
-        """
-        # 1. Standard pylinac CNR-based check ----------------------------
-        for roi in self.rois.values():
-            if abs(roi.angle - roi_angle_deg) < 2.0:
-                if roi.cnr > self.cnr_threshold:
-                    return True
-                # 2. Visual fallback: relative signal difference ----------
-                try:
-                    bg_val  = self._sample_local_background(roi)
-                    rel_sig = abs(roi.pixel_value - bg_val) / (abs(bg_val) + 1e-9)
-                    if rel_sig >= self.VISUAL_THRESHOLD:
-                        return True
-                except Exception:
-                    pass
-                return False
-        return False
-
-    def _sample_local_background(self, roi) -> float:
-        """
-        Sample a small circular region placed just outside the disc boundary
-        (adjacent background), matching the phantom geometry recommendation.
-        """
-        # Offset the centre outward by 1.5× the ROI radius along the same
-        # radial direction as the disc.
-        angle_rad = np.deg2rad(roi.angle)
-        offset    = roi.radius_pixels * 1.5
-        bg_x = roi.center.x + offset * np.cos(angle_rad)
-        bg_y = roi.center.y + offset * np.sin(angle_rad)
-
-        arr    = self.image.array
-        r_px   = max(int(roi.radius_pixels * 0.6), 2)
-        x0, x1 = int(bg_x - r_px), int(bg_x + r_px)
-        y0, y1 = int(bg_y - r_px), int(bg_y + r_px)
-        x0, y0 = max(x0, 0), max(y0, 0)
-        x1, y1 = min(x1, arr.shape[1]), min(y1, arr.shape[0])
-
-        patch = arr[y0:y1, x0:x1]
-        return float(np.mean(patch)) if patch.size > 0 else float(np.mean(arr))
-
-    def group_results(self) -> dict:
-        """
-        Returns a dict with per-group ROI counts and pass/fail flags:
-        {
-            "1.0": <int>,  "1.0_pass": <bool>,
-            "0.5": <int>,  "0.5_pass": <bool>,
-            "0.3": <int>,  "0.3_pass": <bool>,
-        }
-        Tolerance: ≥1 ROI seen per group.
-        """
-        result = {}
-        for group_name, info in self.CONTRAST_GROUPS.items():
-            seen = sum(
-                1 for angle in info["angles"]
-                if self._is_roi_visible(angle)
-            )
-            result[group_name]             = seen
-            result[f"{group_name}_pass"]   = seen >= 1
-        return result
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Chart data extractor
 # ─────────────────────────────────────────────────────────────────────────────
 def _extract_catphan_chart_data(phantom) -> dict:
     """Build the chart_data dict that the frontend consumes."""
     cd: dict = {}
 
-    # ── Low contrast (enhanced, per-group) ──────────────────────────────────
+    # ── Low contrast (pylinac default) ───────────────────────────────────────
     try:
         ctp515 = phantom.ctp515
-        enhanced = EnhancedCTP515.__new__(EnhancedCTP515)
-        enhanced.__dict__.update(ctp515.__dict__)   # copy state
-        cd["low_contrast"] = enhanced.group_results()
-        cd["low_contrast"]["total_seen"] = ctp515.num_contrast_rois_seen
-        cd["cnr_threshold"]              = ctp515.cnr_threshold
+        cd["low_contrast_total"] = ctp515.num_contrast_rois_seen
+        cd["cnr_threshold"]      = ctp515.cnr_threshold
     except Exception as exc:
-        cd["low_contrast"] = {"1.0": 0, "0.5": 0, "0.3": 0, "error": str(exc)}
+        cd["low_contrast_total"] = 0
+        cd["low_contrast_error"] = str(exc)
 
     # ── HU Linearity (CTP404) ───────────────────────────────────────────────
     try:
@@ -1368,8 +1275,7 @@ def _extract_catphan_chart_data(phantom) -> dict:
         cd["mtf_profile"] = []
         cd["mtf_error"]   = str(exc)
 
-    # ── QA Summary table rows (matches paper layout) ─────────────────────────
-    lc    = cd.get("low_contrast", {})
+    # ── QA Summary table ─────────────────────────────────────────────────────
     hu_ok = (cd.get("hu_linearity_max_deviation") or 9999) <= 40
     un_ok = (cd.get("uniformity_index")            or 9999) <= 40
     st    = cd.get("slice_thickness_mm")
@@ -1405,24 +1311,10 @@ def _extract_catphan_chart_data(phantom) -> dict:
         },
         {
             "module":    "CTP515",
-            "parameter": "Low Contrast 1.0%",
-            "measured":  f"{lc.get('1.0', 0)} ROIs",
-            "tolerance": "≥ 1",
-            "status":    "PASS" if lc.get("1.0_pass") else "FAIL",
-        },
-        {
-            "module":    "CTP515",
-            "parameter": "Low Contrast 0.5%",
-            "measured":  f"{lc.get('0.5', 0)} ROIs",
-            "tolerance": "≥ 1",
-            "status":    "PASS" if lc.get("0.5_pass") else "FAIL",
-        },
-        {
-            "module":    "CTP515",
-            "parameter": "Low Contrast 0.3%",
-            "measured":  f"{lc.get('0.3', 0)} ROIs",
-            "tolerance": "≥ 1",
-            "status":    "PASS" if lc.get("0.3_pass") else "FAIL",
+            "parameter": "Low Contrast (Total ROIs Seen)",
+            "measured":  f"{cd.get('low_contrast_total', 0)} ROIs",
+            "tolerance": "≥ 3",
+            "status":    "PASS" if cd.get("low_contrast_total", 0) >= 3 else "FAIL",
         },
     ]
 
@@ -1469,13 +1361,12 @@ def _run_catphan(job_id: str, file_path: str, email: str, filename: str, is_zip:
         summary   = phantom.results()
 
         # Overall pass: HU ±40, uniformity ≤40, slice thickness ±0.2,
-        # AND low contrast 1.0% group ≥ 1 ROI
+        # AND low contrast total ROIs seen ≥ 3
         chart_data = _extract_catphan_chart_data(phantom)
-        lc         = chart_data.get("low_contrast", {})
-        hu_ok      = (chart_data.get("hu_linearity_max_deviation") or 9999) <= 40
-        un_ok      = (chart_data.get("uniformity_index")            or 9999) <= 40
-        lc_ok      = lc.get("1.0_pass", False)  # primary clinical criterion
-        passed     = hu_ok and un_ok and lc_ok
+        hu_ok  = (chart_data.get("hu_linearity_max_deviation") or 9999) <= 40
+        un_ok  = (chart_data.get("uniformity_index")            or 9999) <= 40
+        lc_ok  = chart_data.get("low_contrast_total", 0) >= 3
+        passed = hu_ok and un_ok and lc_ok
 
         # Save analysis plot
         plot_path = os.path.join(tmp_dir, "catphan_plot.png")
