@@ -226,6 +226,155 @@ async function runAnalysis() {
 
 function cancelAnalysis() { CancelManager.cancel(); }
 
+
+/* ── Inline styles for the categorised summary ─────────────────────────── */
+const _cpStyle = `
+  .cp-sections { display:grid; gap:14px; margin-top:4px; }
+  .cp-section { background:var(--surface-2,#0f1e37); border:1px solid rgba(255,255,255,0.07);
+                border-radius:10px; overflow:hidden; }
+  .cp-section-head { display:flex; align-items:center; gap:10px; padding:11px 16px;
+                     background:rgba(0,120,180,0.13); border-bottom:1px solid rgba(255,255,255,0.06); }
+  .cp-section-icon { font-size:1rem; }
+  .cp-section-title { font-family:var(--mono); font-size:0.78rem; font-weight:700;
+                      color:#7ecfff; letter-spacing:0.06em; text-transform:uppercase; flex:1; }
+  .cp-section-badge { font-family:var(--mono); font-size:0.68rem; font-weight:600;
+                      padding:2px 9px; border-radius:20px; }
+  .badge-pass { background:rgba(0,180,100,0.18); color:#3ddc84; border:1px solid rgba(0,180,100,0.3); }
+  .badge-na   { background:rgba(120,140,180,0.15); color:#8aa0c0; border:1px solid rgba(120,140,180,0.2); }
+  .cp-rows { display:grid; grid-template-columns:1fr 1fr; gap:0; }
+  @media(max-width:600px){ .cp-rows { grid-template-columns:1fr; } }
+  .cp-row { display:flex; justify-content:space-between; align-items:baseline;
+            padding:8px 16px; border-bottom:1px solid rgba(255,255,255,0.04); gap:12px; }
+  .cp-row:last-child { border-bottom:none; }
+  .cp-row-label { font-family:var(--mono); font-size:0.74rem; color:#8aa0c0; white-space:nowrap; }
+  .cp-row-val   { font-family:var(--mono); font-size:0.78rem; font-weight:600;
+                  color:rgba(255,255,255,0.88); text-align:right; }
+  .cp-hu-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:8px; padding:12px 16px; }
+  .cp-hu-chip { background:rgba(0,120,180,0.1); border:1px solid rgba(0,120,180,0.2);
+                border-radius:8px; padding:8px 12px; }
+  .cp-hu-chip-mat { font-family:var(--mono); font-size:0.68rem; color:#8aa0c0; margin-bottom:3px; }
+  .cp-hu-chip-val { font-family:var(--mono); font-size:0.82rem; font-weight:700; color:#7ecfff; }
+  .cp-hu-chip-nom { font-family:var(--mono); font-size:0.67rem; color:#607090; margin-top:1px; }
+`;
+
+function parseSummary(summary, cd) {
+  // inject styles once
+  if (!document.getElementById('_cpSummaryStyle')) {
+    const s = document.createElement('style');
+    s.id = '_cpSummaryStyle'; s.textContent = _cpStyle;
+    document.head.appendChild(s);
+  }
+
+  // helper to round long floats
+  const fmt = v => {
+    if (v === null || v === undefined) return '—';
+    const n = parseFloat(v);
+    return isNaN(n) ? String(v) : (Number.isInteger(n) ? String(n) : n.toFixed(4).replace(/\.?0+$/, ''));
+  };
+
+  const row = (label, val) =>
+    `<div class="cp-row"><span class="cp-row-label">${label}</span><span class="cp-row-val">${fmt(val)}</span></div>`;
+
+  const badge = (passed) => passed === null || passed === undefined
+    ? '' : `<span class="cp-section-badge badge-pass">✓ Pass</span>`;
+
+  // ── CTP404 ─────────────────────────────────────────────────────────────
+  let ctp404_html = '';
+  const huRois = cd.hu_labels && cd.hu_labels.length
+    ? cd.hu_labels.map((mat, i) =>
+        `<div class="cp-hu-chip">
+          <div class="cp-hu-chip-mat">${mat}</div>
+          <div class="cp-hu-chip-val">${fmt(cd.hu_measured?.[i])} HU</div>
+          <div class="cp-hu-chip-nom">Nominal: ${fmt(cd.hu_nominal?.[i])} HU</div>
+        </div>`).join('')
+    : '';
+
+  const rows404 = [
+    ['HU Tolerance', cd.hu_tolerance !== undefined ? `±${cd.hu_tolerance} HU` : '±40 HU'],
+    ['Low Contrast Visibility', cd.low_contrast_visibility],
+    ['Geometric Line Average', cd.avg_line_distance_mm !== undefined ? `${fmt(cd.avg_line_distance_mm)} mm` : null],
+    ['Measured Slice Thickness', cd.measured_slice_thickness !== undefined ? `${fmt(cd.measured_slice_thickness)} mm` : null],
+    ['Slice Thickness Passed', cd.thickness_passed !== undefined ? (cd.thickness_passed ? 'True' : 'False') : null],
+    ['Geometry Passed', cd.geometry_passed !== undefined ? (cd.geometry_passed ? 'True' : 'False') : null],
+  ].filter(r => r[1] !== null && r[1] !== undefined);
+
+  ctp404_html = `
+    <div class="cp-section">
+      <div class="cp-section-head">
+        <span class="cp-section-icon">📐</span>
+        <span class="cp-section-title">CTP404 — HU Linearity & Geometry</span>
+        ${badge(cd.hu_linearity_passed)}
+      </div>
+      <div class="cp-rows">${rows404.map(r => row(r[0], r[1])).join('')}</div>
+      ${huRois ? `<div class="cp-hu-grid">${huRois}</div>` : ''}
+    </div>`;
+
+  // ── CTP528 ─────────────────────────────────────────────────────────────
+  let ctp528_html = '';
+  if (cd.mtf_lp_mm && cd.mtf_lp_mm.length) {
+    const mtfRows = cd.mtf_percents.map((p, i) =>
+      row(`MTF ${p}% (lp/mm)`, cd.mtf_lp_mm[i])
+    ).join('');
+    ctp528_html = `
+      <div class="cp-section">
+        <div class="cp-section-head">
+          <span class="cp-section-icon">🔬</span>
+          <span class="cp-section-title">CTP528 — Spatial Resolution (MTF)</span>
+          <span class="cp-section-badge badge-na">Spatial Res.</span>
+        </div>
+        <div class="cp-rows">${mtfRows}</div>
+      </div>`;
+  }
+
+  // ── CTP486 ─────────────────────────────────────────────────────────────
+  let ctp486_html = '';
+  const rows486 = [
+    ['Uniformity Tolerance', '±40 HU'],
+    ['Uniformity Index', cd.uniformity_index],
+    ['Integral Non-Uniformity', cd.integral_non_uniformity],
+    ['Max Noise Power Frequency', cd.nps_max_freq],
+    ['Average Noise Power', cd.nps_avg_power],
+  ].filter(r => r[1] !== null && r[1] !== undefined);
+
+  const uniRoiChips = cd.uniformity_roi_labels && cd.uniformity_roi_labels.length
+    ? cd.uniformity_roi_labels.map((lbl, i) =>
+        `<div class="cp-hu-chip">
+          <div class="cp-hu-chip-mat">${lbl}</div>
+          <div class="cp-hu-chip-val">${fmt(cd.uniformity_roi_values?.[i])} HU</div>
+        </div>`).join('')
+    : '';
+
+  ctp486_html = `
+    <div class="cp-section">
+      <div class="cp-section-head">
+        <span class="cp-section-icon">⚖️</span>
+        <span class="cp-section-title">CTP486 — Image Uniformity</span>
+        ${badge(cd.uniformity_passed)}
+      </div>
+      <div class="cp-rows">${rows486.map(r => row(r[0], r[1])).join('')}</div>
+      ${uniRoiChips ? `<div class="cp-hu-grid">${uniRoiChips}</div>` : ''}
+    </div>`;
+
+  // ── CTP515 ─────────────────────────────────────────────────────────────
+  let ctp515_html = '';
+  if (cd.num_rois_seen !== undefined && cd.num_rois_seen !== null) {
+    ctp515_html = `
+      <div class="cp-section">
+        <div class="cp-section-head">
+          <span class="cp-section-icon">👁️</span>
+          <span class="cp-section-title">CTP515 — Low Contrast Detectability</span>
+          <span class="cp-section-badge badge-na">Low Contrast</span>
+        </div>
+        <div class="cp-rows">
+          ${row('CNR Threshold', cd.cnr_threshold)}
+          ${row('Low Contrast ROIs Seen', cd.num_rois_seen)}
+        </div>
+      </div>`;
+  }
+
+  return `<div class="cp-sections">${ctp404_html}${ctp528_html}${ctp486_html}${ctp515_html}</div>`;
+}
+
 function handleSuccess(result, file, model) {
   if (CancelManager.isCancelled()) return;
 
@@ -240,6 +389,7 @@ function handleSuccess(result, file, model) {
   window._lastResult = {
     pass,
     summary,
+    chart_data:    cd,
     imgUrl:        result.image_url || null,
     filename:      file ? file.name : "unknown",
     testType:      `CatPhan ${model}`,
@@ -247,7 +397,7 @@ function handleSuccess(result, file, model) {
   };
 
   // Summary text
-  resultsDiv.innerHTML = `<pre>${summary}</pre>`;
+  resultsDiv.innerHTML = parseSummary(summary, cd);
 
   // Metrics row
   const metricsRow = document.getElementById("metricsRow");
@@ -498,16 +648,114 @@ async function generatePDF(r) {
     } catch { y += 4; }
   }
   doc.setDrawColor(180, 200, 220); doc.setLineWidth(0.4); doc.line(M, y, W - M, y); y += 7;
-  const summaryLines = doc.splitTextToSize(r.summary, W - M * 2 - 10);
-  const boxH = Math.min(summaryLines.length * 5.4 + 16, 230);
-  doc.setFillColor(245, 248, 252); doc.roundedRect(M, y, W - M * 2, boxH, 2, 2, "F");
-  doc.setDrawColor(200, 215, 230); doc.setLineWidth(0.3); doc.roundedRect(M, y, W - M * 2, boxH, 2, 2, "S");
-  y += 7; doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(15, 40, 80); doc.text("ANALYSIS SUMMARY", M + 5, y); y += 7;
-  doc.setFont("courier", "normal"); doc.setFontSize(8.2); doc.setTextColor(20, 45, 80);
-  summaryLines.forEach(line => {
-    if (y > 272) { doc.addPage(); y = 18; doc.setFillColor(245, 248, 252); doc.roundedRect(M, y - 4, W - M * 2, 240, 2, 2, "F"); doc.setFont("courier", "normal"); doc.setFontSize(8.2); doc.setTextColor(20, 45, 80); }
-    doc.text(line, M + 5, y); y += 5.4;
-  });
+
+  // ── Helper for categorised PDF sections ──────────────────────────────────
+  const cd = r.chart_data || {};
+  const fmtV = v => {
+    if (v === null || v === undefined) return '—';
+    const n = parseFloat(v);
+    return isNaN(n) ? String(v) : (Number.isInteger(n) ? String(n) : n.toFixed(4).replace(/\.?0+$/, ''));
+  };
+
+  function pdfSection(title, rows, extraRows) {
+    if (y > 255) { doc.addPage(); y = 16; }
+    // Section header bar
+    doc.setFillColor(15, 55, 100);
+    doc.roundedRect(M, y, W - M * 2, 9, 1.5, 1.5, "F");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(180, 220, 255);
+    doc.text(title, M + 5, y + 6.2);
+    y += 12;
+
+    // Rows in two columns
+    const colW = (W - M * 2) / 2;
+    let col = 0;
+    let rowStartX = M;
+    rows.forEach(([label, val]) => {
+      if (val === null || val === undefined) return;
+      const xOff = col === 0 ? M : M + colW;
+      // alternating row bg
+      if (col === 0) {
+        doc.setFillColor(col % 2 === 0 ? 245 : 240, col % 2 === 0 ? 248 : 245, col % 2 === 0 ? 252 : 250);
+        doc.rect(M, y - 3, W - M * 2, 8, "F");
+      }
+      doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(80, 100, 130);
+      doc.text(String(label), xOff + 3, y + 2.5);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(20, 45, 80);
+      const valStr = String(fmtV(val));
+      doc.text(valStr, xOff + colW - 4 - doc.getTextWidth(valStr), y + 2.5);
+      col++;
+      if (col === 2) { col = 0; y += 8; }
+    });
+    if (col === 1) y += 8;
+
+    // Extra wide rows (HU chips etc)
+    if (extraRows && extraRows.length) {
+      const chipW = (W - M * 2 - (extraRows.length - 1) * 4) / Math.min(extraRows.length, 7);
+      const rowH = 16;
+      if (y + rowH > 272) { doc.addPage(); y = 16; }
+      extraRows.forEach((chip, i) => {
+        const cx = M + i * (chipW + 4);
+        doc.setFillColor(230, 240, 252); doc.roundedRect(cx, y, chipW, rowH, 1.5, 1.5, "F");
+        doc.setDrawColor(180, 210, 240); doc.setLineWidth(0.2); doc.roundedRect(cx, y, chipW, rowH, 1.5, 1.5, "S");
+        doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); doc.setTextColor(20, 80, 150);
+        const matW = doc.getTextWidth(chip.mat);
+        doc.text(chip.mat, cx + chipW / 2 - matW / 2, y + 5);
+        doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(0, 60, 130);
+        const valW2 = doc.getTextWidth(chip.val);
+        doc.text(chip.val, cx + chipW / 2 - valW2 / 2, y + 11);
+        if (chip.nom) {
+          doc.setFont("helvetica", "normal"); doc.setFontSize(6); doc.setTextColor(100, 130, 160);
+          const nomW = doc.getTextWidth(chip.nom);
+          doc.text(chip.nom, cx + chipW / 2 - nomW / 2, y + 15.2);
+        }
+      });
+      y += rowH + 6;
+    }
+    y += 4;
+  }
+
+  // ── CTP404 ───────────────────────────────────────────────────────────────
+  const huChips = (cd.hu_labels || []).map((mat, i) => ({
+    mat, val: `${fmtV(cd.hu_measured?.[i])} HU`, nom: `Nom: ${fmtV(cd.hu_nominal?.[i])} HU`
+  }));
+  pdfSection('📐  CTP404 — HU Linearity & Geometry', [
+    ['HU Tolerance', '±40 HU'],
+    ['HU Linearity Passed', cd.hu_linearity_passed !== undefined ? (cd.hu_linearity_passed ? 'True' : 'False') : null],
+    ['Low Contrast Visibility', cd.low_contrast_visibility],
+    ['Geometric Line Average', cd.avg_line_distance_mm !== undefined ? `${fmtV(cd.avg_line_distance_mm)} mm` : null],
+    ['Geometry Passed', cd.geometry_passed !== undefined ? (cd.geometry_passed ? 'True' : 'False') : null],
+    ['Measured Slice Thickness', cd.measured_slice_thickness !== undefined ? `${fmtV(cd.measured_slice_thickness)} mm` : null],
+    ['Slice Thickness Passed', cd.thickness_passed !== undefined ? (cd.thickness_passed ? 'True' : 'False') : null],
+  ], huChips.length ? huChips : null);
+
+  // ── CTP528 ───────────────────────────────────────────────────────────────
+  if (cd.mtf_percents && cd.mtf_percents.length) {
+    pdfSection('🔬  CTP528 — Spatial Resolution (MTF)',
+      cd.mtf_percents.map((p, i) => [`MTF ${p}% (lp/mm)`, cd.mtf_lp_mm?.[i]]),
+      null
+    );
+  }
+
+  // ── CTP486 ───────────────────────────────────────────────────────────────
+  const uniChips = (cd.uniformity_roi_labels || []).map((lbl, i) => ({
+    mat: lbl, val: `${fmtV(cd.uniformity_roi_values?.[i])} HU`, nom: null
+  }));
+  pdfSection('⚖️  CTP486 — Image Uniformity', [
+    ['Uniformity Tolerance', '±40 HU'],
+    ['Uniformity Passed', cd.uniformity_passed !== undefined ? (cd.uniformity_passed ? 'True' : 'False') : null],
+    ['Uniformity Index', cd.uniformity_index],
+    ['Integral Non-Uniformity', cd.integral_non_uniformity],
+    ['Max Noise Power Freq.', cd.nps_max_freq],
+    ['Average Noise Power', cd.nps_avg_power],
+  ], uniChips.length ? uniChips : null);
+
+  // ── CTP515 ───────────────────────────────────────────────────────────────
+  if (cd.num_rois_seen !== undefined && cd.num_rois_seen !== null) {
+    pdfSection('👁  CTP515 — Low Contrast Detectability', [
+      ['CNR Threshold', cd.cnr_threshold],
+      ['Low Contrast ROIs Seen', cd.num_rois_seen],
+    ], null);
+  }
   const pages = doc.internal.getNumberOfPages();
   for (let i = 1; i <= pages; i++) {
     doc.setPage(i); doc.setFillColor(235, 241, 248); doc.rect(0, 284, W, 13, "F");
