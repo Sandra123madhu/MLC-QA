@@ -294,8 +294,7 @@
     <div class="breadcrumb"><a href="dashboard.html">Dashboard</a> <span>/</span> CatPhan CBCT QA</div>
     <h1>CatPhan CBCT Image Quality QA</h1>
     <p>
-      Enhanced low-contrast analysis with contrast-group–wise reporting (1.0% / 0.5% / 0.3%)
-      aligned to the CatPhan phantom manual — includes HU linearity, MTF, uniformity and slice thickness.
+      CBCT image quality analysis including low-contrast detectability, HU linearity, MTF, uniformity and slice thickness.
     </p>
   </div>
 
@@ -308,8 +307,6 @@
     <span style="font-size:1.1rem;flex-shrink:0;">ℹ</span>
     <div>
       Upload either a <strong>.zip</strong> (recommended — full multi-slice CBCT series) or a single <strong>.dcm</strong> file acquired with the CatPhan phantom. For best results, zip the entire DICOM series folder — pylinac will automatically locate each module slice.
-      The backend runs an enhanced pylinac CatPhan analysis that reports low-contrast ROIs
-      <strong>per contrast group</strong> (1.0%, 0.5%, 0.3%) — eliminating the aggregation limitation of the default pylinac implementation.
     </div>
   </div>
 
