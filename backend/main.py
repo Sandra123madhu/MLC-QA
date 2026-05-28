@@ -1217,7 +1217,7 @@ def _extract_catphan_chart_data(phantom) -> dict:
     # ── Low contrast (pylinac default) ───────────────────────────────────────
     try:
         ctp515 = phantom.ctp515
-        cd["low_contrast_total"] = ctp515.num_contrast_rois_seen
+        cd["low_contrast_total"] = ctp515.rois_visible
         cd["cnr_threshold"]      = ctp515.cnr_threshold
     except Exception as exc:
         cd["low_contrast_total"] = 0
