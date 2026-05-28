@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CatPhantom — MLC QA</title>
+  <link rel="stylesheet" href="style.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="script.js"></script>
+</head>
+<body>
+
+<!-- ── Machine Name Modal ──────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="pdfModal" role="dialog" aria-modal="true" aria-labelledby="pdfModalTitle">
+  <div class="modal-box">
+    <h3 id="pdfModalTitle">🖨 Download PDF Report</h3>
+    <p>Enter your machine details to include them in the report header. These will be remembered for next time.</p>
+    <div class="modal-field">
+      <label for="modalMachineName">Machine / Linac Name <span style="color:var(--accent);">*</span></label>
+      <input type="text" id="modalMachineName" placeholder="e.g. Linac 1, TrueBeam-A, ELEKTA-2" maxlength="60" autocomplete="off"/>
+    </div>
+    <div class="modal-field">
+      <label for="modalInstitution">Institution / Department</label>
+      <input type="text" id="modalInstitution" placeholder="e.g. City General Hospital — Radiotherapy" maxlength="80" autocomplete="off"/>
+    </div>
+    <label class="modal-remember">
+      <input type="checkbox" id="modalRemember" checked/>
+      Remember these details for future downloads
+    </label>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="closePdfModal()">Cancel</button>
+      <button class="modal-btn-confirm" onclick="confirmPdfDownload()">&#11015; Generate PDF</button>
+    </div>
+  </div>
+</div>
+
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <a href="dashboard.html" class="sidebar-logo">
+      <div class="logo-mark"><svg viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 2.18L13 6.1v3.8L8 12.82 3 9.9V6.1L8 3.18z"/></svg></div>
+      <div class="logo-text">MLC<span>QA</span></div>
+    </a>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">Menu</div>
+    <a class="nav-item" href="dashboard.html"><span class="nav-icon">▦</span> Dashboard</a>
+    <a class="nav-item" href="mlc-qa.html"><span class="nav-icon">⚡</span> Picket Fence</a>
+    <a class="nav-item" href="winston-lutz.html"><span class="nav-icon">◎</span> Winston-Lutz</a>
+    <a class="nav-item" href="starshot.html"><span class="nav-icon">✦</span> Starshot</a>
+    <a class="nav-item" href="congruence.html"><span class="nav-icon">⊞</span> Congruence</a>
+    <a class="nav-item active" href="catphantom.html"><span class="nav-icon">⬡</span> CatPhantom</a>
+    <a class="nav-item" href="history.html"><span class="nav-icon">≡</span> History</a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="user-chip">
+      <div class="avatar" id="avatarInitial">?</div>
+      <div><div class="user-name" id="sidebarName">Loading...</div><div class="user-role">Medical Physicist</div></div>
+    </div>
+    <button class="logout-btn" onclick="logout()">Sign Out</button>
+  </div>
+</aside>
+
+<main class="main">
+  <div class="page-header">
+    <div class="breadcrumb"><a href="dashboard.html">Dashboard</a> <span>/</span> CatPhantom CT QA</div>
+    <h1>CatPhantom CT QA</h1>
+    <p>Analyze CatPhan 503 / 504 / 600 / 604 / 700 phantoms for HU linearity, spatial resolution, uniformity, and low contrast detectability</p>
+  </div>
+
+  <div class="server-status" id="serverStatus">
+    <div class="status-dot-sm dot-warn"></div><span>Checking server...</span>
+  </div>
+
+  <div class="info-note">
+    <strong>Note:</strong> Upload a <strong>.zip</strong> archive containing all DICOM CT slices from your CatPhan scan.
+    Select the correct phantom model below before running the analysis. Ensure all slices are from a single acquisition.
+  </div>
+
+  <div class="upload-card">
+    <div class="upload-zone" id="uploadZone">
+      <input type="file" id="cpFile" accept=".zip" onchange="onFileSelected(this)"/>
+      <div class="upload-icon">⬡</div>
+      <h3>Drop your DICOM ZIP archive here</h3>
+      <p>or click to browse — .zip files only</p>
+      <div class="file-selected" id="fileLabel"></div>
+    </div>
+
+    <!-- Model selector -->
+    <div class="tolerances" style="margin-top:16px">
+      <div class="tol-item" style="flex:1;min-width:100%">
+        <div class="tol-label" style="margin-bottom:6px">CatPhan Model</div>
+        <select id="catphanModel" style="width:100%;padding:8px 12px;background:var(--surface-2,#0f1e37);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--mono);font-size:0.85rem;cursor:pointer;">
+          <option value="503">CatPhan 503</option>
+          <option value="504" selected>CatPhan 504</option>
+          <option value="600">CatPhan 600</option>
+          <option value="604">CatPhan 604</option>
+          <option value="700">CatPhan 700</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="tolerances" style="margin-top:12px">
+      <div class="tol-item"><div class="tol-label">HU Tolerance</div><div class="tol-val">±40 HU</div></div>
+      <div class="tol-item"><div class="tol-label">Geometry Tolerance</div><div class="tol-val">±1 mm</div></div>
+      <div class="tol-item"><div class="tol-label">Slice Thickness Tolerance</div><div class="tol-val">±0.2 mm</div></div>
+    </div>
+
+    <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>Run CatPhantom Analysis</button>
+    <button class="btn-cancel" id="cancelBtn" onclick="cancelAnalysis()" style="display:none;">✕ Cancel Analysis</button>
+  </div>
+
+  <div class="results-card">
+    <h2>Results</h2>
+    <div id="resultsBody"><p>Upload a ZIP file and run the analysis to see results here.</p></div>
+    <div id="verdictBanner" class="verdict-banner" style="display:none"></div>
+    <div id="metricsRow" class="metrics-row" style="display:none;margin-top:20px"></div>
+    <div id="plotSection" style="display:none;margin-top:20px"></div>
+
+    <div id="chartsSection" style="display:none;margin-top:28px">
+      <div class="section-head" style="margin-top:0;border-bottom:1px solid var(--border-subtle);padding-bottom:14px;margin-bottom:20px">
+        <h2 style="font-size:0.88rem;font-weight:600">Analysis Charts</h2>
+      </div>
+      <div class="charts-grid">
+        <div class="chart-card"><div class="chart-card-title">HU Linearity — Measured vs Nominal</div><canvas id="huChart"></canvas></div>
+        <div class="chart-card"><div class="chart-card-title">MTF (Spatial Resolution)</div><canvas id="mtfChart"></canvas></div>
+        <div class="chart-card"><div class="chart-card-title">Uniformity ROI HU Values</div><canvas id="uniformityChart"></canvas></div>
+      </div>
+    </div>
+
+    <div id="pdfSection" style="display:none;margin-top:16px">
+      <button class="btn-outline" onclick="downloadPDF()">&#11015; Download PDF Report</button>
+    </div>
+  </div>
+</main>
+
+<script>
+const _cpName = localStorage.getItem("mlcqa_name");
+if (_cpName) {
+  document.getElementById("sidebarName").textContent = _cpName;
+  document.getElementById("avatarInitial").textContent = _cpName.charAt(0).toUpperCase();
+}
+
+function onFileSelected(input) {
+  const label = document.getElementById("fileLabel");
+  const btn   = document.getElementById("analyzeBtn");
+  if (input.files && input.files[0]) {
+    const f = input.files[0];
+    label.textContent = f.name;
+    label.style.display = "block";
+    btn.disabled = !f.name.toLowerCase().endsWith(".zip");
+  } else {
+    label.textContent = "";
+    label.style.display = "none";
+    btn.disabled = true;
+  }
+}
+
+async function runAnalysis() {
+  const fileInput  = document.getElementById("cpFile");
+  const model      = document.getElementById("catphanModel").value;
+  const btn        = document.getElementById("analyzeBtn");
+  const resultsDiv = document.getElementById("resultsBody");
+
+  if (!fileInput.files.length) { alert("Please select a ZIP file first."); return; }
+  const file = fileInput.files[0];
+  if (!file.name.toLowerCase().endsWith(".zip")) {
+    resultsDiv.innerHTML = `<p class="result-fail">❌ Only .zip archives are supported for CatPhantom analysis.</p>`;
+    return;
+  }
+
+  CancelManager.start({
+    cancelBtnId:  "cancelBtn",
+    analyzeBtnId: "analyzeBtn",
+    analyzeLabel: "Run CatPhantom Analysis"
+  });
+  btn.disabled = true;
+  btn.textContent = "Uploading...";
+  resultsDiv.innerHTML = `<p>⏳ Uploading ZIP archive...</p>`;
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("model", model);
+
+    const data = await AnalysisHelpers.makeApiCall(
+      `${BACKEND_URL}/analyze/catphantom`,
+      {
+        method: "POST",
+        headers: authHeadersOnly(),
+        body: formData,
+        signal: CancelManager.getSignal()
+      },
+      120000
+    );
+
+    if (CancelManager.isCancelled()) return;
+    if (data.status === "Error") throw new Error(data.message || "Server returned an error");
+
+    CancelManager.setJobId(data.job_id);
+    btn.textContent = "Analysing...";
+    resultsDiv.innerHTML = `<p>🔬 CatPhantom analysis running<span id="dots">.</span></p>`;
+
+    await AnalysisHelpers.pollForResult(
+      data.job_id,
+      (result) => {
+        if (CancelManager.isCancelled()) return;
+        handleSuccess(result, file, model);
+        CancelManager.finish();
+      },
+      null,
+      () => CancelManager.isCancelled()
+    );
+
+  } catch (err) {
+    if (CancelManager.isCancelled() || err.name === "AbortError" ||
+        err.message === "Request timed out or was cancelled.") {
+      CancelManager.finish();
+      return;
+    }
+    console.error("CatPhantom analysis error:", err);
+    resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
+    CancelManager.finish();
+    btn.disabled = false;
+    btn.textContent = "Run CatPhantom Analysis";
+  }
+}
+
+function cancelAnalysis() { CancelManager.cancel(); }
+
+function handleSuccess(result, file, model) {
+  if (CancelManager.isCancelled()) return;
+
+  const btn        = document.getElementById("analyzeBtn");
+  const resultsDiv = document.getElementById("resultsBody");
+
+  const pass    = result.passed;
+  const summary = result.analysis_summary || "No summary available.";
+  const cd      = result.chart_data || {};
+
+  // Store for PDF
+  window._lastResult = {
+    pass,
+    summary,
+    imgUrl:        result.image_url || null,
+    filename:      file ? file.name : "unknown",
+    testType:      `CatPhan ${model}`,
+    toleranceText: pass ? "All parameters within tolerance" : "One or more parameters outside tolerance",
+  };
+
+  // Verdict banner
+  const banner = document.getElementById("verdictBanner");
+  banner.style.display = "block";
+  banner.className     = `verdict-banner ${pass ? "verdict-pass" : "verdict-fail"}`;
+  banner.innerHTML     = pass
+    ? `<span class="verdict-icon">✓</span> <strong>PASS</strong> — All parameters within clinical tolerance`
+    : `<span class="verdict-icon">✗</span> <strong>FAIL</strong> — One or more parameters outside tolerance`;
+
+  // Summary text
+  resultsDiv.innerHTML = `<pre>${summary}</pre>`;
+
+  // Metrics row
+  const metricsRow = document.getElementById("metricsRow");
+  const metrics = [];
+  if (cd.geometry_passed !== undefined && cd.geometry_passed !== null)
+    metrics.push({ label: "Geometry", value: cd.geometry_passed ? "✓ Pass" : "✗ Fail", pass: cd.geometry_passed });
+  if (cd.avg_line_distance_mm !== null && cd.avg_line_distance_mm !== undefined)
+    metrics.push({ label: "Avg Line Distance", value: `${cd.avg_line_distance_mm} mm`, pass: true });
+  if (cd.hu_linearity_passed !== undefined && cd.hu_linearity_passed !== null)
+    metrics.push({ label: "HU Linearity", value: cd.hu_linearity_passed ? "✓ Pass" : "✗ Fail", pass: cd.hu_linearity_passed });
+  if (cd.thickness_passed !== undefined && cd.thickness_passed !== null)
+    metrics.push({ label: "Slice Thickness", value: cd.thickness_passed ? "✓ Pass" : "✗ Fail", pass: cd.thickness_passed });
+  if (cd.measured_slice_thickness !== null && cd.measured_slice_thickness !== undefined)
+    metrics.push({ label: "Meas. Thickness", value: `${cd.measured_slice_thickness} mm`, pass: true });
+  if (cd.uniformity_passed !== undefined && cd.uniformity_passed !== null)
+    metrics.push({ label: "Uniformity", value: cd.uniformity_passed ? "✓ Pass" : "✗ Fail", pass: cd.uniformity_passed });
+  if (cd.num_rois_seen !== null && cd.num_rois_seen !== undefined)
+    metrics.push({ label: "Low Contrast ROIs", value: `${cd.num_rois_seen} visible`, pass: true });
+  if (cd.catphan_roll_deg !== null && cd.catphan_roll_deg !== undefined)
+    metrics.push({ label: "Phantom Roll", value: `${cd.catphan_roll_deg}°`, pass: Math.abs(cd.catphan_roll_deg) < 3 });
+  if (cd.num_images !== null && cd.num_images !== undefined)
+    metrics.push({ label: "DICOM Slices", value: `${cd.num_images}`, pass: true });
+
+  if (metrics.length) {
+    metricsRow.style.display = "flex";
+    metricsRow.innerHTML = metrics.map(m =>
+      `<div class="metric-chip ${m.pass ? "" : "metric-chip-fail"}">
+        <div class="metric-label">${m.label}</div>
+        <div class="metric-val">${m.value}</div>
+      </div>`
+    ).join("");
+  }
+
+  // Analysed image plot
+  if (result.image_url) {
+    const plotSection = document.getElementById("plotSection");
+    plotSection.style.display = "block";
+    plotSection.innerHTML = `
+      <div class="section-head" style="margin-top:0;border-bottom:1px solid var(--border-subtle);padding-bottom:14px;margin-bottom:16px">
+        <h2 style="font-size:0.88rem;font-weight:600">Analysed Image</h2>
+      </div>
+      <img src="${result.image_url}" alt="CatPhantom analysed image"
+           style="width:100%;border-radius:var(--r-lg);border:1px solid var(--border);background:#000"/>`;
+  }
+
+  // Charts
+  renderCharts(cd);
+
+  btn.disabled = false;
+  btn.textContent = "Run CatPhantom Analysis";
+  document.getElementById("pdfSection").style.display = "block";
+}
+
+let _charts = {};
+
+function destroyChart(id) {
+  if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; }
+}
+
+function renderCharts(cd) {
+  document.getElementById("chartsSection").style.display = "block";
+
+  // HU Linearity
+  destroyChart("huChart");
+  if (cd.hu_labels && cd.hu_labels.length) {
+    _charts["huChart"] = new Chart(document.getElementById("huChart"), {
+      type: "bar",
+      data: {
+        labels: cd.hu_labels,
+        datasets: [
+          {
+            label: "Measured HU",
+            data: cd.hu_measured,
+            backgroundColor: "rgba(0,175,215,0.75)",
+            borderColor: "rgba(0,175,215,1)",
+            borderWidth: 1,
+          },
+          {
+            label: "Nominal HU",
+            data: cd.hu_nominal,
+            type: "line",
+            borderColor: "rgba(255,200,60,0.9)",
+            borderWidth: 2,
+            pointRadius: 4,
+            fill: false,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { labels: { color: "#c8d8f0", font: { family: "var(--mono)", size: 11 } } } },
+        scales: {
+          x: { ticks: { color: "#8aa0c0" }, grid: { color: "rgba(255,255,255,0.05)" } },
+          y: { ticks: { color: "#8aa0c0" }, grid: { color: "rgba(255,255,255,0.07)" },
+               title: { display: true, text: "HU", color: "#8aa0c0", font: { size: 11 } } }
+        }
+      }
+    });
+  } else {
+    document.getElementById("huChart").parentElement.innerHTML += `<p style="color:var(--text-muted);font-size:0.8rem;font-family:var(--mono);padding:12px">HU data not available for this model.</p>`;
+  }
+
+  // MTF
+  destroyChart("mtfChart");
+  if (cd.mtf_percents && cd.mtf_percents.length) {
+    _charts["mtfChart"] = new Chart(document.getElementById("mtfChart"), {
+      type: "line",
+      data: {
+        labels: cd.mtf_percents.map(p => `${p}%`),
+        datasets: [{
+          label: "MTF (lp/mm)",
+          data: cd.mtf_lp_mm,
+          borderColor: "rgba(100,220,140,0.9)",
+          backgroundColor: "rgba(100,220,140,0.12)",
+          borderWidth: 2,
+          pointRadius: 4,
+          fill: true,
+          tension: 0.35,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { labels: { color: "#c8d8f0", font: { family: "var(--mono)", size: 11 } } } },
+        scales: {
+          x: { ticks: { color: "#8aa0c0" }, grid: { color: "rgba(255,255,255,0.05)" },
+               title: { display: true, text: "MTF %", color: "#8aa0c0", font: { size: 11 } } },
+          y: { ticks: { color: "#8aa0c0" }, grid: { color: "rgba(255,255,255,0.07)" },
+               title: { display: true, text: "lp/mm", color: "#8aa0c0", font: { size: 11 } } }
+        }
+      }
+    });
+  } else {
+    document.getElementById("mtfChart").parentElement.innerHTML += `<p style="color:var(--text-muted);font-size:0.8rem;font-family:var(--mono);padding:12px">MTF data not available for this model.</p>`;
+  }
+
+  // Uniformity
+  destroyChart("uniformityChart");
+  if (cd.uniformity_roi_labels && cd.uniformity_roi_labels.length) {
+    _charts["uniformityChart"] = new Chart(document.getElementById("uniformityChart"), {
+      type: "bar",
+      data: {
+        labels: cd.uniformity_roi_labels,
+        datasets: [{
+          label: "HU (Uniformity ROIs)",
+          data: cd.uniformity_roi_values,
+          backgroundColor: "rgba(170,100,255,0.7)",
+          borderColor: "rgba(170,100,255,1)",
+          borderWidth: 1,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { labels: { color: "#c8d8f0", font: { family: "var(--mono)", size: 11 } } } },
+        scales: {
+          x: { ticks: { color: "#8aa0c0" }, grid: { color: "rgba(255,255,255,0.05)" } },
+          y: { ticks: { color: "#8aa0c0" }, grid: { color: "rgba(255,255,255,0.07)" },
+               title: { display: true, text: "HU", color: "#8aa0c0", font: { size: 11 } } }
+        }
+      }
+    });
+  } else {
+    document.getElementById("uniformityChart").parentElement.innerHTML += `<p style="color:var(--text-muted);font-size:0.8rem;font-family:var(--mono);padding:12px">Uniformity data not available for this model.</p>`;
+  }
+
+  if (Object.values(_charts).every(c => !c)) {
+    document.getElementById("chartsSection").style.display = "none";
+  }
+}
+
+// ── PDF ───────────────────────────────────────────────────────────────────────
+function exportPDF() {
+  const lr = window._lastResult;
+  if (!lr) return;
+  const savedMachine     = localStorage.getItem("mlcqa_machine_id")  || "";
+  const savedInstitution = localStorage.getItem("mlcqa_institution") || "";
+  document.getElementById("modalMachineName").value = savedMachine;
+  document.getElementById("modalInstitution").value  = savedInstitution;
+  const overlay = document.getElementById("pdfModal");
+  overlay.classList.add("open");
+  setTimeout(() => document.getElementById("modalMachineName").focus(), 60);
+  overlay._keyHandler   = (e) => { if (e.key === "Enter") confirmPdfDownload(); };
+  document.addEventListener("keydown", overlay._keyHandler);
+  overlay._clickHandler = (e) => { if (e.target === overlay) closePdfModal(); };
+  overlay.addEventListener("click", overlay._clickHandler);
+}
+
+function closePdfModal() {
+  const overlay = document.getElementById("pdfModal");
+  overlay.classList.remove("open");
+  if (overlay._keyHandler)   { document.removeEventListener("keydown", overlay._keyHandler); overlay._keyHandler = null; }
+  if (overlay._clickHandler) { overlay.removeEventListener("click", overlay._clickHandler); overlay._clickHandler = null; }
+}
+
+function confirmPdfDownload() {
+  const machineName = document.getElementById("modalMachineName").value.trim();
+  const institution = document.getElementById("modalInstitution").value.trim();
+  const remember    = document.getElementById("modalRemember").checked;
+  if (!machineName) {
+    const inp = document.getElementById("modalMachineName");
+    inp.style.borderColor = "var(--fail)";
+    inp.placeholder = "Machine name is required";
+    inp.focus();
+    setTimeout(() => { inp.style.borderColor = ""; inp.placeholder = "e.g. Linac 1, TrueBeam-A, ELEKTA-2"; }, 2000);
+    return;
+  }
+  if (remember) {
+    localStorage.setItem("mlcqa_machine_id",  machineName);
+    localStorage.setItem("mlcqa_institution", institution);
+  }
+  closePdfModal();
+  const lr = window._lastResult;
+  if (lr) generatePDF({ ...lr, _machineName: machineName, _institution: institution });
+}
+
+function downloadPDF() { exportPDF(); }
+
+async function generatePDF(r) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const W = 210, M = 16;
+  const institution = r._institution || localStorage.getItem("mlcqa_institution") || "";
+  const machineId   = r._machineName  || localStorage.getItem("mlcqa_machine_id")  || "";
+  const headerH = (institution || machineId) ? 34 : 26;
+  doc.setFillColor(15, 30, 55); doc.rect(0, 0, W, headerH, "F");
+  doc.setFillColor(0, 175, 215); doc.rect(0, 0, 5, headerH, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(255, 255, 255);
+  doc.text(`MLC QA — ${r.testType || "CatPhantom"} Report`, M + 6, 11);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(180, 210, 230);
+  const now = new Date().toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
+  doc.text(`Generated: ${now}`, M + 6, 19);
+  doc.text(`File: ${r.filename}`, M + 6, 23.5);
+  if (institution) { doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(160, 200, 230); doc.text(institution.toUpperCase(), M + 6, 29); }
+  if (machineId)   { doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(160, 200, 230); const label = `Linac: ${machineId}`; doc.text(label, institution ? W - M - doc.getTextWidth(label) : M + 6, 29); }
+  let y = headerH + 8;
+  doc.setFillColor(...(r.pass ? [0, 168, 107] : [195, 45, 70]));
+  doc.roundedRect(M, y, W - M * 2, 13, 2, 2, "F");
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(255, 255, 255);
+  doc.text(r.pass ? "✓  PASS" : "✗  FAIL", M + 5, y + 9);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+  doc.text(r.toleranceText || (r.pass ? "Within clinical tolerance" : "Outside clinical tolerance"), M + 36, y + 9);
+  y += 20;
+  if (r.imgUrl) {
+    try {
+      const imgData = await fetchImageAsBase64(r.imgUrl);
+      const imgW = W - M * 2; const imgH = imgW * 0.5;
+      doc.setDrawColor(180, 200, 220); doc.setLineWidth(0.3); doc.rect(M, y, imgW, imgH);
+      doc.addImage(imgData, "PNG", M, y, imgW, imgH); y += imgH + 5;
+      doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(80, 105, 135);
+      doc.text(`Figure: Pylinac ${r.testType || ""} — Analysed Image`, M, y); y += 9;
+    } catch { y += 4; }
+  }
+  doc.setDrawColor(180, 200, 220); doc.setLineWidth(0.4); doc.line(M, y, W - M, y); y += 7;
+  const summaryLines = doc.splitTextToSize(r.summary, W - M * 2 - 10);
+  const boxH = Math.min(summaryLines.length * 5.4 + 16, 230);
+  doc.setFillColor(245, 248, 252); doc.roundedRect(M, y, W - M * 2, boxH, 2, 2, "F");
+  doc.setDrawColor(200, 215, 230); doc.setLineWidth(0.3); doc.roundedRect(M, y, W - M * 2, boxH, 2, 2, "S");
+  y += 7; doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(15, 40, 80); doc.text("ANALYSIS SUMMARY", M + 5, y); y += 7;
+  doc.setFont("courier", "normal"); doc.setFontSize(8.2); doc.setTextColor(20, 45, 80);
+  summaryLines.forEach(line => {
+    if (y > 272) { doc.addPage(); y = 18; doc.setFillColor(245, 248, 252); doc.roundedRect(M, y - 4, W - M * 2, 240, 2, 2, "F"); doc.setFont("courier", "normal"); doc.setFontSize(8.2); doc.setTextColor(20, 45, 80); }
+    doc.text(line, M + 5, y); y += 5.4;
+  });
+  const pages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i); doc.setFillColor(235, 241, 248); doc.rect(0, 284, W, 13, "F");
+    doc.setDrawColor(180, 200, 220); doc.setLineWidth(0.3); doc.line(0, 284, W, 284);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(60, 85, 120);
+    const footerLeft = institution ? `${institution}  ·  MLC QA Platform  ·  For clinical physics use only` : "MLC QA Platform  ·  For clinical physics use only  ·  Not for diagnostic use";
+    doc.text(footerLeft, M, 291); doc.text(`Page ${i} of ${pages}`, W - 28, 291);
+  }
+  const prefix = r.testType ? r.testType.replace(/\s+/g, "_").toUpperCase() : "CATPHANTOM";
+  doc.save(`MLCQA_${prefix}_${r.filename.replace(/\.[^.]+$/, "")}_${Date.now()}.pdf`);
+}
+
+async function fetchImageAsBase64(url) {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</body>
+</html>
