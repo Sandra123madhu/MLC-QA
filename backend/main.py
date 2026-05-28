@@ -1202,18 +1202,6 @@ async def reset_password(request: Request, body: ResetBody):
     return {"ok": True, "message": "Password updated successfully."}
 # =============================================================================
 # CatPhan 604 CBCT QA  —  /analyze/catphan
-#
-# HOW TO INTEGRATE:
-#   1. Paste this entire block at the bottom of your existing main.py
-#   2. The import at the top is the only new dependency (already in pylinac)
-#   3. The frontend page (catphan.html) calls POST /analyze/catphan
-#
-# ENHANCED FEATURES (based on Hemant K B N, Shaleen Cancer Centre paper):
-#   - Contrast-group–wise low-contrast detection: 1.0% / 0.5% / 0.3%
-#   - Visual fallback using relative signal difference (local background ROIs)
-#   - Background ROIs placed adjacent to signal ROIs (matches phantom geometry)
-#   - Per-group pass/fail logic (tolerance: ≥1 ROI per group)
-#   - Full QA summary table: HU linearity, uniformity, MTF, slice thickness
 # =============================================================================
 
 
