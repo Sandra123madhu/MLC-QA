@@ -279,15 +279,39 @@ function parseSummary(summary, cd) {
     ? '' : `<span class="cp-section-badge badge-pass">✓ Pass</span>`;
 
   // ── CTP404 ─────────────────────────────────────────────────────────────
+  // All 9 standard CatPhan inserts with their nominal HU values.
+  // CatPhan 503/504/600/604 measure the first 7; CatPhan 700 measures all 9.
+  // Cards are always shown; measured value is filled from backend when available,
+  // otherwise displayed as "N/A" for inserts not present in that phantom model.
+  const ALL_INSERTS = [
+    { name: 'Air',      nominal: -1000 },
+    { name: 'PMP',      nominal:  -196 },
+    { name: 'LDPE',     nominal:  -104 },
+    { name: 'Poly',     nominal:   -47 },
+    { name: 'Acrylic',  nominal:   115 },
+    { name: 'Bone 20%', nominal:   237 },
+    { name: 'Delrin',   nominal:   365 },
+    { name: 'Bone 50%', nominal:   725 },
+    { name: 'Teflon',   nominal:  1000 },
+  ];
+
+  // Build a lookup map from backend results (may have 7 or 9 entries)
+  const measuredMap = {};
+  (cd.hu_labels || []).forEach((mat, i) => {
+    measuredMap[mat] = cd.hu_measured?.[i];
+  });
+
   let ctp404_html = '';
-  const huRois = cd.hu_labels && cd.hu_labels.length
-    ? cd.hu_labels.map((mat, i) =>
-        `<div class="cp-hu-chip">
-          <div class="cp-hu-chip-mat">${mat}</div>
-          <div class="cp-hu-chip-val">${fmt(cd.hu_measured?.[i])} HU</div>
-          <div class="cp-hu-chip-nom">Nominal: ${fmt(cd.hu_nominal?.[i])} HU</div>
-        </div>`).join('')
-    : '';
+  const huRois = ALL_INSERTS.map(ins => {
+    const hasMeasured = ins.name in measuredMap;
+    const measuredVal = hasMeasured ? fmt(measuredMap[ins.name]) : 'N/A';
+    const chipValStyle = hasMeasured ? '' : ' style="color:#607090"';
+    return `<div class="cp-hu-chip">
+          <div class="cp-hu-chip-mat">${ins.name}</div>
+          <div class="cp-hu-chip-val"${chipValStyle}>${measuredVal} HU</div>
+          <div class="cp-hu-chip-nom">Nom: ${ins.nominal} HU</div>
+        </div>`;
+  }).join('');
 
   const rows404 = [
     ['HU Tolerance', cd.hu_tolerance !== undefined ? `±${cd.hu_tolerance} HU` : '±40 HU'],
@@ -715,8 +739,24 @@ async function generatePDF(r) {
   }
 
   // ── CTP404 ───────────────────────────────────────────────────────────────
-  const huChips = (cd.hu_labels || []).map((mat, i) => ({
-    mat, val: `${fmtV(cd.hu_measured?.[i])} HU`, nom: `Nom: ${fmtV(cd.hu_nominal?.[i])} HU`
+  // Always render all 9 standard inserts in the PDF; N/A for unmeasured ones.
+  const PDF_ALL_INSERTS = [
+    { name: 'Air',      nominal: -1000 },
+    { name: 'PMP',      nominal:  -196 },
+    { name: 'LDPE',     nominal:  -104 },
+    { name: 'Poly',     nominal:   -47 },
+    { name: 'Acrylic',  nominal:   115 },
+    { name: 'Bone 20%', nominal:   237 },
+    { name: 'Delrin',   nominal:   365 },
+    { name: 'Bone 50%', nominal:   725 },
+    { name: 'Teflon',   nominal:  1000 },
+  ];
+  const pdfMeasuredMap = {};
+  (cd.hu_labels || []).forEach((mat, i) => { pdfMeasuredMap[mat] = cd.hu_measured?.[i]; });
+  const huChips = PDF_ALL_INSERTS.map(ins => ({
+    mat: ins.name,
+    val: ins.name in pdfMeasuredMap ? `${fmtV(pdfMeasuredMap[ins.name])} HU` : 'N/A HU',
+    nom: `Nom: ${ins.nominal} HU`
   }));
   pdfSection('📐  CTP404 — HU Linearity & Geometry', [
     ['HU Tolerance', '±40 HU'],
