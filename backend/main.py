@@ -941,8 +941,12 @@ def _extract_catphan_chart_data(cp) -> dict:
         hu_labels, hu_measured, hu_nominal = [], [], []
         for name, roi in hu_rois.items():
             hu_labels.append(name)
-            hu_measured.append(round(float(roi.get("measured_value", 0)), 1))
-            hu_nominal.append(round(float(roi.get("expected_value", 0)), 1))
+            # pylinac ≥3.x ROIResult uses 'value' / 'nominal_value'
+            # (older builds used 'measured_value' / 'expected_value')
+            measured = roi.get("value", roi.get("measured_value", 0))
+            nominal  = roi.get("nominal_value", roi.get("expected_value", 0))
+            hu_measured.append(round(float(measured or 0), 1))
+            hu_nominal.append(round(float(nominal  or 0), 1))
         chart_data["hu_labels"]   = hu_labels
         chart_data["hu_measured"] = hu_measured
         chart_data["hu_nominal"]  = hu_nominal
@@ -969,7 +973,7 @@ def _extract_catphan_chart_data(cp) -> dict:
             uni_rois = ctp486.get("rois", {})
             chart_data["uniformity_roi_labels"] = list(uni_rois.keys())
             chart_data["uniformity_roi_values"] = [
-                round(float(v.get("measured_value", 0)), 1) for v in uni_rois.values()
+                round(float(v.get("value", v.get("measured_value", 0)) or 0), 1) for v in uni_rois.values()
             ]
 
         ctp515 = rd.get("ctp515")
