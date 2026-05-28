@@ -112,7 +112,6 @@
   <div class="results-card">
     <h2>Results</h2>
     <div id="resultsBody"><p>Upload a ZIP file and run the analysis to see results here.</p></div>
-    <div id="verdictBanner" class="verdict-banner" style="display:none"></div>
     <div id="metricsRow" class="metrics-row" style="display:none;margin-top:20px"></div>
     <div id="plotSection" style="display:none;margin-top:20px"></div>
 
@@ -247,14 +246,6 @@ function handleSuccess(result, file, model) {
     toleranceText: pass ? "All parameters within tolerance" : "One or more parameters outside tolerance",
   };
 
-  // Verdict banner
-  const banner = document.getElementById("verdictBanner");
-  banner.style.display = "block";
-  banner.className     = `verdict-banner ${pass ? "verdict-pass" : "verdict-fail"}`;
-  banner.innerHTML     = pass
-    ? `<span class="verdict-icon">✓</span> <strong>PASS</strong> — All parameters within clinical tolerance`
-    : `<span class="verdict-icon">✗</span> <strong>FAIL</strong> — One or more parameters outside tolerance`;
-
   // Summary text
   resultsDiv.innerHTML = `<pre>${summary}</pre>`;
 
@@ -283,7 +274,7 @@ function handleSuccess(result, file, model) {
   if (metrics.length) {
     metricsRow.style.display = "flex";
     metricsRow.innerHTML = metrics.map(m =>
-      `<div class="metric-chip ${m.pass ? "" : "metric-chip-fail"}">
+      `<div class="metric-chip">
         <div class="metric-label">${m.label}</div>
         <div class="metric-val">${m.value}</div>
       </div>`
@@ -491,12 +482,10 @@ async function generatePDF(r) {
   if (institution) { doc.setFont("helvetica", "italic"); doc.setFontSize(7.5); doc.setTextColor(160, 200, 230); doc.text(institution.toUpperCase(), M + 6, 29); }
   if (machineId)   { doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(160, 200, 230); const label = `Linac: ${machineId}`; doc.text(label, institution ? W - M - doc.getTextWidth(label) : M + 6, 29); }
   let y = headerH + 8;
-  doc.setFillColor(...(r.pass ? [0, 168, 107] : [195, 45, 70]));
+  doc.setFillColor(0, 90, 156);
   doc.roundedRect(M, y, W - M * 2, 13, 2, 2, "F");
   doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(255, 255, 255);
-  doc.text(r.pass ? "✓  PASS" : "✗  FAIL", M + 5, y + 9);
-  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
-  doc.text(r.toleranceText || (r.pass ? "Within clinical tolerance" : "Outside clinical tolerance"), M + 36, y + 9);
+  doc.text("CatPhantom CT QA — Analysis Results", M + 5, y + 9);
   y += 20;
   if (r.imgUrl) {
     try {
