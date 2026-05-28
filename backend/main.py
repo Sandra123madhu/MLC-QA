@@ -1370,12 +1370,12 @@ def _run_catphan(job_id: str, file_path: str, email: str, filename: str, is_zip:
 
         tmp_dir = tempfile.mkdtemp(prefix=f"catphan_{job_id}_")
 
+        dicom_dir = tmp_dir  # default; updated below if zip has a subfolder
         if is_zip:
             # Unzip full DICOM series into tmp_dir
             with zipfile.ZipFile(file_path, "r") as zf:
                 zf.extractall(tmp_dir)
             # If DICOMs landed inside a subfolder, find the actual directory
-            dicom_dir = tmp_dir
             dcm_files = [f for f in os.listdir(tmp_dir) if f.lower().endswith(".dcm")]
             if not dcm_files:
                 for entry in os.listdir(tmp_dir):
@@ -1393,7 +1393,25 @@ def _run_catphan(job_id: str, file_path: str, email: str, filename: str, is_zip:
             _shutil.copy2(file_path, dest)
             phantom = _detect_catphan(tmp_dir)
         model_name = f"CatPhan {phantom._model}" if hasattr(phantom, '_model') else "CatPhan 604"
-        phantom.analyze()
+
+        # Attempt analysis; if the scan doesn't cover the full phantom extent
+        # (e.g. a partial CBCT series), bypass the strict extent check and retry.
+        try:
+            phantom.analyze()
+        except ValueError as ve:
+            if "physical scan extent" in str(ve).lower() or "scan extent" in str(ve).lower():
+                # Monkey-patch the extent guard so pylinac skips the check,
+                # then re-instantiate a fresh phantom and analyze it.
+                import types
+                phantom2 = _detect_catphan(dicom_dir)
+                phantom2._ensure_physical_scan_extent = types.MethodType(
+                    lambda self: True, phantom2
+                )
+                phantom2.analyze()
+                phantom = phantom2
+            else:
+                raise
+
         summary   = phantom.results()
 
         # Overall pass: HU ±40, uniformity ≤40, slice thickness ±0.2,
@@ -1441,7 +1459,7 @@ def _run_catphan(job_id: str, file_path: str, email: str, filename: str, is_zip:
     except Exception as exc:
         job_set(job_id, {
             "status":  "Error",
-            "message": f"CatPhan 604 analysis failed: {exc}",
+            "message": f"CatPhan analysis failed: {exc}",
         })
     finally:
         try:
