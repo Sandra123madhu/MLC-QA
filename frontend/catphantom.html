@@ -207,6 +207,8 @@ function onFileSelected(input) {
   }
 }
 
+let _charts = {};
+
 function updateModelHint() {
   const model = document.getElementById("catphanModel").value;
   const hint  = document.getElementById("modelHint");
@@ -217,12 +219,13 @@ function updateModelHint() {
     "604": "✦ CatPhan 604: 9 inserts including <strong>Bone 20%</strong> and <strong>Bone 50%</strong>. Choose this if your phantom has bone inserts.",
     "700": "✦ CatPhan 700: 11 inserts including <strong>Bone 20%</strong> and <strong>Bone 50%</strong>. Also includes Lung and Vial inserts.",
   };
-  const colors = { "503": "var(--border)", "504": "var(--border)", "600": "var(--border)", "604": "var(--accent)", "700": "var(--accent)" };
-  const bgColors = { "503": "var(--surface-2)", "504": "var(--surface-2)", "600": "var(--surface-2)", "604": "rgba(0,90,156,0.06)", "700": "rgba(0,90,156,0.06)" };
+  const colors   = { "503": "#c5d3e0", "504": "#c5d3e0", "600": "#c5d3e0", "604": "#005A9C", "700": "#005A9C" };
+  const bgColors = { "503": "#f6f8fb",  "504": "#f6f8fb",  "600": "#f6f8fb",  "604": "rgba(0,90,156,0.06)", "700": "rgba(0,90,156,0.06)" };
+  const txtColors= { "503": "#7a95ab",  "504": "#7a95ab",  "600": "#7a95ab",  "604": "#1a3a5c", "700": "#1a3a5c" };
   hint.innerHTML = msgs[model] || "";
-  hint.style.borderLeftColor = colors[model] || "var(--border)";
-  hint.style.background = bgColors[model] || "var(--surface-2)";
-  hint.style.color = ["604","700"].includes(model) ? "var(--accent)" : "var(--text-muted)";
+  hint.style.borderLeftColor = colors[model]   || "#c5d3e0";
+  hint.style.background      = bgColors[model] || "#f6f8fb";
+  hint.style.color           = txtColors[model] || "#7a95ab";
 }
 
 async function runAnalysis() {
@@ -245,7 +248,22 @@ async function runAnalysis() {
   });
   btn.disabled = true;
   btn.textContent = "Uploading...";
+
+  // ── Clear previous results before starting a new analysis ──
   resultsDiv.innerHTML = `<p>⏳ Uploading ZIP archive...</p>`;
+  const metricsRow   = document.getElementById("metricsRow");
+  const plotSection  = document.getElementById("plotSection");
+  const chartsSection = document.getElementById("chartsSection");
+  const pdfSection   = document.getElementById("pdfSection");
+  metricsRow.style.display    = "none";
+  metricsRow.innerHTML        = "";
+  plotSection.style.display   = "none";
+  plotSection.innerHTML       = "";
+  chartsSection.style.display = "none";
+  pdfSection.style.display    = "none";
+  window._lastResult          = null;
+  // Destroy any existing charts so canvases are fresh
+  Object.keys(_charts).forEach(id => { if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; } });
 
   try {
     const formData = new FormData();
@@ -548,8 +566,6 @@ function handleSuccess(result, file, model) {
   btn.textContent = "Run CatPhantom Analysis";
   document.getElementById("pdfSection").style.display = "block";
 }
-
-let _charts = {};
 
 function destroyChart(id) {
   if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; }
