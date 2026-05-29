@@ -89,13 +89,16 @@
     <div class="tolerances" style="margin-top:16px">
       <div class="tol-item" style="flex:1;min-width:100%">
         <div class="tol-label" style="margin-bottom:6px">CatPhan Model</div>
-        <select id="catphanModel" style="width:100%;padding:8px 12px;background:var(--surface-2,#0f1e37);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--mono);font-size:0.85rem;cursor:pointer;">
-          <option value="503">CatPhan 503</option>
-          <option value="504" selected>CatPhan 504</option>
-          <option value="600">CatPhan 600</option>
-          <option value="604">CatPhan 604</option>
-          <option value="700">CatPhan 700</option>
+        <select id="catphanModel" style="width:100%;padding:8px 12px;background:var(--surface-2,#0f1e37);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--mono);font-size:0.85rem;cursor:pointer;" onchange="updateModelHint()">
+          <option value="503">CatPhan 503 — Air, PMP, LDPE, Poly, Acrylic, Delrin, Teflon (7 inserts)</option>
+          <option value="504" selected>CatPhan 504 — Air, PMP, LDPE, Poly, Acrylic, Delrin, Teflon (7 inserts)</option>
+          <option value="600">CatPhan 600 — Air, PMP, LDPE, Poly, Acrylic, Delrin, Teflon + Vial (8 inserts)</option>
+          <option value="604">CatPhan 604 — Air, PMP, LDPE, Poly, Acrylic, Bone 20%, Delrin, Bone 50%, Teflon (9 inserts ✦ bone)</option>
+          <option value="700">CatPhan 700 — Air, PMP, LDPE, Poly, Acrylic, Bone 20%, Delrin, Bone 50%, Teflon + extras (11 inserts ✦ bone)</option>
         </select>
+        <div id="modelHint" style="margin-top:6px;font-size:0.78rem;font-family:var(--mono);padding:6px 10px;border-radius:var(--r);background:var(--surface-2,#0f1e37);border-left:3px solid var(--border);color:var(--text-muted);">
+          ℹ️ Select the model that matches your physical phantom. If your phantom has <strong>Bone 20%</strong> and <strong>Bone 50%</strong> inserts, choose <strong>CatPhan 604</strong> or <strong>700</strong>.
+        </div>
       </div>
     </div>
 
@@ -152,6 +155,21 @@ function onFileSelected(input) {
     label.style.display = "none";
     btn.disabled = true;
   }
+}
+
+function updateModelHint() {
+  const model = document.getElementById("catphanModel").value;
+  const hint  = document.getElementById("modelHint");
+  const msgs = {
+    "503": "ℹ️ CatPhan 503: 7 standard inserts. No bone inserts. Results will show N/A for Bone 20% and Bone 50%.",
+    "504": "ℹ️ CatPhan 504: 7 standard inserts. No bone inserts. Results will show N/A for Bone 20% and Bone 50%.",
+    "600": "ℹ️ CatPhan 600: 7 standard inserts + Vial. No bone inserts. Results will show N/A for Bone 20% and Bone 50%.",
+    "604": "✦ CatPhan 604: 9 inserts including <strong>Bone 20%</strong> and <strong>Bone 50%</strong>. Choose this if your phantom has bone inserts.",
+    "700": "✦ CatPhan 700: 11 inserts including <strong>Bone 20%</strong> and <strong>Bone 50%</strong>. Also includes Lung and Vial inserts.",
+  };
+  const colors = { "503": "var(--border)", "504": "var(--border)", "600": "var(--border)", "604": "#3b82f6", "700": "#3b82f6" };
+  hint.innerHTML = msgs[model] || "";
+  hint.style.borderLeftColor = colors[model] || "var(--border)";
 }
 
 async function runAnalysis() {
