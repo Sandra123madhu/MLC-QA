@@ -939,25 +939,34 @@ def _extract_catphan_chart_data(cp) -> dict:
         ctp404 = rd.get("ctp404", {})
         hu_rois = ctp404.get("hu_rois", {})
 
-        # Canonical 9-material display order (CatPhan standard inserts only).
-        # CatPhan 503/504/600/604 have the first 7; CatPhan 700 adds Bone 20% & Bone 50%.
-        # Non-standard inserts (e.g. "Lung #7112", "Vial") are intentionally excluded.
+        # Canonical display order covering all standard inserts across all CatPhan models.
+        # Each entry is (display_name, list_of_pylinac_key_variants).
+        # pylinac uses different key names per model:
+        #   503/504/600 → no bone inserts
+        #   604         → "20% Bone" / "50% Bone"  (reversed word order vs 700)
+        #   700         → "Bone 20%" / "Bone 50%"
+        # Non-standard inserts ("Lung #7112", "Vial") are intentionally excluded.
         CANONICAL_ORDER = [
-            "Air",
-            "PMP",
-            "LDPE",
-            "Poly",
-            "Acrylic",
-            "Bone 20%",
-            "Delrin",
-            "Bone 50%",
-            "Teflon",
+            ("Air",      ["Air"]),
+            ("PMP",      ["PMP"]),
+            ("LDPE",     ["LDPE"]),
+            ("Poly",     ["Poly"]),
+            ("Acrylic",  ["Acrylic"]),
+            ("Bone 20%", ["Bone 20%", "20% Bone"]),
+            ("Delrin",   ["Delrin"]),
+            ("Bone 50%", ["Bone 50%", "50% Bone"]),
+            ("Teflon",   ["Teflon"]),
         ]
         hu_labels, hu_measured, hu_nominal = [], [], []
-        for name in CANONICAL_ORDER:
-            roi = hu_rois.get(name)
+        for display_name, key_variants in CANONICAL_ORDER:
+            roi = None
+            for key in key_variants:
+                roi = hu_rois.get(key)
+                if roi is not None:
+                    break
             if roi is None:
                 continue  # This phantom model does not have this insert — skip it
+            name = display_name  # use consistent display name
             # pylinac ≥3.x ROIResult uses 'value' / 'nominal_value'
             # (older builds used 'measured_value' / 'expected_value')
             measured = roi.get("value", roi.get("measured_value", 0))
