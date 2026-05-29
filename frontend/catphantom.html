@@ -4,7 +4,55 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>CatPhantom — MLC QA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css"/>
+  <style>
+    /* ── Modern font + UI overrides for CatPhantom page ── */
+    .main, .main h1, .main h2, .main p, .main button,
+    .main label, .main input, .main select,
+    .tol-label, .tol-val, .breadcrumb,
+    .info-note, .upload-zone h3, .upload-zone p,
+    .results-card h2, .chart-card-title, .metric-label, .metric-val {
+      font-family: 'DM Sans', system-ui, sans-serif !important;
+    }
+    .main { background: #f6f8fb; }
+    .page-header h1 { font-size: 1.65rem; font-weight: 700; letter-spacing: -0.03em; color: #0d1f35; }
+    .page-header p  { font-size: 0.9rem; color: #5a7080; margin-top: 4px; }
+
+    .upload-card { border-radius: 16px; border: 1px solid #dde5ef; background: #fff; box-shadow: 0 2px 12px rgba(15,35,60,0.07); padding: 24px; }
+    .upload-zone { border: 2px dashed #c5d3e0; border-radius: 12px; background: #f8fafc; transition: border-color 0.2s, background 0.2s; }
+    .upload-zone:hover { border-color: #005A9C; background: #f0f6ff; }
+    .upload-zone h3 { font-size: 1rem; font-weight: 600; color: #1a3348; }
+    .upload-zone p  { font-size: 0.84rem; color: #7a95ab; }
+
+    .tolerances { gap: 10px; }
+    .tol-item { background: #f0f5fa; border: 1px solid #dde5ef; border-radius: 10px; padding: 12px 16px; }
+    .tol-label { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #7a95ab; }
+    .tol-val   { font-family: 'DM Mono', monospace !important; font-size: 1.1rem; font-weight: 500; color: #005A9C; margin-top: 2px; }
+
+    .btn-primary { border-radius: 10px; font-family: 'DM Sans', sans-serif !important; font-weight: 600; font-size: 0.95rem; letter-spacing: 0.01em; padding: 13px 24px; background: linear-gradient(135deg, #005A9C 0%, #0072c6 100%); box-shadow: 0 4px 14px rgba(0,90,156,0.25); transition: transform 0.15s, box-shadow 0.15s; }
+    .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,90,156,0.35); }
+    .btn-primary:disabled { opacity: 0.45; box-shadow: none; transform: none; }
+
+    .results-card { border-radius: 16px; border: 1px solid #dde5ef; background: #fff; box-shadow: 0 2px 12px rgba(15,35,60,0.07); padding: 24px; }
+    .results-card h2 { font-size: 1rem; font-weight: 700; color: #0d1f35; letter-spacing: -0.01em; }
+
+    .metrics-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .metric-chip { background: #f0f5fa; border: 1px solid #dde5ef; border-radius: 10px; padding: 8px 14px; }
+    .metric-label { font-size: 0.69rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #7a95ab; }
+    .metric-val   { font-family: 'DM Mono', monospace !important; font-size: 0.88rem; font-weight: 500; color: #0d1f35; margin-top: 1px; }
+
+    .chart-card { background: #fff; border: 1px solid #dde5ef; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(15,35,60,0.05); }
+    .chart-card-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #5a7080; margin-bottom: 12px; }
+
+    .btn-outline { border-radius: 10px; font-family: 'DM Sans', sans-serif !important; font-weight: 600; font-size: 0.88rem; border: 2px solid #005A9C; color: #005A9C; transition: background 0.15s, color 0.15s; }
+    .btn-outline:hover { background: #005A9C; color: #fff; }
+
+    .server-status { font-size: 0.8rem; }
+    .info-note { border-radius: 10px; border-left: 3px solid #005A9C; background: #f0f6ff; color: #1a3a5c; font-size: 0.84rem; }
+  </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="script.js"></script>
 </head>
@@ -86,20 +134,20 @@
     </div>
 
     <!-- Model selector -->
-    <div style="margin-top:16px;background:linear-gradient(135deg,rgba(0,90,156,0.07),rgba(0,90,156,0.03));border:2px solid var(--accent-border);border-radius:var(--r-lg);padding:14px 16px;">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+    <div style="margin-top:16px;background:linear-gradient(135deg,rgba(0,90,156,0.06),rgba(0,90,156,0.02));border:2px solid rgba(0,90,156,0.25);border-radius:12px;padding:16px 18px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
         <span style="font-size:1rem;">🔬</span>
-        <span style="font-family:var(--mono);font-size:0.74rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:0.08em;">CatPhan Model — Select Before Analysis</span>
-        <span style="margin-left:auto;font-size:0.68rem;font-family:var(--mono);background:var(--accent);color:#fff;padding:2px 9px;border-radius:20px;font-weight:700;">Required</span>
+        <span style="font-family:'DM Sans',system-ui,sans-serif;font-size:0.72rem;font-weight:700;color:#005A9C;text-transform:uppercase;letter-spacing:0.08em;">CatPhan Model — Select Before Analysis</span>
+        <span style="margin-left:auto;font-size:0.68rem;font-family:'DM Sans',sans-serif;background:#005A9C;color:#fff;padding:3px 10px;border-radius:20px;font-weight:700;letter-spacing:0.04em;">Required</span>
       </div>
-      <select id="catphanModel" style="width:100%;padding:10px 14px;background:var(--surface);border:2px solid var(--accent);border-radius:var(--r);color:var(--text);font-family:var(--mono);font-size:0.85rem;cursor:pointer;font-weight:600;box-shadow:0 0 0 3px rgba(0,90,156,0.10);" onchange="updateModelHint()">
+      <select id="catphanModel" style="width:100%;padding:10px 14px;background:#fff;border:2px solid #005A9C;border-radius:8px;color:#0d1f35;font-family:'DM Sans',system-ui,sans-serif;font-size:0.88rem;cursor:pointer;font-weight:600;box-shadow:0 0 0 3px rgba(0,90,156,0.10);" onchange="updateModelHint()">
         <option value="503">CatPhan 503 — Air, PMP, LDPE, Poly, Acrylic, Delrin, Teflon (7 inserts)</option>
         <option value="504" selected>CatPhan 504 — Air, PMP, LDPE, Poly, Acrylic, Delrin, Teflon (7 inserts)</option>
         <option value="600">CatPhan 600 — Air, PMP, LDPE, Poly, Acrylic, Delrin, Teflon + Vial (8 inserts)</option>
         <option value="604">CatPhan 604 — Air, PMP, LDPE, Poly, Acrylic, Bone 20%, Delrin, Bone 50%, Teflon (9 inserts ✦ bone)</option>
         <option value="700">CatPhan 700 — Air, PMP, LDPE, Poly, Acrylic, Bone 20%, Delrin, Bone 50%, Teflon + extras (11 inserts ✦ bone)</option>
       </select>
-      <div id="modelHint" style="margin-top:8px;font-size:0.78rem;font-family:var(--mono);padding:8px 12px;border-radius:var(--r);background:rgba(0,90,156,0.06);border-left:3px solid var(--accent);color:var(--text-2);">
+      <div id="modelHint" style="margin-top:10px;font-size:0.8rem;font-family:'DM Sans',system-ui,sans-serif;padding:9px 13px;border-radius:8px;background:rgba(0,90,156,0.06);border-left:3px solid #005A9C;color:#1a3a5c;">
         ℹ️ Select the model that matches your physical phantom. If your phantom has <strong>Bone 20%</strong> and <strong>Bone 50%</strong> inserts, choose <strong>CatPhan 604</strong> or <strong>700</strong>.
       </div>
     </div>
@@ -252,33 +300,35 @@ function cancelAnalysis() { CancelManager.cancel(); }
 
 /* ── Inline styles for the categorised summary ─────────────────────────── */
 const _cpStyle = `
-  .cp-sections { display:grid; gap:14px; margin-top:4px; }
-  .cp-section { background:var(--surface); border:1px solid var(--border);
-                border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(15,37,55,0.06); }
-  .cp-section-head { display:flex; align-items:center; gap:10px; padding:11px 16px;
-                     background:var(--accent-dim); border-bottom:1px solid var(--border); }
+  .cp-sections { display:grid; gap:12px; margin-top:4px; }
+  .cp-section { background:#fff; border:1px solid #dde5ef;
+                border-radius:12px; overflow:hidden; box-shadow:0 1px 6px rgba(15,35,60,0.06); }
+  .cp-section-head { display:flex; align-items:center; gap:10px; padding:12px 18px;
+                     background:linear-gradient(90deg,#f0f6ff,#f8fafc); border-bottom:1px solid #dde5ef; }
   .cp-section-icon { font-size:1rem; }
-  .cp-section-title { font-family:var(--mono); font-size:0.78rem; font-weight:700;
-                      color:var(--accent); letter-spacing:0.06em; text-transform:uppercase; flex:1; }
-  .cp-section-badge { font-family:var(--mono); font-size:0.68rem; font-weight:600;
-                      padding:2px 9px; border-radius:20px; }
-  .badge-pass { background:var(--pass-dim); color:var(--pass); border:1px solid rgba(26,158,106,0.3); }
-  .badge-na   { background:var(--surface-2); color:var(--text-muted); border:1px solid var(--border); }
+  .cp-section-title { font-family:'DM Sans',system-ui,sans-serif; font-size:0.76rem; font-weight:700;
+                      color:#005A9C; letter-spacing:0.07em; text-transform:uppercase; flex:1; }
+  .cp-section-badge { font-family:'DM Sans',system-ui,sans-serif; font-size:0.68rem; font-weight:700;
+                      padding:3px 10px; border-radius:20px; }
+  .badge-pass { background:#e6f9f0; color:#1a7a50; border:1px solid #b3e8d0; }
+  .badge-na   { background:#f0f5fa; color:#7a95ab; border:1px solid #dde5ef; }
   .cp-rows { display:grid; grid-template-columns:1fr 1fr; gap:0; }
   @media(max-width:600px){ .cp-rows { grid-template-columns:1fr; } }
-  .cp-row { display:flex; justify-content:space-between; align-items:baseline;
-            padding:8px 16px; border-bottom:1px solid var(--border-subtle); gap:12px; }
+  .cp-row { display:flex; justify-content:space-between; align-items:center;
+            padding:9px 18px; border-bottom:1px solid #eef2f6; gap:12px; }
   .cp-row:last-child { border-bottom:none; }
-  .cp-row-label { font-family:var(--mono); font-size:0.74rem; color:var(--text-muted); white-space:nowrap; }
-  .cp-row-val   { font-family:var(--mono); font-size:0.78rem; font-weight:600;
-                  color:var(--text); text-align:right; }
-  .cp-hu-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; padding:12px 16px; background:var(--bg-subtle); }
-  .cp-hu-chip { background:var(--surface); border:1px solid var(--accent-border);
-                border-radius:8px; padding:8px 12px; }
-  .cp-hu-chip-mat { font-family:var(--mono); font-size:0.68rem; color:var(--text-muted); margin-bottom:3px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; }
-  .cp-hu-chip-val { font-family:var(--mono); font-size:0.84rem; font-weight:700; color:var(--accent); }
-  .cp-hu-chip-val.na { color:var(--text-muted); }
-  .cp-hu-chip-nom { font-family:var(--mono); font-size:0.67rem; color:var(--text-muted); margin-top:2px; }
+  .cp-row:nth-child(even) { background:#fafcfe; }
+  .cp-row-label { font-family:'DM Sans',system-ui,sans-serif; font-size:0.78rem; font-weight:500; color:#5a7080; white-space:nowrap; }
+  .cp-row-val   { font-family:'DM Mono',monospace; font-size:0.8rem; font-weight:500;
+                  color:#0d1f35; text-align:right; }
+  .cp-hu-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(128px,1fr)); gap:8px; padding:14px 18px; background:#f6f8fb; }
+  .cp-hu-chip { background:#fff; border:1px solid #dde5ef;
+                border-radius:10px; padding:10px 12px; transition:box-shadow 0.15s; }
+  .cp-hu-chip:hover { box-shadow:0 2px 8px rgba(0,90,156,0.12); }
+  .cp-hu-chip-mat { font-family:'DM Sans',system-ui,sans-serif; font-size:0.67rem; color:#7a95ab; margin-bottom:4px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; }
+  .cp-hu-chip-val { font-family:'DM Mono',monospace; font-size:1rem; font-weight:600; color:#005A9C; line-height:1.1; }
+  .cp-hu-chip-val.na { color:#b0bec5; font-size:0.84rem; }
+  .cp-hu-chip-nom { font-family:'DM Mono',monospace; font-size:0.67rem; color:#9aaab8; margin-top:3px; }
 `;
 
 function parseSummary(summary, cd) {
@@ -505,6 +555,11 @@ function destroyChart(id) {
   if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; }
 }
 
+// ── Chart.js light-theme global defaults ─────────────────────────────────
+Chart.defaults.font.family = "'DM Sans', system-ui, sans-serif";
+Chart.defaults.font.size   = 12;
+Chart.defaults.color       = "#5a7080";
+
 function renderCharts(cd) {
   document.getElementById("chartsSection").style.display = "block";
 
@@ -519,28 +574,30 @@ function renderCharts(cd) {
           {
             label: "Measured HU",
             data: cd.hu_measured,
-            backgroundColor: "rgba(0,175,215,0.75)",
-            borderColor: "rgba(0,175,215,1)",
-            borderWidth: 1,
+            backgroundColor: "rgba(0,90,156,0.15)",
+            borderColor: "rgba(0,90,156,0.9)",
+            borderWidth: 2,
+            borderRadius: 4,
           },
           {
             label: "Nominal HU",
             data: cd.hu_nominal,
             type: "line",
-            borderColor: "rgba(255,200,60,0.9)",
+            borderColor: "rgba(214,93,56,0.9)",
             borderWidth: 2,
-            pointRadius: 4,
+            pointRadius: 5,
+            pointBackgroundColor: "rgba(214,93,56,0.9)",
             fill: false,
           }
         ]
       },
       options: {
         responsive: true,
-        plugins: { legend: { labels: { color: "#c8d8f0", font: { family: "var(--mono)", size: 11 } } } },
+        plugins: { legend: { labels: { color: "#5a7080", font: { family: "'DM Sans',sans-serif", size: 12 } } } },
         scales: {
-          x: { ticks: { color: "#8aa0c0" }, grid: { color: "rgba(255,255,255,0.05)" } },
-          y: { ticks: { color: "#8aa0c0" }, grid: { color: "rgba(255,255,255,0.07)" },
-               title: { display: true, text: "HU", color: "#8aa0c0", font: { size: 11 } } }
+          x: { ticks: { color: "#7a95ab" }, grid: { color: "rgba(0,0,0,0.05)" } },
+          y: { ticks: { color: "#7a95ab" }, grid: { color: "rgba(0,0,0,0.05)" },
+               title: { display: true, text: "HU", color: "#5a7080", font: { size: 12 } } }
         }
       }
     });
@@ -558,22 +615,23 @@ function renderCharts(cd) {
         datasets: [{
           label: "MTF (lp/mm)",
           data: cd.mtf_lp_mm,
-          borderColor: "rgba(100,220,140,0.9)",
-          backgroundColor: "rgba(100,220,140,0.12)",
+          borderColor: "rgba(22,160,133,0.9)",
+          backgroundColor: "rgba(22,160,133,0.08)",
           borderWidth: 2,
           pointRadius: 4,
+          pointBackgroundColor: "rgba(22,160,133,0.9)",
           fill: true,
           tension: 0.35,
         }]
       },
       options: {
         responsive: true,
-        plugins: { legend: { labels: { color: "#c8d8f0", font: { family: "var(--mono)", size: 11 } } } },
+        plugins: { legend: { labels: { color: "#5a7080", font: { family: "'DM Sans',sans-serif", size: 12 } } } },
         scales: {
-          x: { ticks: { color: "#8aa0c0" }, grid: { color: "rgba(255,255,255,0.05)" },
-               title: { display: true, text: "MTF %", color: "#8aa0c0", font: { size: 11 } } },
-          y: { ticks: { color: "#8aa0c0" }, grid: { color: "rgba(255,255,255,0.07)" },
-               title: { display: true, text: "lp/mm", color: "#8aa0c0", font: { size: 11 } } }
+          x: { ticks: { color: "#7a95ab" }, grid: { color: "rgba(0,0,0,0.05)" },
+               title: { display: true, text: "MTF %", color: "#5a7080", font: { size: 12 } } },
+          y: { ticks: { color: "#7a95ab" }, grid: { color: "rgba(0,0,0,0.05)" },
+               title: { display: true, text: "lp/mm", color: "#5a7080", font: { size: 12 } } }
         }
       }
     });
@@ -591,18 +649,19 @@ function renderCharts(cd) {
         datasets: [{
           label: "HU (Uniformity ROIs)",
           data: cd.uniformity_roi_values,
-          backgroundColor: "rgba(170,100,255,0.7)",
-          borderColor: "rgba(170,100,255,1)",
-          borderWidth: 1,
+          backgroundColor: "rgba(90,112,128,0.18)",
+          borderColor: "rgba(90,112,128,0.8)",
+          borderWidth: 2,
+          borderRadius: 4,
         }]
       },
       options: {
         responsive: true,
-        plugins: { legend: { labels: { color: "#c8d8f0", font: { family: "var(--mono)", size: 11 } } } },
+        plugins: { legend: { labels: { color: "#5a7080", font: { family: "'DM Sans',sans-serif", size: 12 } } } },
         scales: {
-          x: { ticks: { color: "#8aa0c0" }, grid: { color: "rgba(255,255,255,0.05)" } },
-          y: { ticks: { color: "#8aa0c0" }, grid: { color: "rgba(255,255,255,0.07)" },
-               title: { display: true, text: "HU", color: "#8aa0c0", font: { size: 11 } } }
+          x: { ticks: { color: "#7a95ab" }, grid: { color: "rgba(0,0,0,0.05)" } },
+          y: { ticks: { color: "#7a95ab" }, grid: { color: "rgba(0,0,0,0.05)" },
+               title: { display: true, text: "HU", color: "#5a7080", font: { size: 12 } } }
         }
       }
     });
