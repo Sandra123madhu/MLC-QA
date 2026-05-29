@@ -86,19 +86,21 @@
     </div>
 
     <!-- Model selector -->
-    <div class="tolerances" style="margin-top:16px">
-      <div class="tol-item" style="flex:1;min-width:100%">
-        <div class="tol-label" style="margin-bottom:6px">CatPhan Model</div>
-        <select id="catphanModel" style="width:100%;padding:8px 12px;background:var(--surface-2,#0f1e37);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--mono);font-size:0.85rem;cursor:pointer;" onchange="updateModelHint()">
-          <option value="503">CatPhan 503 — Air, PMP, LDPE, Poly, Acrylic, Delrin, Teflon (7 inserts)</option>
-          <option value="504" selected>CatPhan 504 — Air, PMP, LDPE, Poly, Acrylic, Delrin, Teflon (7 inserts)</option>
-          <option value="600">CatPhan 600 — Air, PMP, LDPE, Poly, Acrylic, Delrin, Teflon + Vial (8 inserts)</option>
-          <option value="604">CatPhan 604 — Air, PMP, LDPE, Poly, Acrylic, Bone 20%, Delrin, Bone 50%, Teflon (9 inserts ✦ bone)</option>
-          <option value="700">CatPhan 700 — Air, PMP, LDPE, Poly, Acrylic, Bone 20%, Delrin, Bone 50%, Teflon + extras (11 inserts ✦ bone)</option>
-        </select>
-        <div id="modelHint" style="margin-top:6px;font-size:0.78rem;font-family:var(--mono);padding:6px 10px;border-radius:var(--r);background:var(--surface-2,#0f1e37);border-left:3px solid var(--border);color:var(--text-muted);">
-          ℹ️ Select the model that matches your physical phantom. If your phantom has <strong>Bone 20%</strong> and <strong>Bone 50%</strong> inserts, choose <strong>CatPhan 604</strong> or <strong>700</strong>.
-        </div>
+    <div style="margin-top:16px;background:linear-gradient(135deg,rgba(0,90,156,0.07),rgba(0,90,156,0.03));border:2px solid var(--accent-border);border-radius:var(--r-lg);padding:14px 16px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <span style="font-size:1rem;">🔬</span>
+        <span style="font-family:var(--mono);font-size:0.74rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:0.08em;">CatPhan Model — Select Before Analysis</span>
+        <span style="margin-left:auto;font-size:0.68rem;font-family:var(--mono);background:var(--accent);color:#fff;padding:2px 9px;border-radius:20px;font-weight:700;">Required</span>
+      </div>
+      <select id="catphanModel" style="width:100%;padding:10px 14px;background:var(--surface);border:2px solid var(--accent);border-radius:var(--r);color:var(--text);font-family:var(--mono);font-size:0.85rem;cursor:pointer;font-weight:600;box-shadow:0 0 0 3px rgba(0,90,156,0.10);" onchange="updateModelHint()">
+        <option value="503">CatPhan 503 — Air, PMP, LDPE, Poly, Acrylic, Delrin, Teflon (7 inserts)</option>
+        <option value="504" selected>CatPhan 504 — Air, PMP, LDPE, Poly, Acrylic, Delrin, Teflon (7 inserts)</option>
+        <option value="600">CatPhan 600 — Air, PMP, LDPE, Poly, Acrylic, Delrin, Teflon + Vial (8 inserts)</option>
+        <option value="604">CatPhan 604 — Air, PMP, LDPE, Poly, Acrylic, Bone 20%, Delrin, Bone 50%, Teflon (9 inserts ✦ bone)</option>
+        <option value="700">CatPhan 700 — Air, PMP, LDPE, Poly, Acrylic, Bone 20%, Delrin, Bone 50%, Teflon + extras (11 inserts ✦ bone)</option>
+      </select>
+      <div id="modelHint" style="margin-top:8px;font-size:0.78rem;font-family:var(--mono);padding:8px 12px;border-radius:var(--r);background:rgba(0,90,156,0.06);border-left:3px solid var(--accent);color:var(--text-2);">
+        ℹ️ Select the model that matches your physical phantom. If your phantom has <strong>Bone 20%</strong> and <strong>Bone 50%</strong> inserts, choose <strong>CatPhan 604</strong> or <strong>700</strong>.
       </div>
     </div>
 
@@ -167,9 +169,12 @@ function updateModelHint() {
     "604": "✦ CatPhan 604: 9 inserts including <strong>Bone 20%</strong> and <strong>Bone 50%</strong>. Choose this if your phantom has bone inserts.",
     "700": "✦ CatPhan 700: 11 inserts including <strong>Bone 20%</strong> and <strong>Bone 50%</strong>. Also includes Lung and Vial inserts.",
   };
-  const colors = { "503": "var(--border)", "504": "var(--border)", "600": "var(--border)", "604": "#3b82f6", "700": "#3b82f6" };
+  const colors = { "503": "var(--border)", "504": "var(--border)", "600": "var(--border)", "604": "var(--accent)", "700": "var(--accent)" };
+  const bgColors = { "503": "var(--surface-2)", "504": "var(--surface-2)", "600": "var(--surface-2)", "604": "rgba(0,90,156,0.06)", "700": "rgba(0,90,156,0.06)" };
   hint.innerHTML = msgs[model] || "";
   hint.style.borderLeftColor = colors[model] || "var(--border)";
+  hint.style.background = bgColors[model] || "var(--surface-2)";
+  hint.style.color = ["604","700"].includes(model) ? "var(--accent)" : "var(--text-muted)";
 }
 
 async function runAnalysis() {
@@ -248,31 +253,32 @@ function cancelAnalysis() { CancelManager.cancel(); }
 /* ── Inline styles for the categorised summary ─────────────────────────── */
 const _cpStyle = `
   .cp-sections { display:grid; gap:14px; margin-top:4px; }
-  .cp-section { background:var(--surface-2,#0f1e37); border:1px solid rgba(255,255,255,0.07);
-                border-radius:10px; overflow:hidden; }
+  .cp-section { background:var(--surface); border:1px solid var(--border);
+                border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(15,37,55,0.06); }
   .cp-section-head { display:flex; align-items:center; gap:10px; padding:11px 16px;
-                     background:rgba(0,120,180,0.13); border-bottom:1px solid rgba(255,255,255,0.06); }
+                     background:var(--accent-dim); border-bottom:1px solid var(--border); }
   .cp-section-icon { font-size:1rem; }
   .cp-section-title { font-family:var(--mono); font-size:0.78rem; font-weight:700;
-                      color:#7ecfff; letter-spacing:0.06em; text-transform:uppercase; flex:1; }
+                      color:var(--accent); letter-spacing:0.06em; text-transform:uppercase; flex:1; }
   .cp-section-badge { font-family:var(--mono); font-size:0.68rem; font-weight:600;
                       padding:2px 9px; border-radius:20px; }
-  .badge-pass { background:rgba(0,180,100,0.18); color:#3ddc84; border:1px solid rgba(0,180,100,0.3); }
-  .badge-na   { background:rgba(120,140,180,0.15); color:#8aa0c0; border:1px solid rgba(120,140,180,0.2); }
+  .badge-pass { background:var(--pass-dim); color:var(--pass); border:1px solid rgba(26,158,106,0.3); }
+  .badge-na   { background:var(--surface-2); color:var(--text-muted); border:1px solid var(--border); }
   .cp-rows { display:grid; grid-template-columns:1fr 1fr; gap:0; }
   @media(max-width:600px){ .cp-rows { grid-template-columns:1fr; } }
   .cp-row { display:flex; justify-content:space-between; align-items:baseline;
-            padding:8px 16px; border-bottom:1px solid rgba(255,255,255,0.04); gap:12px; }
+            padding:8px 16px; border-bottom:1px solid var(--border-subtle); gap:12px; }
   .cp-row:last-child { border-bottom:none; }
-  .cp-row-label { font-family:var(--mono); font-size:0.74rem; color:#8aa0c0; white-space:nowrap; }
+  .cp-row-label { font-family:var(--mono); font-size:0.74rem; color:var(--text-muted); white-space:nowrap; }
   .cp-row-val   { font-family:var(--mono); font-size:0.78rem; font-weight:600;
-                  color:rgba(255,255,255,0.88); text-align:right; }
-  .cp-hu-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:8px; padding:12px 16px; }
-  .cp-hu-chip { background:rgba(0,120,180,0.1); border:1px solid rgba(0,120,180,0.2);
+                  color:var(--text); text-align:right; }
+  .cp-hu-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; padding:12px 16px; background:var(--bg-subtle); }
+  .cp-hu-chip { background:var(--surface); border:1px solid var(--accent-border);
                 border-radius:8px; padding:8px 12px; }
-  .cp-hu-chip-mat { font-family:var(--mono); font-size:0.68rem; color:#8aa0c0; margin-bottom:3px; }
-  .cp-hu-chip-val { font-family:var(--mono); font-size:0.82rem; font-weight:700; color:#7ecfff; }
-  .cp-hu-chip-nom { font-family:var(--mono); font-size:0.67rem; color:#607090; margin-top:1px; }
+  .cp-hu-chip-mat { font-family:var(--mono); font-size:0.68rem; color:var(--text-muted); margin-bottom:3px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; }
+  .cp-hu-chip-val { font-family:var(--mono); font-size:0.84rem; font-weight:700; color:var(--accent); }
+  .cp-hu-chip-val.na { color:var(--text-muted); }
+  .cp-hu-chip-nom { font-family:var(--mono); font-size:0.67rem; color:var(--text-muted); margin-top:2px; }
 `;
 
 function parseSummary(summary, cd) {
@@ -323,10 +329,10 @@ function parseSummary(summary, cd) {
   const huRois = ALL_INSERTS.map(ins => {
     const hasMeasured = ins.name in measuredMap;
     const measuredVal = hasMeasured ? fmt(measuredMap[ins.name]) : 'N/A';
-    const chipValStyle = hasMeasured ? '' : ' style="color:#607090"';
+    const chipValClass = hasMeasured ? 'cp-hu-chip-val' : 'cp-hu-chip-val na';
     return `<div class="cp-hu-chip">
           <div class="cp-hu-chip-mat">${ins.name}</div>
-          <div class="cp-hu-chip-val"${chipValStyle}>${measuredVal} HU</div>
+          <div class="${chipValClass}">${measuredVal} HU</div>
           <div class="cp-hu-chip-nom">Nom: ${ins.nominal} HU</div>
         </div>`;
   }).join('');
