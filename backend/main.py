@@ -835,13 +835,17 @@ def _extract_ss_chart_data(ss) -> dict:
 
 def _run_starshot(job_id: str, filepath: str, email: str, filename: str):
     try:
-        ss = Starshot(filepath)
+        if filepath.lower().endswith(".zip"):
+            ss = Starshot.from_zip(filepath)
+        else:
+            ss = Starshot(filepath)
         ss.analyze(radius=0.85, min_peak_height=0.25, tolerance=1.0)
 
         summary = ss.results()
         passed  = ss.passed
 
-        plot_path = filepath.replace(".dcm", "_ss.png")
+        ext       = ".zip" if filepath.lower().endswith(".zip") else ".dcm"
+        plot_path = filepath.replace(ext, "_ss.png")
         try:
             ss.save_analyzed_image(plot_path)
         except AttributeError:
