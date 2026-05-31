@@ -276,7 +276,11 @@ async function runAnalysis() {
       return;
     }
     console.error("Winston-Lutz analysis error:", err);
-    resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
+    const isNetworkErr = err.message === "Failed to fetch" || err.message?.includes("NetworkError");
+    const friendlyMsg = isNetworkErr
+      ? "Could not reach the server. The server may still be waking up — please wait 30 seconds and try again."
+      : (err.message || "Unexpected error. Please try again.");
+    resultsDiv.innerHTML = `<p class="result-fail">❌ ${friendlyMsg}</p>`;
     CancelManager.finish();
     btn.disabled = false;
     btn.textContent = "Run Winston-Lutz Analysis";
