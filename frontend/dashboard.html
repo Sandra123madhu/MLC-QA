@@ -341,6 +341,7 @@ const TEST_TYPES = [
   { key: "Winston-Lutz", icon: "◎", href: "winston-lutz.html"  },
   { key: "Starshot",     icon: "✦", href: "starshot.html"       },
   { key: "Congruence",   icon: "⊞", href: "congruence.html"     },
+  { key: "CatPhan",      icon: "⬡", href: "catphantom.html",  matchPrefix: true },
 ];
 
 function buildSparkline(entries) {
@@ -392,11 +393,17 @@ function buildSparkline(entries) {
 function buildBreakdown(entries) {
   const grid = document.getElementById("breakdownGrid");
   const headEl = document.getElementById("breakdownHead");
-  const hasAny = TEST_TYPES.some(t => entries.some(e => (e.testType || e.test_type || "").toLowerCase() === t.key.toLowerCase()));
+  const hasAny = TEST_TYPES.some(t => entries.some(e => {
+    const et = (e.testType || e.test_type || "").toLowerCase();
+    return t.matchPrefix ? et.startsWith(t.key.toLowerCase()) : et === t.key.toLowerCase();
+  }));
   if (!hasAny) { grid.style.display = "none"; headEl.style.display = "none"; return; }
   headEl.style.display = "block"; grid.innerHTML = "";
   TEST_TYPES.forEach(t => {
-    const typeEntries = entries.filter(e => (e.testType || e.test_type || "").toLowerCase() === t.key.toLowerCase());
+    const typeEntries = entries.filter(e => {
+      const et = (e.testType || e.test_type || "").toLowerCase();
+      return t.matchPrefix ? et.startsWith(t.key.toLowerCase()) : et === t.key.toLowerCase();
+    });
     if (typeEntries.length === 0) return;
     const total = typeEntries.length;
     const passed = typeEntries.filter(e => e.passed || e.pass).length;
