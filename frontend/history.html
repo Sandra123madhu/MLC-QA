@@ -13,7 +13,7 @@
       display: flex; align-items: center; justify-content: space-between;
       margin-bottom: 18px; gap: 16px; flex-wrap: wrap;
     }
-    .filter-left { display: flex; gap: 6px; }
+    .filter-left { display: flex; gap: 6px; flex-wrap: wrap; }
     .filter-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); font-weight: 500; }
     .filter-btn:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -116,6 +116,11 @@
       <button class="filter-btn active" onclick="filterResults('all', this)">All</button>
       <button class="filter-btn" onclick="filterResults('pass', this)">Pass</button>
       <button class="filter-btn" onclick="filterResults('fail', this)">Fail</button>
+      <button class="filter-btn" onclick="filterResults('Picket Fence', this)">Picket Fence</button>
+      <button class="filter-btn" onclick="filterResults('Winston-Lutz', this)">Winston-Lutz</button>
+      <button class="filter-btn" onclick="filterResults('Starshot', this)">Starshot</button>
+      <button class="filter-btn" onclick="filterResults('Congruence', this)">Congruence</button>
+      <button class="filter-btn" onclick="filterResults('CatPhan', this)">CatPhantom</button>
     </div>
     <div style="display:flex;align-items:center;gap:12px;">
       <span class="record-count" id="recordCount"></span>
@@ -318,7 +323,12 @@ function filterResults(type, btn) {
 
   let filtered = allAnalyses;
   if (type === "pass") filtered = allAnalyses.filter(a => a.passed === true);
-  if (type === "fail") filtered = allAnalyses.filter(a => a.passed === false);
+  else if (type === "fail") filtered = allAnalyses.filter(a => a.passed === false);
+  else if (type !== "all") {
+    // test-type filter — use prefix match so "CatPhan 504", "CatPhan 604" etc. all match "CatPhan"
+    const key = type.toLowerCase();
+    filtered = allAnalyses.filter(a => (a.testType || "").toLowerCase().startsWith(key));
+  }
 
   document.getElementById("recordCount").textContent =
     `${filtered.length} record${filtered.length !== 1 ? "s" : ""}`;
