@@ -241,6 +241,19 @@ async function runAnalysis() {
     analyzeLabel: "Run Starshot Analysis"
   });
   btn.disabled = true;
+  btn.textContent = "Connecting...";
+  resultsDiv.innerHTML = `<p>⏳ Waiting for server to be ready...</p>`;
+
+  const serverReady = await AnalysisHelpers.waitForServer();
+  if (!serverReady) {
+    resultsDiv.innerHTML = `<p class="result-fail">❌ Server could not be reached. Please wait a moment and try again.</p>`;
+    CancelManager.finish();
+    btn.disabled = false;
+    btn.textContent = "Run Starshot Analysis";
+    return;
+  }
+  if (CancelManager.isCancelled()) return;
+
   btn.textContent = "Uploading...";
   resultsDiv.innerHTML = `<p>⏳ Uploading file...</p>`;
 
@@ -284,7 +297,11 @@ async function runAnalysis() {
       return;
     }
     console.error("Starshot analysis error:", err);
-    resultsDiv.innerHTML = `<p class="result-fail">❌ ${err.message || "Unexpected error. Please try again."}</p>`;
+    const isNetworkErr = err.message === "Failed to fetch" || err.message?.includes("NetworkError");
+    const friendlyMsg = isNetworkErr
+      ? "Could not reach the server. The server may still be waking up — please wait 30 seconds and try again."
+      : (err.message || "Unexpected error. Please try again.");
+    resultsDiv.innerHTML = `<p class="result-fail">❌ ${friendlyMsg}</p>`;
     CancelManager.finish();
     btn.disabled = false;
     btn.textContent = "Run Starshot Analysis";
