@@ -476,7 +476,7 @@ const HistoryManager = (function () {
         <div class="profile-fields">
           <div class="profile-field-row">
             <div class="profile-field-label">Email Address</div>
-            <div class="profile-field-value" id="profileEmail"><span class="profile-shimmer"></span></div>
+            <input class="profile-field-value profile-email-input" id="profileEmail" type="email" readonly tabindex="0" value="" placeholder="Loading…">
           </div>
           <div class="profile-field-row">
             <div class="profile-field-label">Member Since</div>
@@ -489,10 +489,13 @@ const HistoryManager = (function () {
         </div>
       </div>
 
-      <!-- Section 3: Change Password -->
+      <!-- Section 3: Change Password (collapsible) -->
       <div class="profile-section">
-        <div class="profile-section-title">Change Password</div>
-        <div class="profile-change-pw">
+        <div class="profile-section-title profile-section-title--toggle" id="profilePwToggle" role="button" tabindex="0" aria-expanded="false" aria-controls="profilePwBody">
+          Change Password
+          <span class="profile-pw-chevron" aria-hidden="true">&#9656;</span>
+        </div>
+        <div class="profile-change-pw profile-pw-collapsed" id="profilePwBody">
           <div class="profile-pw-row">
             <input class="profile-pw-input" type="password" id="profilePwCurrent" placeholder="Current password" autocomplete="current-password">
             <button class="profile-pw-toggle" type="button" onclick="togglePassword('profilePwCurrent', this)" aria-label="Toggle visibility">
@@ -537,6 +540,20 @@ const HistoryManager = (function () {
         document.addEventListener("keydown", function(e) {
             if (e.key === "Escape") closeProfileModal();
         });
+
+        // Change Password collapsible toggle
+        const pwToggle = document.getElementById("profilePwToggle");
+        const pwBody   = document.getElementById("profilePwBody");
+        function togglePwSection() {
+            const isOpen = pwBody.classList.toggle("profile-pw-collapsed");
+            pwToggle.setAttribute("aria-expanded", String(!isOpen));
+        }
+        if (pwToggle) {
+            pwToggle.addEventListener("click", togglePwSection);
+            pwToggle.addEventListener("keydown", function(e) {
+                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); togglePwSection(); }
+            });
+        }
     }
 
     function openProfileModal() {
@@ -582,7 +599,7 @@ const HistoryManager = (function () {
         }
         if (dispName) dispName.textContent = name || "—";
         if (nameEl)   nameEl.textContent   = name  || "—";
-        if (emailEl)  emailEl.textContent  = email || "—";
+        if (emailEl)  { if (emailEl.tagName === "INPUT") { emailEl.value = (email && email !== "—") ? email : ""; emailEl.placeholder = (email && email !== "—") ? "" : "Not available"; } else { emailEl.textContent = email || "—"; } }
         if (nameEl)  nameEl.classList.toggle("placeholder", !name || name === "—");
         if (emailEl) emailEl.classList.toggle("placeholder", !email || email === "—");
 
