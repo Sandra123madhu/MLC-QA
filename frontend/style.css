@@ -667,6 +667,66 @@ tbody td { padding:11px 16px; font-size:0.83rem; color:var(--text); }
   display: block; color: #d97d64;
   background: rgba(217,125,100,0.1); border: 1px solid rgba(217,125,100,0.25);
 }
+/* ── Email input — selectable & highlightable ─────────────────── */
+input.profile-email-input {
+  width: 100%;
+  box-sizing: border-box;
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+  caret-color: rgba(0,150,255,0.8);
+  font-family: var(--font, sans-serif);
+}
+input.profile-email-input:focus {
+  outline: none;
+  border-color: rgba(0,120,200,0.55);
+  box-shadow: 0 0 0 3px rgba(0,120,200,0.12);
+}
+input.profile-email-input::selection {
+  background: rgba(0,120,200,0.35);
+  color: #fff;
+}
+
+/* ── Change Password collapsible ──────────────────────────────── */
+.profile-section-title--toggle {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 6px;
+  padding: 4px 6px;
+  margin: -4px -6px 12px;
+  transition: background 0.15s;
+}
+.profile-section-title--toggle:hover {
+  background: rgba(0,150,255,0.08);
+}
+.profile-pw-chevron {
+  font-size: 0.75rem;
+  color: rgba(0,150,255,0.6);
+  transition: transform 0.22s cubic-bezier(0.34,1.56,0.64,1);
+  display: inline-block;
+}
+.profile-section-title--toggle[aria-expanded="true"] .profile-pw-chevron {
+  transform: rotate(90deg);
+}
+/* Collapsed state */
+.profile-pw-collapsed {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.28s ease, opacity 0.2s ease;
+  pointer-events: none;
+}
+/* Expanded state */
+.profile-change-pw:not(.profile-pw-collapsed) {
+  max-height: 400px;
+  opacity: 1;
+  pointer-events: auto;
+  transition: max-height 0.32s ease, opacity 0.22s ease 0.04s;
+}
+
 
 /* Footer */
 .profile-modal-footer {
