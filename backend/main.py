@@ -305,6 +305,7 @@ async def login(request: Request, body: AuthBody):
 # =============================================================================
 
 @app.get("/")
+@app.head("/")
 async def health():
     return {"status": "ok", "service": "MLC QA API"}
 
