@@ -399,19 +399,53 @@ async function doLogin() {
   const password = document.getElementById("password").value;
   const btn      = document.getElementById("loginBtn");
   hideMsg();
-  if (!email || !password) { showMsg("error", "Please enter your email and password."); return; }
+
+  // Client-side validation
+  if (!email || !password) {
+    showMsg("error", "Please enter your email and password.");
+    return;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showMsg("error", "Please enter a valid email address.");
+    return;
+  }
+
   btn.disabled = true; btn.textContent = "Signing in…";
+
+  // Check if server is reachable first
+  try {
+    const ping = await fetch(`${BACKEND_URL}/`, { method: "GET", signal: AbortSignal.timeout(5000) });
+    if (!ping.ok && ping.status !== 405) throw new Error("Server unhealthy");
+  } catch (_) {
+    btn.disabled = false; btn.textContent = "Sign In";
+    startColdStartProgress();
+    return;
+  }
+
   try {
     const res  = await fetch(`${BACKEND_URL}/auth/login`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ email, password }),
+      signal: AbortSignal.timeout(15000)
     });
-    const data = await res.json();
+
+    let data = {};
+    try { data = await res.json(); } catch (_) {}
+
     if (!res.ok) {
-      showMsg("error", data.detail || "Invalid email or password.");
-      btn.disabled = false; btn.textContent = "Sign In"; return;
+      const errMsg = data.detail || data.message ||
+        (res.status === 401 ? "Incorrect email or password. Please try again." :
+         res.status === 404 ? "No account found with that email address." :
+         res.status === 429 ? "Too many attempts. Please wait a moment and try again." :
+         res.status >= 500  ? "Server error — please try again shortly." :
+                              "Sign in failed. Please check your credentials.");
+      showMsg("error", errMsg);
+      btn.disabled = false; btn.textContent = "Sign In";
+      return;
     }
-    localStorage.setItem("mlcqa_token", data.token || data.access_token);
+
+    // Success — store auth data
+    localStorage.setItem("mlcqa_token", data.token || data.access_token || "");
     localStorage.setItem("mlcqa_email", data.email || email);
     const resolvedName = (data.name && data.name !== "undefined" && data.name.trim() !== "")
       ? data.name
@@ -419,13 +453,14 @@ async function doLogin() {
     localStorage.setItem("mlcqa_name", resolvedName);
     localStorage.removeItem("mlcqa_pending_name");
     window.location.href = "dashboard.html";
+
   } catch (err) {
     btn.disabled = false; btn.textContent = "Sign In";
-    try {
-      const ping = await fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(4000) });
-      if (ping.ok) { showMsg("error", "Connection error. Please try again."); return; }
-    } catch (_) {}
-    startColdStartProgress();
+    if (err.name === "AbortError" || err.name === "TimeoutError") {
+      showMsg("error", "Request timed out. The server may be busy — please try again.");
+    } else {
+      showMsg("error", "Could not connect to the server. Please check your connection and try again.");
+    }
   }
 }
 
@@ -456,7 +491,9 @@ function startColdStartProgress() {
         fill.style.width = "100%";
         document.getElementById("serverStatus").innerHTML =
           `<div class="status-dot-sm dot-ok"></div><span>Server online</span>`;
-        showMsg("success", "✅ Server is online! You can sign in now.", 6000);
+        showMsg("success", "✅ Server is online! Click Sign In to continue.", 8000);
+        const loginBtn = document.getElementById("loginBtn");
+        if (loginBtn) { loginBtn.disabled = false; loginBtn.textContent = "Sign In"; }
         return;
       }
     } catch (_) {}
