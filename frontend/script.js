@@ -1,4 +1,4 @@
-const BACKEND_URL = "https://mlc-qa.onrender.com";
+const BACKEND_URL = "https://mlc-qa-1.onrender.com";
 
 // ── Auth guard ────────────────────────────────────────────────────────────────
 (function sanitizeToken() {
