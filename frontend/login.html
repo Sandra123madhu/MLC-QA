@@ -372,7 +372,17 @@ function hideMsg() {
 // ── Init ───────────────────────────────────────────────────────────────────
 window.addEventListener("DOMContentLoaded", () => {
   const t = localStorage.getItem("mlcqa_token");
-  if (t && t !== "undefined" && t !== "null" && t.trim() !== "") { window.location.href = "dashboard.html"; return; }
+  if (t && t !== "undefined" && t !== "null" && t.trim() !== "") {
+    try {
+      const payload = JSON.parse(atob(t.split(".")[1]));
+      const isExpired = payload.exp && (payload.exp * 1000 < Date.now());
+      if (!isExpired) { window.location.href = "dashboard.html"; return; }
+    } catch (_) {}
+    // Token is malformed or expired — clear it and show login form
+    localStorage.removeItem("mlcqa_token");
+    localStorage.removeItem("mlcqa_name");
+    localStorage.removeItem("mlcqa_email");
+  }
   const reason = new URLSearchParams(window.location.search).get("reason");
   if (reason === "session_expired") showMsg("warn", "⚠️ Your session has expired. Please sign in again.", 8000);
   ["email","password"].forEach(id => {
@@ -402,6 +412,7 @@ async function doLogin() {
       btn.disabled = false; btn.textContent = "Sign In"; return;
     }
     localStorage.setItem("mlcqa_token", data.token || data.access_token);
+    localStorage.setItem("mlcqa_email", data.email || email);
     const resolvedName = (data.name && data.name !== "undefined" && data.name.trim() !== "")
       ? data.name
       : (localStorage.getItem("mlcqa_pending_name") || email.split("@")[0]);
