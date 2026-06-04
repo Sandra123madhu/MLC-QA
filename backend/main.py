@@ -128,9 +128,13 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # SECURITY FIX 1: Restrict CORS to specific frontend domains
 origins = [
-    "https://mlc-qa-1.onrender.com",  # Frontend
-    "http://127.0.0.1:5500",        # Local testing (VS Code Live Server)
-    "http://localhost:5500"         # Local testing
+    "https://mlc-qa-1.onrender.com",       # Frontend (Render static site)
+    "https://frontend-mlcqa.onrender.com", # Frontend (alternate static site deployment)
+    "https://mlc-qa.onrender.com",         # Frontend (legacy URL)
+    "http://127.0.0.1:5500",               # Local testing (VS Code Live Server)
+    "http://localhost:5500",               # Local testing
+    "http://127.0.0.1:3000",               # Local testing (other ports)
+    "http://localhost:3000",
 ]
 
 app.add_middleware(
