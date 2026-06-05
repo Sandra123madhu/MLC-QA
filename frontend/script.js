@@ -445,42 +445,22 @@ const HistoryManager = (function () {
         <div class="profile-avatar-ring"></div>
       </div>
       <div class="profile-display-name" id="profileDisplayName">—</div>
-      <div class="profile-display-role" id="profileDisplayRole">Medical Physicist</div>
     </div>
 
     <!-- Scrollable body -->
     <div class="profile-modal-body">
 
-      <!-- Section 1: Identity & Role -->
+      <!-- Section 1: Account Details -->
       <div class="profile-section">
-        <div class="profile-section-title">Identity &amp; Role</div>
+        <div class="profile-section-title">Account Details</div>
         <div class="profile-fields">
           <div class="profile-field-row">
             <div class="profile-field-label">Full Name</div>
             <div class="profile-field-value" id="profileName"><span class="profile-shimmer"></span></div>
           </div>
           <div class="profile-field-row">
-            <div class="profile-field-label">Role</div>
-            <div class="profile-field-value" id="profileRole">Medical Physicist</div>
-          </div>
-          <div class="profile-field-row">
-            <div class="profile-field-label">Department</div>
-            <div class="profile-field-value" id="profileDept">Radiation Oncology</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Section 2: Account Info -->
-      <div class="profile-section">
-        <div class="profile-section-title">Account Info</div>
-        <div class="profile-fields">
-          <div class="profile-field-row">
             <div class="profile-field-label">Email Address</div>
             <input class="profile-field-value profile-email-input" id="profileEmail" type="email" readonly tabindex="0" value="" placeholder="Loading…">
-          </div>
-          <div class="profile-field-row">
-            <div class="profile-field-label">Member Since</div>
-            <div class="profile-field-value" id="profileCreated"><span class="profile-shimmer"></span></div>
           </div>
           <div class="profile-field-row">
             <div class="profile-field-label">Last Login</div>
@@ -588,7 +568,6 @@ const HistoryManager = (function () {
         const dispName  = document.getElementById("profileDisplayName");
         const nameEl    = document.getElementById("profileName");
         const emailEl   = document.getElementById("profileEmail");
-        const createdEl = document.getElementById("profileCreated");
         const lastEl    = document.getElementById("profileLastLogin");
 
         // Avatar: preserve ring div
@@ -602,19 +581,6 @@ const HistoryManager = (function () {
         if (emailEl)  { if (emailEl.tagName === "INPUT") { emailEl.value = (email && email !== "—") ? email : ""; emailEl.placeholder = (email && email !== "—") ? "" : "Not available"; } else { emailEl.textContent = email || "—"; } }
         if (nameEl)  nameEl.classList.toggle("placeholder", !name || name === "—");
         if (emailEl) emailEl.classList.toggle("placeholder", !email || email === "—");
-
-        // Member Since
-        if (createdEl) {
-            if (createdAt) {
-                try {
-                    const d = new Date(createdAt);
-                    createdEl.textContent = d.toLocaleDateString(undefined, { year:"numeric", month:"long", day:"numeric" });
-                } catch { createdEl.textContent = createdAt; }
-            } else {
-                createdEl.textContent = "—";
-                createdEl.classList.add("placeholder");
-            }
-        }
 
         // Last Login — always show "Just now" for current session
         if (lastEl) lastEl.textContent = "Just now";
